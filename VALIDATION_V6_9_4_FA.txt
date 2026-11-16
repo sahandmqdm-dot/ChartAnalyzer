@@ -1,0 +1,13 @@
+ChartAnalyzer V6.9.4 Validation
+
+- Full pytest suite: 161 passed.
+- Python compilation: PASS (app.py, walk_forward.py, exit_path_intelligence.py, exit_policy_research.py, trade_failure_intelligence.py).
+- Embedded dashboard JavaScript syntax: PASS (1 inline script block, node --check).
+- Synthetic Walk-Forward smoke test: PASS (900 synthetic candles, 4 chronological folds, 80 OOS trades; exit-policy horizons populated).
+- ZIP extraction test: performed after packaging.
+
+Scope:
+- Corrected aggregate MFE capture statistics: winner-only aggregate with explicit denominator.
+- Added paired, cost-aware early time-exit research over chronological OOS trade records.
+- No signal, entry/exit rule, threshold, indicator weight, or parameter was changed.
+- No real-market profitability claim: baseline archive contains no raw OHLCV market history.

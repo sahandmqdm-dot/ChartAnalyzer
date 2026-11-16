@@ -1,0 +1,42 @@
+{
+  "backtest": {
+    "market_type": "spot",
+    "allow_short_futures": true,
+    "position_size": 1.0,
+    "futures_leverage": 1.0,
+    "spread_roundtrip": 0.0005,
+    "slippage_roundtrip": 0.0005,
+    "market_impact_roundtrip": 0.0,
+    "execution_delay_bars": 0,
+    "funding_fee_per_bar": 0.0,
+    "stop_atr_mult": 1.5,
+    "target_atr_mult": 2.0
+  },
+  "walk_forward": {
+    "n_splits": 5,
+    "warmup_bars": 120,
+    "gap_bars": 0
+  },
+  "gate": {
+    "require_oos_validation": true,
+    "validation_max_age_hours": 24.0,
+    "min_oos_trades": 200,
+    "min_validation_folds": 5,
+    "min_oos_net_profit_factor": 1.2,
+    "min_oos_net_expectancy_pct": 0.0,
+    "min_positive_fold_ratio": 0.7,
+    "max_oos_drawdown_pct": 15.0,
+    "max_adjusted_p_value": 0.05,
+    "require_positive_oos_ci": true,
+    "require_gap_free_data": true
+  },
+  "iran_crypto_mcp": {
+    "enabled": false,
+    "command": "uvx",
+    "args": ["iran-crypto-mcp"],
+    "timeout_sec": 25,
+    "default_quote": "IRT",
+    "default_exchange": "wallex",
+    "proxy": ""
+  }
+}

@@ -1,0 +1,14 @@
+ChartAnalyzer V6.8.0 Validation
+Date: 2026-11-14
+
+Automated tests:
+137 passed
+
+Additional checks:
+- python -m py_compile *.py: PASS
+- Dashboard JavaScript syntax (node --check): PASS
+- New Trade Failure Intelligence unit tests: PASS
+- Walk-Forward integration test: PASS
+
+Scope note:
+Validation was performed in the release build environment. It does not establish profitability, a predictive edge, or successful execution on the user's Windows machine. Run the test suite locally after installation.

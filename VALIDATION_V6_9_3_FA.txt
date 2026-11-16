@@ -1,0 +1,9 @@
+ChartAnalyzer V6.9.3 Validation
+
+Scope:
+- Exit Path Intelligence added to frozen-signal Walk-Forward diagnostics.
+- Backtest dashboard percentage formatter scope fixed.
+- Existing signal and execution logic unchanged.
+
+Validation is recorded after running the full pytest suite, Python compilation,
+embedded dashboard JavaScript syntax validation, and ZIP extraction verification.
