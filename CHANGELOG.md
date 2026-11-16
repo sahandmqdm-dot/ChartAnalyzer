@@ -1,5 +1,16 @@
 # Changelog
 
+## 7.2.0 - 2026-11-16
+- Added Quant Research Engine: immutable hypothesis/experiment registry, dataset/config lineage and multiple-testing controls.
+- Added circular moving-block bootstrap inference and block signal-permutation controls.
+- Added execution-delay and market-impact cost modeling to backtests and passive benchmarks.
+- Added chronological split, purged/embargoed CV and feature-availability audit primitives.
+- Added parameter-neighborhood, regime and cross-symbol robustness research tools.
+- Added a one-way final holdout seal with overlap protection and one-time exact-config evaluation.
+- Integrated Research Lab dashboard/API and unified the canonical strategy fingerprint with the OOS deployment gate.
+- Tightened deployment evidence floors: at least 200 OOS trades, PF >= 1.20, drawdown <= 15%, positive bootstrap lower bound and FDR q <= 0.05.
+- No claim of profitability; deployment remains fail-closed until matching, fresh OOS evidence satisfies every gate.
+
 ## 7.1.0 - 2026-11-15
 - Added optional read-only iran-crypto-mcp stdio client and schema-driven tool invocation.
 - Added dashboard/API endpoints for price comparison, order books, candles and connection status.
@@ -237,14 +248,3 @@
 - Backtest dashboard `pct is not defined` error by moving the percentage formatter into the correct function scope.
 ### Unchanged
 - Frozen signal, indicators, entry/exit rules, thresholds, and execution parameters. Diagnostics are descriptive only; no optimization or profitability claim.
-
-## 7.2.0 - Quant Research Engine
-- Added immutable hypothesis/experiment registry with dataset/config lineage and FDR correction.
-- Added circular moving-block bootstrap inference and block signal permutation control.
-- Added configurable execution delay and separate market-impact cost to backtest and passive benchmark.
-- Added chronological split, purged/embargoed CV and feature-availability audit primitives.
-- Added parameter-neighborhood, regime and cross-symbol robustness primitives.
-- Added one-way final holdout seal, overlap protection and one-time exact-config evaluation.
-- Integrated Research Lab dashboard and APIs.
-- Unified canonical strategy fingerprint between OOS evidence and live gate.
-- Raised mandatory deployment evidence floors: 200 OOS trades, PF 1.20, <=15% OOS drawdown, positive bootstrap lower bound and FDR q <= 0.05.
