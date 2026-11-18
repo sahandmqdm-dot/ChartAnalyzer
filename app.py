@@ -3154,6 +3154,34 @@ def _valid_access_token(token):
     return isinstance(token, str) and re.fullmatch(r"[A-Za-z0-9._~-]{16,512}", token) is not None
 
 
+def _same_origin_request(headers, host):
+    """Reject cross-origin browser requests, including stateful GET requests.
+
+    Sec-Fetch-Site catches cross-site requests even when browsers omit Origin.
+    Origin/Referer are checked against the exact Host because the app intentionally
+    permits loopback clients without a token.
+    """
+    fetch_site = (headers.get("Sec-Fetch-Site") or "").strip().lower()
+    if fetch_site and fetch_site not in ("same-origin", "none"):
+        return False
+    origin = headers.get("Origin")
+    referer = headers.get("Referer")
+    candidate = origin or referer
+    if not candidate:
+        return True  # non-browser clients and older browsers may omit both
+    try:
+        parsed = urllib.parse.urlsplit(candidate)
+        if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != host:
+            return False
+        if parsed.username is not None or parsed.password is not None:
+            return False
+        if origin and (parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+            return False
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def authorized(ip, params, cookie_header, token):
     """Loopback is always allowed. Any other client needs the token (query ?t= or cookie at=)."""
     if _loopback(ip):
@@ -3256,6 +3284,11 @@ def make_handler(token, hosts):
             host = (self.headers.get("Host") or "").lower()
             if host not in hosts:  # blocks DNS-rebinding; add your name to allowed_hosts if needed
                 return self._send(400, json.dumps({"detail": "host not allowed - add it to allowed_hosts in config.json"}))
+            # Loopback bypass is useful for local clients, but must not become a
+            # browser CSRF bypass. Apply this to GET as well as POST: some GET
+            # endpoints start research jobs and persist their results.
+            if not _same_origin_request(self.headers, host):
+                return self._send(403, json.dumps({"detail": "cross-origin request refused"}))
             ip = self.client_address[0]
             if _blocked(ip):
                 return self._send(429, json.dumps({"detail": "too many failed attempts"}))
@@ -3281,9 +3314,6 @@ def make_handler(token, hosts):
                 ct = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
                 if ct != "application/json":   # forces a CORS preflight -> blocks cross-site form/text posts
                     return self._send(415, json.dumps({"detail": "Content-Type must be application/json"}))
-                org = self.headers.get("Origin")
-                if org and urllib.parse.urlparse(org).netloc.lower() != host:
-                    return self._send(403, json.dumps({"detail": "cross-origin request refused"}))
                 if self.headers.get("Transfer-Encoding"):
                     return self._send(400, json.dumps({"detail": "Transfer-Encoding is not supported"}))
                 try:
