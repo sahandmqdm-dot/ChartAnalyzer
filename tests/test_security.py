@@ -1,4 +1,5 @@
 import os
+import inspect
 
 import pytest
 
@@ -41,7 +42,7 @@ def test_mcp_child_environment_does_not_forward_provider_secrets(monkeypatch):
 
 
 @pytest.mark.parametrize("config", [
-    {"command": "", "args": ["iran-crypto-mcp"], "timeout_sec": 25},
+    {"command": "uvx\\x00evil", "args": ["iran-crypto-mcp"], "timeout_sec": 25},
     {"command": "uvx", "args": "iran-crypto-mcp", "timeout_sec": 25},
     {"command": "uvx", "args": ["iran-crypto-mcp", None], "timeout_sec": 25},
     {"command": "uvx", "args": ["iran-crypto-mcp"], "timeout_sec": 999},
@@ -62,6 +63,6 @@ def test_auth_uses_constant_time_comparison_and_loopback_policy():
 
 
 def test_http_response_security_headers_are_defined():
-    assert "X-Content-Type-Options" in app.make_handler.__code__.co_consts or "nosniff" in app.make_handler.__code__.co_consts
+    assert "nosniff" in inspect.getsource(app.make_handler)
     assert "frame-ancestors 'none'" in app.CSP
     assert "base-uri 'none'" in app.CSP
