@@ -161,3 +161,14 @@ def test_mcp_stdout_line_limit_terminates_oversized_child():
     client._read_stdout()
     assert client.proc.killed
     assert waiter.get_nowait() == {"_transport_closed": True}
+
+
+
+def test_failed_login_tracking_has_a_hard_memory_bound(monkeypatch):
+    monkeypatch.setattr(app, "_FAILS", {
+        f"192.0.2.{i}": (1, 1.0) for i in range(4096)
+    })
+    monkeypatch.setattr(app.time, "time", lambda: 100.0)
+    app._fail("198.51.100.1")
+    assert len(app._FAILS) <= 4096
+    assert "198.51.100.1" in app._FAILS
