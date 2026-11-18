@@ -8,6 +8,9 @@ from typing import Any, Dict
 
 from iran_crypto_mcp import MCPError, StdioMCPClient
 
+# Pin the external MCP package to a reviewed release instead of resolving latest.
+MCP_DEFAULT_ARGS = ["--from", "iran-crypto-mcp==0.5.2", "iran-crypto-mcp"]
+
 
 class IranCryptoMarket:
     TOOL_NAMES = {
@@ -40,7 +43,9 @@ class IranCryptoMarket:
                 if proxy:
                     env["IRAN_CRYPTO_MCP_PROXY"] = proxy
                 command = cfg.get("command") or "uvx"
-                args = cfg.get("args") or ["iran-crypto-mcp"]
+                args = cfg.get("args")
+                if not args or args == ["iran-crypto-mcp"]:
+                    args = MCP_DEFAULT_ARGS.copy()
                 if not isinstance(command, str) or not command.strip() or chr(0) in command:
                     raise MCPError("MCP command must be a non-empty executable name or path")
                 if not isinstance(args, list) or len(args) > 32 or not all(isinstance(x, str) and chr(0) not in x for x in args):
