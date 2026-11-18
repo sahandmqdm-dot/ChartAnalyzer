@@ -41,7 +41,7 @@ class IranCryptoMarket:
                     env["IRAN_CRYPTO_MCP_PROXY"] = proxy
                 command = cfg.get("command") or "uvx"
                 args = cfg.get("args") or ["iran-crypto-mcp"]
-                if not isinstance(command, str) or not command.strip() or "\\x00" in command:
+                if not isinstance(command, str) or chr(0) in command:
                     raise MCPError("MCP command must be a non-empty executable name or path")
                 if not isinstance(args, list) or len(args) > 32 or not all(isinstance(x, str) and "\\x00" not in x for x in args):
                     raise MCPError("MCP args must be a list of at most 32 plain strings")
