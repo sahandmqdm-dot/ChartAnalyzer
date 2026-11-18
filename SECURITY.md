@@ -5,9 +5,11 @@
 - LAN access uses a random per-run token when no configured token is supplied.
 - Token comparisons use constant-time comparison; successful query-token access is exchanged for an HttpOnly, SameSite=Strict cookie.
 - Non-loopback requests are checked against an explicit Host allowlist; POST requests require JSON and are size-limited.
-- Responses include no-store, nosniff, no-referrer, frame denial and a restrictive Content-Security-Policy.
+- Responses include no-store, nosniff, no-referrer, frame denial and a restrictive Content-Security-Policy; the HTTP server has a 15-second socket timeout and a 16-worker concurrency cap.
 - User-supplied UDF URLs must match an allowlisted scheme, hostname, port and path boundary; redirects are disabled for upstream HTTP requests.
-- The optional MCP integration is read-only, launches without a shell, validates its launch configuration and receives a minimal child-process environment without the application's LLM keys or LAN token.
+- The optional MCP integration is read-only, launches without a shell, validates its launch configuration, receives a minimal child-process environment without the application's LLM keys or LAN token, and bounds stdio line size and request timeout.
+- Holdout metadata is written atomically with owner-only permissions on POSIX; the journal and research SQLite databases and sidecars are restricted to owner access.
+- Declarative research rules reject unknown fields and bound condition count, string sizes, numeric values and maximum holding duration.
 - Local configuration, environment files, database files and runtime artifacts are excluded by .gitignore.
 
 ## Deployment guidance
@@ -26,7 +28,7 @@
 - The token is shared by all LAN clients; there are no per-user identities, roles, or server-side session revocation.
 - Rate limiting is in-memory and IP-based, not a distributed abuse-control system.
 - CSP still permits inline scripts/styles because the dashboard is currently a single embedded HTML page. Do not insert untrusted content into HTML; use text-only DOM APIs for dynamic values.
-- A configured MCP command is executable by design. Only administrators should be able to change this setting.
+- A configured MCP command is executable by design. Only administrators should be able to change this setting. On POSIX, startup warns if `config.json` is group/world writable or if it contains secrets readable by other users.
 - Automated dependency auditing detects known vulnerable packages; it does not prove the application is free of vulnerabilities.
 
 ## Regression tests
