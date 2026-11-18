@@ -56,6 +56,42 @@ def test_disabled_status_does_not_spawn_process():
     assert market._client is None
 
 
+def test_default_mcp_package_is_pinned(monkeypatch):
+    import iran_crypto_market as market_module
+
+    captured = {}
+
+    class DummyClient:
+        pass
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return DummyClient()
+
+    monkeypatch.setattr(market_module, "StdioMCPClient", fake_client)
+    market = IranCryptoMarket({"enabled": True})
+    market._get_client()
+    assert captured["args"] == ["--from", "iran-crypto-mcp==0.5.2", "iran-crypto-mcp"]
+
+
+def test_legacy_unpinned_mcp_args_are_upgraded_to_pinned_default(monkeypatch):
+    import iran_crypto_market as market_module
+
+    captured = {}
+
+    class DummyClient:
+        pass
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return DummyClient()
+
+    monkeypatch.setattr(market_module, "StdioMCPClient", fake_client)
+    market = IranCryptoMarket({"enabled": True, "args": ["iran-crypto-mcp"]})
+    market._get_client()
+    assert captured["args"] == ["--from", "iran-crypto-mcp==0.5.2", "iran-crypto-mcp"]
+
+
 def test_stdio_client_initialize_and_tool_call_roundtrip():
     server = textwrap.dedent(r'''
         import json, sys
