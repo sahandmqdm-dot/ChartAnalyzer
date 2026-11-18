@@ -22,3 +22,11 @@ def test_sealed_holdout_blocks_overlapping_ordinary_research_and_is_single_use(t
     v.claim(dataset_id='D1',config_hash='C1',source='ramzinex',symbol='USDTIRR',timeframe='1h',start_timestamp=100,end_timestamp=200)
     with pytest.raises(ValueError,match='already been opened'):
         v.claim(dataset_id='D1',config_hash='C1',source='ramzinex',symbol='USDTIRR',timeframe='1h',start_timestamp=100,end_timestamp=200)
+
+
+def test_holdout_seal_rejects_oversized_identity_fields(tmp_path):
+    v = HoldoutVault(tmp_path / "vault.json")
+    with pytest.raises(ValueError, match="too long"):
+        v.seal(dataset_id="D1", config_hash="C1", source="ramzinex",
+               symbol="X" * 33, timeframe="1h",
+               start_timestamp=10, end_timestamp=20)
