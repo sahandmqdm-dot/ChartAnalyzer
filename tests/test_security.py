@@ -3,9 +3,6 @@ import io
 import os
 import queue
 
-import pytest
-
-import app
 import pandas as pd
 import pytest
 
