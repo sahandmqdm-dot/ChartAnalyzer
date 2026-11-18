@@ -39,10 +39,20 @@ class IranCryptoMarket:
                 proxy = str(cfg.get("proxy") or os.getenv("IRAN_CRYPTO_MCP_PROXY", "")).strip()
                 if proxy:
                     env["IRAN_CRYPTO_MCP_PROXY"] = proxy
+                command = cfg.get("command") or "uvx"
+                args = cfg.get("args") or ["iran-crypto-mcp"]
+                if not isinstance(command, str) or not command.strip() or "\\x00" in command:
+                    raise MCPError("MCP command must be a non-empty executable name or path")
+                if not isinstance(args, list) or len(args) > 32 or not all(isinstance(x, str) and "\\x00" not in x for x in args):
+                    raise MCPError("MCP args must be a list of at most 32 plain strings")
+                try:
+                    timeout = float(cfg.get("timeout_sec", 25))
+                except (TypeError, ValueError) as exc:
+                    raise MCPError("MCP timeout_sec must be numeric") from exc
+                if not 3 <= timeout <= 120:
+                    raise MCPError("MCP timeout_sec must be between 3 and 120")
                 self._client = StdioMCPClient(
-                    command=str(cfg.get("command") or "uvx"),
-                    args=cfg.get("args") or ["iran-crypto-mcp"],
-                    timeout=float(cfg.get("timeout_sec", 25)), env=env,
+                    command=command.strip(), args=args, timeout=timeout, env=env,
                 )
             return self._client
 
@@ -60,7 +70,7 @@ class IranCryptoMarket:
                     "message": "Connected. Public market data only; no account or trading access."}
         except Exception as exc:
             return {"enabled": True, "connected": False, "state": "UNAVAILABLE",
-                    "message": f"{type(exc).__name__}: {exc}"}
+                    "message": f"{type(exc).__name__}: MCP server unavailable; inspect local application logs."}
 
     def _call(self, logical_tool: str, values: Dict[str, Any]):
         client = self._get_client()
