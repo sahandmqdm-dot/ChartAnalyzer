@@ -30,13 +30,6 @@
     "require_positive_oos_ci": true,
     "require_gap_free_data": true
   },
-  "chart_vision": {
-    "enabled": false,
-    "max_upload_bytes": 3145728,
-    "confidence_threshold": 0.25,
-    "max_detections": 50,
-    "model_path_env": "CHARTANALYZER_YOLO_MODEL"
-  },
   "iran_crypto_mcp": {
     "enabled": false,
     "command": "uvx",

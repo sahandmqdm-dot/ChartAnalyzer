@@ -1,3 +1,0 @@
-# Optional visual inference dependencies; core application remains lightweight.
-Pillow>=10.0
-ultralytics>=8.2,<9
