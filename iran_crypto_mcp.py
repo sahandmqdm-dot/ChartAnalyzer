@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import math
 import queue
 from collections import deque
 import shutil
@@ -31,12 +32,22 @@ def _child_environment(extra=None):
 
 class StdioMCPClient:
     def __init__(self, command: str = "uvx", args=None, timeout: float = 25.0, env=None):
-        self.command = command
-        self.args = list(args or ["iran-crypto-mcp"])
-        self.timeout = min(120.0, max(3.0, float(timeout)))
-        self.env = dict(env or {})
-        if not isinstance(self.args, list) or len(self.args) > 32 or not all(isinstance(x, str) and chr(0) not in x for x in self.args):
+        if not isinstance(command, str) or not command.strip() or chr(0) in command:
+            raise MCPError("MCP command must be a non-empty executable name or path")
+        if args is None:
+            args = ["iran-crypto-mcp"]
+        if not isinstance(args, list) or len(args) > 32 or not all(isinstance(x, str) and chr(0) not in x for x in args):
             raise MCPError("MCP args must be a list of at most 32 plain strings")
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError) as exc:
+            raise MCPError("MCP timeout must be numeric") from exc
+        if not math.isfinite(timeout) or not 3.0 <= timeout <= 120.0:
+            raise MCPError("MCP timeout must be finite and between 3 and 120 seconds")
+        self.command = command.strip()
+        self.args = list(args)
+        self.timeout = timeout
+        self.env = dict(env or {})
         self.proc = None
         self._reader = None
         self._stderr_reader = None
@@ -136,6 +147,9 @@ class StdioMCPClient:
                 response = waiter.get(timeout=self.timeout)
             except queue.Empty as exc:
                 detail = " | ".join(list(self._stderr_tail)[-5:])
+                # A timed-out tool may still be consuming CPU/network resources; terminate
+                # the child rather than leave an unresponsive process behind.
+                self.close()
                 raise MCPError(f"MCP request timed out: {method}" + (f": {detail}" if detail else "")) from exc
             if response.get("_transport_closed"):
                 detail = " | ".join(list(self._stderr_tail)[-5:])
