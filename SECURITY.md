@@ -20,7 +20,7 @@
 2. Use `python app.py --lan` only on a trusted private network. The built-in server uses plain HTTP; the LAN token is visible to anyone able to sniff that network.
 3. Never expose the built-in HTTP server directly to the public Internet. If remote access is required, put it behind a maintained HTTPS reverse proxy with authentication and network access controls.
 4. Keep `config.json` private. On POSIX systems use `chmod 600 config.json`; do not commit it or paste credentials into issues/logs.
-5. Treat `udf_allowlist`, `iran_crypto_mcp.command`, and `iran_crypto_mcp.args` as administrator-controlled configuration. Do not let untrusted users edit them.
+5. Treat `udf_allowlist`, `iran_crypto_mcp.command`, and `iran_crypto_mcp.args` as administrator-controlled configuration. Do not let untrusted users edit them. Keep the MCP package version pinned; update it deliberately after reviewing its release and provenance.
 6. Rotate configured `access_token` and provider keys if they may have been exposed.
 
 ## Remaining limitations
