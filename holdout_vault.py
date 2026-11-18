@@ -34,7 +34,7 @@ class HoldoutVault:
             else:
                 import msvcrt
                 if os.fstat(fd).st_size == 0:
-                    os.write(fd, b"\\0")
+                    os.write(fd, bytes(1))
                 os.lseek(fd, 0, os.SEEK_SET)
                 msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
             locked = True
@@ -46,6 +46,7 @@ class HoldoutVault:
                 else:
                     msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
             os.close(fd)
+
     def _read(self):
         if not self.path.exists(): return None
         try:
