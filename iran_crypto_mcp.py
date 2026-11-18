@@ -35,7 +35,7 @@ class StdioMCPClient:
         self.args = list(args or ["iran-crypto-mcp"])
         self.timeout = min(120.0, max(3.0, float(timeout)))
         self.env = dict(env or {})
-        if not isinstance(self.args, list) or len(self.args) > 32 or not all(isinstance(x, str) and "\\x00" not in x for x in self.args):
+        if not isinstance(self.args, list) or len(self.args) > 32 or not all(isinstance(x, str) and chr(0) not in x for x in self.args):
             raise MCPError("MCP args must be a list of at most 32 plain strings")
         self.proc = None
         self._reader = None
