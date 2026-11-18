@@ -2121,11 +2121,11 @@ def _bounded_research_rows(payload, key, limit=5000):
     if rows is None:
         return []
     if not isinstance(rows, list):
-        raise ValueError(f"{key} must be a JSON array")
+        raise TypeError(f"{key} must be a JSON array")
     if len(rows) > limit:
         raise ValueError(f"{key} exceeds the {limit:,} row limit")
     if any(not isinstance(row, dict) for row in rows):
-        raise ValueError(f"{key} must contain JSON objects only")
+        raise TypeError(f"{key} must contain JSON objects only")
     return rows
 
 
@@ -3205,9 +3205,7 @@ def _same_origin_request(headers, host):
             return False
         if parsed.username is not None or parsed.password is not None:
             return False
-        if origin and (parsed.path not in ("", "/") or parsed.query or parsed.fragment):
-            return False
-        return True
+        return not (origin and (parsed.path not in ("", "/") or parsed.query or parsed.fragment))
     except (TypeError, ValueError):
         return False
 
