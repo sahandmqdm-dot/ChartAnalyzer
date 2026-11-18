@@ -19,6 +19,16 @@ class MCPError(RuntimeError):
     pass
 
 
+def _child_environment(extra=None):
+    """Build a minimal environment for the MCP subprocess; never inherit API secrets."""
+    keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT",
+            "WINDIR", "TEMP", "TMP", "SSL_CERT_FILE", "SSL_CERT_DIR", "UV_CACHE_DIR")
+    env = {key: os.environ[key] for key in keep if key in os.environ}
+    env.update({str(k): str(v) for k, v in (extra or {}).items()
+                if str(k) in ("IRAN_CRYPTO_MCP_PROXY",)})
+    return env
+
+
 class StdioMCPClient:
     def __init__(self, command: str = "uvx", args=None, timeout: float = 25.0, env=None):
         self.command = command
@@ -44,13 +54,8 @@ class StdioMCPClient:
         if self.proc is not None:
             self._tools = None
         executable = shutil.which(self.command) or self.command
-        # The MCP child only needs its runtime environment. Do not pass provider/API
-        # credentials or the LAN access token to an unrelated subprocess.
-        keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT",
-                "WINDIR", "TEMP", "TMP", "SSL_CERT_FILE", "SSL_CERT_DIR", "UV_CACHE_DIR")
-        env = {key: os.environ[key] for key in keep if key in os.environ}
-        env.update({str(k): str(v) for k, v in self.env.items()
-                    if str(k) in ("IRAN_CRYPTO_MCP_PROXY",)})
+        # Do not pass provider/API credentials or the LAN access token to this child.
+        env = _child_environment(self.env)
         try:
             self.proc = subprocess.Popen(
                 [executable, *self.args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
