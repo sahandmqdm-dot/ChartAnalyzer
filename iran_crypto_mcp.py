@@ -23,8 +23,10 @@ class StdioMCPClient:
     def __init__(self, command: str = "uvx", args=None, timeout: float = 25.0, env=None):
         self.command = command
         self.args = list(args or ["iran-crypto-mcp"])
-        self.timeout = max(3.0, float(timeout))
+        self.timeout = min(120.0, max(3.0, float(timeout)))
         self.env = dict(env or {})
+        if not isinstance(self.args, list) or len(self.args) > 32 or not all(isinstance(x, str) and "\\x00" not in x for x in self.args):
+            raise MCPError("MCP args must be a list of at most 32 plain strings")
         self.proc = None
         self._reader = None
         self._stderr_reader = None
@@ -42,13 +44,18 @@ class StdioMCPClient:
         if self.proc is not None:
             self._tools = None
         executable = shutil.which(self.command) or self.command
-        env = os.environ.copy()
-        env.update(self.env)
+        # The MCP child only needs its runtime environment. Do not pass provider/API
+        # credentials or the LAN access token to an unrelated subprocess.
+        keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT",
+                "WINDIR", "TEMP", "TMP", "SSL_CERT_FILE", "SSL_CERT_DIR", "UV_CACHE_DIR")
+        env = {key: os.environ[key] for key in keep if key in os.environ}
+        env.update({str(k): str(v) for k, v in self.env.items()
+                    if str(k) in ("IRAN_CRYPTO_MCP_PROXY",)})
         try:
             self.proc = subprocess.Popen(
                 [executable, *self.args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-                bufsize=1, env=env,
+                bufsize=1, env=env, close_fds=True,
             )
         except FileNotFoundError as exc:
             raise MCPError(f"MCP command not found: {self.command}. Install uv/uvx or configure command path.") from exc
@@ -68,6 +75,8 @@ class StdioMCPClient:
     def _read_stdout(self):
         try:
             for line in self.proc.stdout:
+                if len(line) > 1_000_000:
+                    raise MCPError("MCP response line exceeded 1 MB")
                 line = line.strip()
                 if not line:
                     continue
