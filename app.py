@@ -22,6 +22,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 import pandas as pd
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import ipaddress
 import agent_core as AC
 import trend_engine as TE
 import predictive_intelligence as PMI
@@ -3130,7 +3131,13 @@ def _clean(o):
 
 
 def _loopback(ip):
-    return ip in ("127.1.0.1", "::1") or ip.startswith("::ffff:127.")
+    """Recognize the complete IPv4/IPv6 loopback ranges, including IPv4-mapped IPv6."""
+    try:
+        addr = ipaddress.ip_address(str(ip).split("%", 1)[0])
+        mapped = getattr(addr, "ipv4_mapped", None)
+        return addr.is_loopback or bool(mapped and mapped.is_loopback)
+    except ValueError:
+        return False
 
 
 def _eq(a, b):
@@ -3336,7 +3343,36 @@ def serve():
             print(f"WARNING: {CFG_PATH} holds keys and is readable by other users. Run:  chmod 600 config.json")
     except OSError:
         pass
-    srv = ThreadingHTTPServer((host, port), make_handler(token, hosts))
+    class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+        """Cap concurrent request threads so LAN clients cannot exhaust the process."""
+        request_queue_size = 32
+        daemon_threads = True
+
+        def __init__(self, server_address, handler, max_workers=16):
+            if not isinstance(max_workers, int) or not 1 <= max_workers <= 128:
+                raise ValueError("max_workers must be between 1 and 128")
+            self.max_workers = max_workers
+            self._worker_slots = threading.BoundedSemaphore(max_workers)
+            super().__init__(server_address, handler)
+
+        def process_request(self, request, client_address):
+            if not self._worker_slots.acquire(timeout=1):
+                self.shutdown_request(request)
+                return
+            try:
+                super().process_request(request, client_address)
+            except BaseException:
+                self._worker_slots.release()
+                raise
+
+        def process_request_thread(self, request, client_address):
+            try:
+                super().process_request_thread(request, client_address)
+            finally:
+                self._worker_slots.release()
+
+    hosts.add(f"127.0.0.1:{port}")
+    srv = BoundedThreadingHTTPServer((host, port), make_handler(token, hosts), max_workers=16)
     print(f"Chart Analyzer listening on {host}:{port}")
     if exposed:
         print(f"\n  Open on your phone (same Wi-Fi):  http://{ip or '<phone-wifi-ip>'}:{port}/?t={token}\n")
