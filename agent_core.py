@@ -28,11 +28,14 @@ def _db():
     con = sqlite3.connect(DB_PATH, timeout=15)
     con.row_factory = sqlite3.Row
     con.execute(SCHEMA)
-    if new:
-        try:
-            os.chmod(DB_PATH, 0o600)
-        except OSError:
-            pass
+    # SQLite may create WAL/SHM sidecars; keep all journal state owner-readable only.
+    if os.name == "posix":
+        for candidate in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"):
+            try:
+                if os.path.exists(candidate):
+                    os.chmod(candidate, 0o600)
+            except OSError:
+                pass
     return con
 
 
