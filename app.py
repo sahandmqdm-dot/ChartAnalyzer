@@ -65,6 +65,21 @@ TF_MIN = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "12h": 72
 SYM_RE = re.compile(r"^[A-Za-z0-9_\-/:.]{1,24}$")
 EX_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 
+CSV_MAX_BYTES = 25 * 1024 * 1024
+CSV_MAX_ROWS = 250_000
+
+
+def _read_csv_bounded(path):
+    """Read a local OHLCV CSV with hard size and row limits to avoid memory exhaustion."""
+    size = os.path.getsize(path)
+    if size > CSV_MAX_BYTES:
+        raise ValueError(f"CSV file exceeds the {CSV_MAX_BYTES // (1024 * 1024)} MiB safety limit")
+    frame = pd.read_csv(path, nrows=CSV_MAX_ROWS + 1)
+    if len(frame) > CSV_MAX_ROWS:
+        raise ValueError(f"CSV file exceeds the {CSV_MAX_ROWS:,} row safety limit")
+    return frame
+
+
 # ---------------------------------------------------------------- config
 # NOTE: the numbers below are starting points (heuristics), not tuned values.
 DEFAULTS = {
@@ -413,7 +428,7 @@ def load(source, symbol, tf, n, exchange="coinex", udf_url="", csv_path=""):
         full = os.path.realpath(os.path.join(base, name))
         if os.path.dirname(full) != base or not os.path.isfile(full):
             raise ValueError(f"csv: file not found in {base}")
-        df = pd.read_csv(full)
+        df = _read_csv_bounded(full)
         df.columns = [str(c).strip().lower() for c in df.columns]
         if "time" not in df.columns:
             for alt in ("date", "datetime", "timestamp"):
