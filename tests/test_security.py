@@ -60,7 +60,7 @@ def test_mcp_launch_configuration_rejects_invalid_values(config):
     ("short", False),
     ("contains space token", False),
     ("token;injection" + "A" * 16, False),
-    ("token\\r\\nX-Evil: yes" + "A" * 16, False),
+    ("token" + chr(13) + chr(10) + "X-Evil: yes" + "A" * 16, False),
     (None, False),
 ])
 def test_access_token_is_safe_for_query_and_cookie_transport(token, expected):
