@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 _LOCK=threading.RLock()
@@ -14,6 +15,37 @@ _LOCK=threading.RLock()
 class HoldoutVault:
     def __init__(self,path="holdout_vault.json"):
         self.path=Path(path)
+
+    @contextmanager
+    def _process_lock(self):
+        """Serialize seal/claim across threads and separate app processes."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = str(self.path) + ".lock"
+        flags = os.O_CREAT | os.O_RDWR
+        if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(lock_path, flags, 0o600)
+        locked = False
+        try:
+            if os.name == "posix":
+                os.fchmod(fd, 0o600)
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            else:
+                import msvcrt
+                if os.fstat(fd).st_size == 0:
+                    os.write(fd, b"\\0")
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            locked = True
+            yield
+        finally:
+            if locked:
+                if os.name == "posix":
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                else:
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            os.close(fd)
     def _read(self):
         if not self.path.exists(): return None
         try:
@@ -56,7 +88,7 @@ class HoldoutVault:
             text = str(value or "")
             if not text or len(text) > limit or any(ord(ch) < 32 for ch in text):
                 raise ValueError(f"{name} is empty, too long or contains control characters")
-        with _LOCK:
+        with _LOCK, self._process_lock():
             if self.path.exists(): raise ValueError("Holdout already sealed; use a new future sample and a new vault file for a replacement")
             if (not dataset_id or not config_hash or not math.isfinite(float(start_timestamp))
                     or not math.isfinite(float(end_timestamp)) or end_timestamp<=start_timestamp):
@@ -75,7 +107,7 @@ class HoldoutVault:
         overlap=float(start_timestamp)<=float(d["end_timestamp"]) and float(end_timestamp)>=float(d["start_timestamp"])
         return bool(same and overlap)
     def claim(self, *, dataset_id, config_hash, source, symbol, timeframe, start_timestamp, end_timestamp):
-        with _LOCK:
+        with _LOCK, self._process_lock():
             d=self._read()
             if not isinstance(d,dict) or d.get("status")=="CORRUPT": raise ValueError("holdout vault is not in a valid sealed state")
             if int(d.get("access_count",0))>=1 or d.get("status")=="OPENED_ONCE": raise ValueError("final holdout has already been opened; it cannot be reused")
