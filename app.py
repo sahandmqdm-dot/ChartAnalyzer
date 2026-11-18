@@ -333,6 +333,38 @@ def closed_candles(df, tf, now=None):
     return df.loc[df["time"].astype(float) + bar_sec <= now_ts].copy().reset_index(drop=True)
 
 
+def _udf_url_allowed(url, allowlist):
+    """Match a UDF URL against an exact trusted origin and a path-boundary prefix."""
+    try:
+        target = urllib.parse.urlsplit(str(url).strip())
+        if target.scheme not in ("http", "https") or not target.hostname:
+            return False
+        if target.username is not None or target.password is not None or target.query or target.fragment:
+            return False
+        target_port = target.port or (443 if target.scheme == "https" else 80)
+        target_host = target.hostname.rstrip(".").lower()
+        target_path = target.path.rstrip("/")
+        for item in allowlist:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            allowed = urllib.parse.urlsplit(item.strip())
+            if allowed.scheme not in ("http", "https") or not allowed.hostname:
+                continue
+            if allowed.username is not None or allowed.password is not None or allowed.query or allowed.fragment:
+                continue
+            allowed_port = allowed.port or (443 if allowed.scheme == "https" else 80)
+            allowed_host = allowed.hostname.rstrip(".").lower()
+            allowed_path = allowed.path.rstrip("/")
+            if (target.scheme == allowed.scheme and target_host == allowed_host
+                    and target_port == allowed_port
+                    and (not allowed_path or target_path == allowed_path
+                         or target_path.startswith(allowed_path + "/"))):
+                return True
+    except (TypeError, ValueError):
+        return False
+    return False
+
+
 def load(source, symbol, tf, n, exchange="coinex", udf_url="", csv_path=""):
     if tf not in TF_MIN:
         raise ValueError("unknown timeframe")
@@ -353,9 +385,12 @@ def load(source, symbol, tf, n, exchange="coinex", udf_url="", csv_path=""):
         allow = [a for a in (C.get("udf_allowlist") or []) if isinstance(a, str) and a]
         if not allow:
             raise ValueError("udf disabled: add trusted base URLs to 'udf_allowlist' in config.json")
-        if not any(udf_url.startswith(a) for a in allow):
-            raise ValueError("udf_url is not in udf_allowlist")
-        df = _udf(udf_url.rstrip("/") + ("" if udf_url.endswith("history") else "/history"), symbol, tf, n)
+        if not _udf_url_allowed(udf_url, allow):
+            raise ValueError("udf_url must match an exact trusted origin and path in udf_allowlist")
+        base = udf_url.rstrip("/")
+        path = urllib.parse.urlsplit(base).path.rstrip("/")
+        endpoint = base if path.endswith("/history") or path == "history" else base + "/history"
+        df = _udf(endpoint, symbol, tf, n)
     elif source == "ccxt":
         import ccxt
         if not EX_RE.match(exchange or "") or exchange not in ccxt.exchanges:
@@ -3157,6 +3192,11 @@ def make_handler(token, hosts):
     class H(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def setup(self):
+            super().setup()
+            # Prevent slow clients from holding a request thread indefinitely.
+            self.connection.settimeout(15)
+
         def log_message(self, *a):
             pass
 
@@ -3165,6 +3205,8 @@ def make_handler(token, hosts):
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
             self.send_header("Content-Security-Policy", CSP)
 
         def _cookie(self):
@@ -3215,10 +3257,14 @@ def make_handler(token, hosts):
                 org = self.headers.get("Origin")
                 if org and urllib.parse.urlparse(org).netloc.lower() != host:
                     return self._send(403, json.dumps({"detail": "cross-origin request refused"}))
+                if self.headers.get("Transfer-Encoding"):
+                    return self._send(400, json.dumps({"detail": "Transfer-Encoding is not supported"}))
                 try:
                     n = int(self.headers.get("Content-Length") or 0)
                 except ValueError:
                     return self._send(400, json.dumps({"detail": "bad Content-Length"}))
+                if n < 0:
+                    return self._send(400, json.dumps({"detail": "Content-Length cannot be negative"}))
                 if n > 5_000_000:
                     return self._send(413, json.dumps({"detail": "payload too large"}))
                 try:
