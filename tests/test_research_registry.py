@@ -1,6 +1,8 @@
 import os
 import stat
+
 import pytest
+
 from research_registry import ResearchRegistry
 
 
