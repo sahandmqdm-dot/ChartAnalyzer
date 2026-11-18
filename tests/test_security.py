@@ -48,6 +48,19 @@ def test_mcp_launch_configuration_rejects_invalid_values(config):
         market._get_client()
 
 
+@pytest.mark.parametrize("token,expected", [
+    ("A" * 16, True),
+    ("A" * 512, True),
+    ("short", False),
+    ("contains space token", False),
+    ("token;injection" + "A" * 16, False),
+    ("token\\r\\nX-Evil: yes" + "A" * 16, False),
+    (None, False),
+])
+def test_access_token_is_safe_for_query_and_cookie_transport(token, expected):
+    assert app._valid_access_token(token) is expected
+
+
 def test_auth_uses_constant_time_comparison_and_loopback_policy():
     assert app._eq("same-token", "same-token")
     assert not app._eq("same-token", "other-token")
