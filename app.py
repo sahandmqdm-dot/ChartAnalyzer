@@ -2116,13 +2116,24 @@ def api_research_split_preview(n: int = 1000, train_ratio: float = 0.60,
     except Exception as e: raise HTTPException(400,redact(f"{type(e).__name__}: {e}"))
 
 
+def _bounded_research_rows(payload, key, limit=5000):
+    rows = payload.get(key) or []
+    if not isinstance(rows, list):
+        raise ValueError(f"{key} must be a JSON array")
+    if len(rows) > limit:
+        raise ValueError(f"{key} exceeds the {limit:,} row limit")
+    if any(not isinstance(row, dict) for row in rows):
+        raise ValueError(f"{key} must contain JSON objects only")
+    return rows
+
+
 @app.post("/api/research-lab/robustness")
 def api_research_robustness(payload: dict):
     from research_robustness import parameter_neighborhood_stability, cross_symbol_stability, regime_stability
     try:
-        return {"parameter_stability":parameter_neighborhood_stability(payload.get("parameter_runs") or []),
-                "cross_symbol_stability":cross_symbol_stability(payload.get("symbol_runs") or []),
-                "regime_stability":regime_stability(payload.get("regime_runs") or []),
+        return {"parameter_stability":parameter_neighborhood_stability(_bounded_research_rows(payload, "parameter_runs")),
+                "cross_symbol_stability":cross_symbol_stability(_bounded_research_rows(payload, "symbol_runs")),
+                "regime_stability":regime_stability(_bounded_research_rows(payload, "regime_runs")),
                 "warning":"Only pre-registered, genuinely OOS experiment rows should be supplied. This endpoint summarizes evidence; it does not create it."}
     except Exception as e: raise HTTPException(400,redact(f"{type(e).__name__}: {e}"))
 
