@@ -15,6 +15,7 @@ The forecast is a probability cone, not a prediction of the future path.
 """
 import os, re, sys, time, json, math, stat, socket, secrets, inspect, threading, copy
 import urllib.parse
+import posixpath
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -342,9 +343,11 @@ def _udf_url_allowed(url, allowlist):
             return False
         if target.username is not None or target.password is not None or target.query or target.fragment:
             return False
+        if "%" in target.path or "\\\\" in target.path:
+            return False
         target_port = target.port or (443 if target.scheme == "https" else 80)
         target_host = target.hostname.rstrip(".").lower()
-        target_path = target.path.rstrip("/")
+        target_path = posixpath.normpath("/" + target.path.lstrip("/")).rstrip("/")
         for item in allowlist:
             if not isinstance(item, str) or not item.strip():
                 continue
@@ -353,9 +356,11 @@ def _udf_url_allowed(url, allowlist):
                 continue
             if allowed.username is not None or allowed.password is not None or allowed.query or allowed.fragment:
                 continue
+            if "%" in allowed.path or "\\\\" in allowed.path:
+                continue
             allowed_port = allowed.port or (443 if allowed.scheme == "https" else 80)
             allowed_host = allowed.hostname.rstrip(".").lower()
-            allowed_path = allowed.path.rstrip("/")
+            allowed_path = posixpath.normpath("/" + allowed.path.lstrip("/")).rstrip("/")
             if (target.scheme == allowed.scheme and target_host == allowed_host
                     and target_port == allowed_port
                     and (not allowed_path or target_path == allowed_path
