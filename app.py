@@ -2548,7 +2548,7 @@ local model <input id=lm list=lml placeholder="auto" size=22><datalist id=lml></
 <button onclick=explain()>Send</button><div id=out></div>
 <script>
 const $=id=>document.getElementById(id);
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 let last=null,FC=null,SF=true,TRD=null,ST=true,TIM=new Map(),LV=[],D=[],V={start:0,count:100},DR=[],mode=null,pend=null,M=null,drag=null;
 const CV=$('cv'),X2=CV.getContext('2d'),AX=64;
 function toggleTR(){ST=!ST;render();}
