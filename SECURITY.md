@@ -8,6 +8,7 @@
 - Responses include no-store, nosniff, no-referrer, frame denial and a restrictive Content-Security-Policy; the HTTP server has a 15-second socket timeout and a 16-worker concurrency cap.
 - User-supplied UDF URLs must match an allowlisted scheme, hostname, port and path boundary; redirects are disabled for upstream HTTP requests.
 - CSV ingestion is restricted to a basename within the configured data directory and bounded to 25 MiB / 250,000 rows.
+- Research robustness arrays are capped at 5,000 object rows per category; persisted hypothesis specifications and experiment metrics are size-limited.
 - The optional MCP integration is read-only, launches without a shell, validates its launch configuration, receives a minimal child-process environment without the application's LLM keys or LAN token, and bounds stdio line size and request timeout.
 - Holdout metadata is written atomically with owner-only permissions on POSIX; the journal and research SQLite databases and sidecars are restricted to owner access.
 - Declarative research rules reject unknown fields and bound condition count, string sizes, numeric values and maximum holding duration.
