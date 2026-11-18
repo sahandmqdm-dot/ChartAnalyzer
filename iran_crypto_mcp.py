@@ -71,17 +71,28 @@ class StdioMCPClient:
 
     def _drain_stderr(self):
         try:
-            for line in self.proc.stderr:
-                # Keep a short diagnostic tail; never include market payloads.
+            while True:
+                # Bounded reads prevent a noisy child from allocating an unbounded line.
+                line = self.proc.stderr.readline(1001)
+                if not line:
+                    break
                 self._stderr_tail.append(line.rstrip()[:500])
         except Exception:
             pass
 
     def _read_stdout(self):
         try:
-            for line in self.proc.stdout:
+            while True:
+                # readline(size) caps memory use even if the child never emits a newline.
+                line = self.proc.stdout.readline(1_000_001)
+                if not line:
+                    break
                 if len(line) > 1_000_000:
-                    self._stderr_tail.append("MCP response line exceeded 1 MB; connection closed")
+                    self._stderr_tail.append("MCP response line exceeded 1 MB; child process terminated")
+                    try:
+                        self.proc.kill()
+                    except Exception:
+                        pass
                     break
                 line = line.strip()
                 if not line:
@@ -90,14 +101,22 @@ class StdioMCPClient:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(msg, dict):
+                    continue
                 rid = msg.get("id")
                 if rid is not None:
                     waiter = self._responses.get(rid)
                     if waiter is not None:
-                        waiter.put(msg)
+                        try:
+                            waiter.put_nowait(msg)
+                        except queue.Full:
+                            pass
         finally:
             for waiter in list(self._responses.values()):
-                waiter.put({"_transport_closed": True})
+                try:
+                    waiter.put_nowait({"_transport_closed": True})
+                except queue.Full:
+                    pass
 
     def _request(self, method: str, params=None):
         self._start()
