@@ -136,6 +136,15 @@ def test_research_rule_compiler_rejects_unbounded_or_unsafe_specs(spec):
         compile_long_flat_rule(features, spec)
 
 
+def test_mcp_constructor_rejects_invalid_argument_types_and_timeouts():
+    with pytest.raises(MCPError):
+        StdioMCPClient("python", "not-a-list")
+    with pytest.raises(MCPError):
+        StdioMCPClient("python", ["-c", "pass"], timeout=float("nan"))
+    with pytest.raises(MCPError):
+        StdioMCPClient("python", ["-c", "pass"], timeout=999)
+
+
 def test_mcp_stdout_line_limit_terminates_oversized_child():
     class FakeProcess:
         def __init__(self):
