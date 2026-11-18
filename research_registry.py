@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 SCHEMA_VERSION = 1
+MAX_SPEC_BYTES = 64 * 1024
+MAX_METRICS_BYTES = 256 * 1024
 
 
 def _safe_json(value):
@@ -78,9 +80,14 @@ class ResearchRegistry:
     def register(self, hypothesis_id: str, name: str, specification: Dict[str, Any], family_id: Optional[str] = None):
         if not hypothesis_id or not name or not isinstance(specification, dict):
             raise ValueError("hypothesis_id, name and object specification are required")
-        spec = json.dumps(_safe_json(specification), sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-        digest = canonical_hash(specification)
         family = str(family_id or "default")
+        if len(hypothesis_id) > 128 or len(name) > 256 or len(family) > 128:
+            raise ValueError("hypothesis_id, name or family_id exceeds its length limit")
+        spec = json.dumps(_safe_json(specification), sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        spec_bytes = spec.encode("utf-8")
+        if len(spec_bytes) > MAX_SPEC_BYTES:
+            raise ValueError(f"hypothesis specification exceeds the {MAX_SPEC_BYTES // 1024} KiB limit")
+        digest = hashlib.sha256(spec_bytes).hexdigest()
         with self._db() as c:
             old = c.execute("SELECT specification_hash FROM hypotheses WHERE hypothesis_id=?", (hypothesis_id,)).fetchone()
             if old:
@@ -97,6 +104,8 @@ class ResearchRegistry:
         if p_value is not None and not (0 <= float(p_value) <= 1):
             raise ValueError("p_value must be in [0,1]")
         payload = json.dumps(_safe_json(metrics), sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        if len(payload.encode("utf-8")) > MAX_METRICS_BYTES:
+            raise ValueError(f"experiment metrics exceed the {MAX_METRICS_BYTES // 1024} KiB limit")
         with self._db() as c:
             if not c.execute("SELECT 1 FROM hypotheses WHERE hypothesis_id=?", (hypothesis_id,)).fetchone():
                 raise ValueError("hypothesis must be registered before experiment")
