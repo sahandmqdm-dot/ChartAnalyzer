@@ -3181,6 +3181,14 @@ def _blocked(ip):
 def _fail(ip):
     now = time.time()
     with _FL:
+        if ip not in _FAILS and len(_FAILS) >= 4096:
+            # Bound memory under distributed failed-login attempts.
+            stale = [addr for addr, (_, first_seen) in _FAILS.items() if now - first_seen > 600]
+            for addr in stale:
+                _FAILS.pop(addr, None)
+            if len(_FAILS) >= 4096:
+                oldest = min(_FAILS, key=lambda addr: _FAILS[addr][1])
+                _FAILS.pop(oldest, None)
         n, t0 = _FAILS.get(ip, (0, now))
         _FAILS[ip] = (n + 1, t0 if now - t0 <= 600 else now)
 
