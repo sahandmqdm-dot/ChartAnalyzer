@@ -38,6 +38,7 @@ logs/
 *.db-wal
 *.db-shm
 holdout_vault.json
+holdout_vault.json.lock
 strategy_validation_evidence.json
 
 # Operating system / editor
