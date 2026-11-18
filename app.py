@@ -2631,7 +2631,7 @@ function showGroups(j){
   (details.length?'<ul>'+details.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<div class=n>No integrity warnings.</div>')+'</div>';
  $('grp').innerHTML=integrity+Object.entries(j.groups).map(([g,o])=>'<div class=box><b>'+esc(g)+'</b>'+bar(o.score)+'<span class='+sc(o.score)+'>'+esc(o.verdict)+' '+o.score+'</span>'+
   '<details><summary class=n>'+o.n+' indicators</summary><table><tr><th>Indicator<th>Value<th>Meaning / unit<th>Signal<th>Note</tr>'+
-  (by[g]||[]).map(i=>'<tr><td>'+esc(i.name)+'<td>'+i.value+'<td>'+esc(i.meaning)+' ('+esc(i.unit)+')<td class='+sc(i.signal)+'>'+i.signal+'<td>'+esc(i.note)+(i.error?' <span class=s>'+esc(i.error)+'</span>':'')).join('')+
+  (by[g]||[]).map(i=>'<tr><td>'+esc(i.name)+'<td>'+esc(i.value)+'<td>'+esc(i.meaning)+' ('+esc(i.unit)+')<td class='+sc(i.signal)+'>'+esc(i.signal)+'<td>'+esc(i.note)+(i.error?' <span class=s>'+esc(i.error)+'</span>':'')).join('')+
   '</table></details></div>').join('');}
 async function fetchMtf(){
  const el=$('mtf');el.textContent='multi-timeframe...';
@@ -3338,9 +3338,14 @@ def serve():
         h = str(h).lower()
         hosts.add(h if ":" in h else f"{h}:{port}")
     try:
-        if os.name == "posix" and os.path.exists(CFG_PATH) and _secret_values() and \
-                (os.stat(CFG_PATH).st_mode & (stat.S_IRWXG | stat.S_IRWXO)):
-            print(f"WARNING: {CFG_PATH} holds keys and is readable by other users. Run:  chmod 600 config.json")
+        if os.name == "posix" and os.path.exists(CFG_PATH):
+            mode = os.stat(CFG_PATH).st_mode
+            shared_write = bool(mode & (stat.S_IWGRP | stat.S_IWOTH))
+            shared_read = bool(mode & (stat.S_IRGRP | stat.S_IROTH))
+            if shared_write:
+                print(f"WARNING: {CFG_PATH} is writable by other users; they could alter MCP executable settings. Run: chmod 600 config.json")
+            elif _secret_values() and shared_read:
+                print(f"WARNING: {CFG_PATH} holds keys and is readable by other users. Run: chmod 600 config.json")
     except OSError:
         pass
     class BoundedThreadingHTTPServer(ThreadingHTTPServer):
