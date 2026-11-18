@@ -5,7 +5,7 @@ import pytest
 
 import app
 from iran_crypto_market import IranCryptoMarket
-from iran_crypto_mcp import MCPError, StdioMCPClient
+from iran_crypto_mcp import MCPError, StdioMCPClient, _child_environment
 
 
 @pytest.mark.parametrize("url,allow,expected", [
@@ -28,13 +28,7 @@ def test_mcp_child_environment_does_not_forward_provider_secrets(monkeypatch):
     monkeypatch.setenv("XAI_API_KEY", "also-secret")
     monkeypatch.setenv("ACCESS_TOKEN", "lan-secret")
     monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
-    client = StdioMCPClient("python", ["-c", "pass"], env={"IRAN_CRYPTO_MCP_PROXY": "http://127.0.0.1:8080"})
-    # Exercise the exact environment construction without starting a child.
-    keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT",
-            "WINDIR", "TEMP", "TMP", "SSL_CERT_FILE", "SSL_CERT_DIR", "UV_CACHE_DIR")
-    child_env = {key: os.environ[key] for key in keep if key in os.environ}
-    child_env.update({str(k): str(v) for k, v in client.env.items()
-                      if str(k) in ("IRAN_CRYPTO_MCP_PROXY",)})
+    child_env = _child_environment({"IRAN_CRYPTO_MCP_PROXY": "http://127.0.0.1:8080"})
     assert "OPENROUTER_API_KEY" not in child_env
     assert "XAI_API_KEY" not in child_env
     assert "ACCESS_TOKEN" not in child_env
@@ -42,7 +36,7 @@ def test_mcp_child_environment_does_not_forward_provider_secrets(monkeypatch):
 
 
 @pytest.mark.parametrize("config", [
-    {"command": "uvx\\x00evil", "args": ["iran-crypto-mcp"], "timeout_sec": 25},
+    {"command": 123, "args": ["iran-crypto-mcp"], "timeout_sec": 25},
     {"command": "uvx", "args": "iran-crypto-mcp", "timeout_sec": 25},
     {"command": "uvx", "args": ["iran-crypto-mcp", None], "timeout_sec": 25},
     {"command": "uvx", "args": ["iran-crypto-mcp"], "timeout_sec": 999},
