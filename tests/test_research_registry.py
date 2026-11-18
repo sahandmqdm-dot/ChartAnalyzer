@@ -1,3 +1,5 @@
+import os
+import stat
 import pytest
 from research_registry import ResearchRegistry
 
@@ -32,3 +34,20 @@ def test_registry_rejects_oversized_experiment_metrics(tmp_path):
                  config_hash="C1", source="ramzinex", symbol="USDTIRR",
                  timeframe="1h", metrics={"payload": "x" * (257 * 1024)},
                  p_value=None)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file mode semantics")
+def test_registry_database_is_owner_only(tmp_path):
+    path = tmp_path / "private-registry.db"
+    ResearchRegistry(path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink semantics")
+def test_registry_refuses_symlink_database_path(tmp_path):
+    target = tmp_path / "target.db"
+    target.write_bytes(b"not a database")
+    link = tmp_path / "linked.db"
+    link.symlink_to(target)
+    with pytest.raises(OSError, match="symbolic link"):
+        ResearchRegistry(link)
