@@ -50,6 +50,12 @@ class HoldoutVault:
                 "access_count":int(d.get("access_count",0)),
                 "policy":"Final holdout is excluded from ordinary backtest/WF endpoints and may be evaluated once against the sealed strategy fingerprint."}
     def seal(self, *, dataset_id, config_hash, source, symbol, timeframe, start_timestamp, end_timestamp):
+        fields = {"dataset_id": (dataset_id, 128), "config_hash": (config_hash, 128),
+                  "source": (source, 32), "symbol": (symbol, 32), "timeframe": (timeframe, 16)}
+        for name, (value, limit) in fields.items():
+            text = str(value or "")
+            if not text or len(text) > limit or any(ord(ch) < 32 for ch in text):
+                raise ValueError(f"{name} is empty, too long or contains control characters")
         with _LOCK:
             if self.path.exists(): raise ValueError("Holdout already sealed; use a new future sample and a new vault file for a replacement")
             if (not dataset_id or not config_hash or not math.isfinite(float(start_timestamp))
