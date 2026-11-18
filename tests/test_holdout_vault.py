@@ -1,4 +1,8 @@
+import os
+import stat
+
 import pytest
+
 from holdout_vault import HoldoutVault
 
 
@@ -22,3 +26,22 @@ def test_sealed_holdout_blocks_overlapping_ordinary_research_and_is_single_use(t
     v.claim(dataset_id='D1',config_hash='C1',source='ramzinex',symbol='USDTIRR',timeframe='1h',start_timestamp=100,end_timestamp=200)
     with pytest.raises(ValueError,match='already been opened'):
         v.claim(dataset_id='D1',config_hash='C1',source='ramzinex',symbol='USDTIRR',timeframe='1h',start_timestamp=100,end_timestamp=200)
+
+
+def test_holdout_seal_rejects_oversized_identity_fields(tmp_path):
+    v = HoldoutVault(tmp_path / "vault.json")
+    with pytest.raises(ValueError, match="too long"):
+        v.seal(dataset_id="D1", config_hash="C1", source="ramzinex",
+               symbol="X" * 33, timeframe="1h",
+               start_timestamp=10, end_timestamp=20)
+
+
+def test_holdout_lock_file_is_private_on_posix(tmp_path):
+    v = HoldoutVault(tmp_path / "vault.json")
+    v.seal(dataset_id="D1", config_hash="C1", source="ramzinex",
+           symbol="USDTIRR", timeframe="1h",
+           start_timestamp=10, end_timestamp=20)
+    lock = tmp_path / "vault.json.lock"
+    assert lock.exists()
+    if os.name == "posix":
+        assert stat.S_IMODE(lock.stat().st_mode) == 0o600

@@ -1,6 +1,13 @@
 """One-way final holdout seal with single-use evaluation claim."""
 from __future__ import annotations
-import json, os, tempfile, time, threading, math
+
+import json
+import math
+import os
+import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 _LOCK=threading.RLock()
@@ -8,10 +15,63 @@ _LOCK=threading.RLock()
 class HoldoutVault:
     def __init__(self,path="holdout_vault.json"):
         self.path=Path(path)
+
+    @contextmanager
+    def _process_lock(self):
+        """Serialize seal/claim across threads and separate app processes."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = str(self.path) + ".lock"
+        flags = os.O_CREAT | os.O_RDWR
+        if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(lock_path, flags, 0o600)
+        locked = False
+        try:
+            if os.name == "posix":
+                os.fchmod(fd, 0o600)
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            else:
+                import msvcrt
+                if os.fstat(fd).st_size == 0:
+                    os.write(fd, bytes(1))
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            locked = True
+            yield
+        finally:
+            if locked:
+                if os.name == "posix":
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                else:
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            os.close(fd)
+
     def _read(self):
         if not self.path.exists(): return None
-        try: return json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception: return {"status":"CORRUPT"}
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {"status": "CORRUPT"}
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return {"status":"CORRUPT"}
+
+    def _write_atomic(self, data):
+        """Atomically persist vault metadata with owner-only permissions."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=self.path.name)
+        try:
+            if os.name == "posix":
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(data, stream, sort_keys=True, separators=(",", ":"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, self.path)
+            if os.name == "posix":
+                os.chmod(self.path, 0o600)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
     def status(self):
         d=self._read()
         if d is None: return {"status":"UNCONFIGURED","locked":True,"message":"No final holdout has been sealed."}
@@ -23,7 +83,13 @@ class HoldoutVault:
                 "access_count":int(d.get("access_count",0)),
                 "policy":"Final holdout is excluded from ordinary backtest/WF endpoints and may be evaluated once against the sealed strategy fingerprint."}
     def seal(self, *, dataset_id, config_hash, source, symbol, timeframe, start_timestamp, end_timestamp):
-        with _LOCK:
+        fields = {"dataset_id": (dataset_id, 128), "config_hash": (config_hash, 128),
+                  "source": (source, 32), "symbol": (symbol, 32), "timeframe": (timeframe, 16)}
+        for name, (value, limit) in fields.items():
+            text = str(value or "")
+            if not text or len(text) > limit or any(ord(ch) < 32 for ch in text):
+                raise ValueError(f"{name} is empty, too long or contains control characters")
+        with _LOCK, self._process_lock():
             if self.path.exists(): raise ValueError("Holdout already sealed; use a new future sample and a new vault file for a replacement")
             if (not dataset_id or not config_hash or not math.isfinite(float(start_timestamp))
                     or not math.isfinite(float(end_timestamp)) or end_timestamp<=start_timestamp):
@@ -32,13 +98,7 @@ class HoldoutVault:
                "source":str(source),"symbol":str(symbol).upper(),"timeframe":str(timeframe),
                "start_timestamp":float(start_timestamp),"end_timestamp":float(end_timestamp),
                "sealed_at":time.time(),"access_count":0}
-            self.path.parent.mkdir(parents=True,exist_ok=True)
-            fd,tmp=tempfile.mkstemp(dir=str(self.path.parent),prefix=self.path.name)
-            try:
-                with os.fdopen(fd,"w",encoding="utf-8") as f: json.dump(d,f,sort_keys=True); f.flush(); os.fsync(f.fileno())
-                os.replace(tmp,self.path)
-            finally:
-                if os.path.exists(tmp): os.unlink(tmp)
+            self._write_atomic(d)
         return self.status()
     def overlaps(self, *, source, symbol, timeframe, start_timestamp, end_timestamp):
         d=self._read()
@@ -48,7 +108,7 @@ class HoldoutVault:
         overlap=float(start_timestamp)<=float(d["end_timestamp"]) and float(end_timestamp)>=float(d["start_timestamp"])
         return bool(same and overlap)
     def claim(self, *, dataset_id, config_hash, source, symbol, timeframe, start_timestamp, end_timestamp):
-        with _LOCK:
+        with _LOCK, self._process_lock():
             d=self._read()
             if not isinstance(d,dict) or d.get("status")=="CORRUPT": raise ValueError("holdout vault is not in a valid sealed state")
             if int(d.get("access_count",0))>=1 or d.get("status")=="OPENED_ONCE": raise ValueError("final holdout has already been opened; it cannot be reused")
@@ -62,5 +122,5 @@ class HoldoutVault:
             failed=[k for k,v in checks.items() if not v]
             if failed: raise ValueError("holdout identity mismatch: "+", ".join(failed))
             d["access_count"]=1; d["last_access_at"]=time.time(); d["status"]="OPENED_ONCE"
-            self.path.write_text(json.dumps(d,sort_keys=True),encoding="utf-8")
+            self._write_atomic(d)
             return {"access_count":1,"status":"OPENED_ONCE","checks":checks}
