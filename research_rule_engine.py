@@ -4,6 +4,7 @@ No Python/eval expressions are accepted. Every feature is trailing/causal and
 signals are emitted at candle close for next-open execution.
 """
 from __future__ import annotations
+
 import math
 import numpy as np
 import pandas as pd
@@ -56,7 +57,6 @@ def _condition(features, spec):
         if op in {">", ">=", "<", "<=", "between", "crosses_above", "crosses_below"} and isinstance(value, bool):
             raise ValueError("numeric operators require numeric, non-boolean values")
     if feature not in features.columns: raise ValueError(f"unknown research feature: {feature}")
-    if op not in OPS: raise ValueError(f"unsupported operator: {op}")
     x=features[feature]
     if op=="crosses_above":
         y=float(spec["value"]); return (x.shift(1)<=y)&(x>y)
