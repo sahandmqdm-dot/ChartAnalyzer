@@ -2184,12 +2184,14 @@ def api_evaluate_holdout(payload: dict):
         audit=_audit_research_frame(df,source,tf); C=conf()
         did=dataset_fingerprint(df,source=source,symbol=symbol,timeframe=tf)
         ch=config_fingerprint(_research_execution_config(tf,symbol,None,C))
-        claim=HoldoutVault(HOLDOUT_VAULT_PATH).claim(
-            dataset_id=did,config_hash=ch,source=source,symbol=symbol,timeframe=tf,
-            start_timestamp=float(df["time"].iloc[0]),end_timestamp=float(df["time"].iloc[-1]))
+        # Complete all fallible analysis work before consuming the one-time seal.
+        # A transient backtest failure must not permanently burn the final sample.
         result=backtest(df,tf,symbol=symbol)
         result=_attach_research_provenance(result,df,source=source,symbol=symbol,tf=tf,
             requested_n=count,audit=audit,scope="single_use_final_holdout")
+        claim=HoldoutVault(HOLDOUT_VAULT_PATH).claim(
+            dataset_id=did,config_hash=ch,source=source,symbol=symbol,timeframe=tf,
+            start_timestamp=float(df["time"].iloc[0]),end_timestamp=float(df["time"].iloc[-1]))
         return {"status":"HOLDOUT_CONSUMED_ONCE","claim":claim,"provenance":result.get("provenance"),
                 "metrics":{k:result.get(k) for k in ("trades","strategy_pct","net_expectancy_pct","net_profit_factor",
                     "net_win_rate_pct","max_dd_pct","buyhold_net_pct","sharpe_approx")},
