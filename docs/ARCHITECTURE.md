@@ -1,69 +1,89 @@
-# ChartAnalyzer V6 Architecture
+# ChartAnalyzer Architecture and Research Boundaries
 
 ## Mission
-Transform ChartAnalyzer from a technical-analysis scoring tool into a quantitative market intelligence and future-prediction platform that:
-- Validates data integrity before analysis
-- Detects market structure and regimes causally
-- Evaluates statistical edge (and rejects signals without evidence)
-- Produces multi-horizon distributional forecasts with uncertainty
-- Tracks forecast accuracy in a persistent journal
-- Applies realistic costs and risk gates before any trade decision
-- Supports reproducible backtesting and strategy autopsy
 
-## Design Principles
-1. **Causal by construction** — no look-ahead; forming candles are never treated as closed history.
-2. **Evidence over indicators** — technical agreement is not edge.
-3. **Uncertainty is first-class** — every forecast carries quantiles and calibration status.
-4. **NO_TRADE is a valid and preferred outcome** when evidence or economics fail.
-5. **Reproducibility** — seeds, model versions, data cutoffs stored with every forecast.
-6. **Mathematical consistency** — Gross R, Net R and Expected Value must reconcile.
+ChartAnalyzer is a local quantitative market-analysis and research platform. Its purpose is to validate market data, compute causal indicators and market context, evaluate forecasts and strategy evidence, and block actionable decisions when required evidence is absent or weak.
 
-## Module Map (V6)
+A positive technical score is not, by itself, proof of statistical edge. `NO_TRADE` is an intentional outcome.
 
-| Module | Role |
-|--------|------|
-| `data_integrity.py` | OHLCV validation, gaps, staleness, shape checks. Blocks analysis on critical failure. |
-| `trend_engine.py` | Market structure (HH/HL/LH/LL, BOS/CHoCH approximations, FVG, trendlines, fib). |
-| `predictive_intelligence.py` | Regime classification, bootstrap cone (legacy + extended). |
-| `statistical_edge.py` | Forward-return association, t-stats, effective sample size, evidence levels. |
-| `forecast_engine.py` | Multi-horizon block-bootstrap forecasts, quantiles, experimental directionals, scenarios. |
-| `backtest_engine.py` | Causal next-open long/short backtester, trade log, autopsy summary, cost-aware metrics. |
-| `walk_forward.py` | Sequential non-overlapping out-of-sample evaluation of a frozen causal signal. |
-| `margin_engine.py` | Exchange-neutral isolated-margin and liquidation-threshold estimate for linear Futures; separate from historical backtest execution. |
-| `agent_core.py` | Trade gate (EV, net R, sample-size), prediction journal (SQLite), calibration helpers. |
-| `app.py` | HTTP API + lightweight UI server, multi-timeframe orchestration, providers. |
+## Design principles
 
-## Data Flow (per request)
-1. Load OHLCV (Ramzinex / CCXT / UDF / CSV)
-2. `audit_ohlcv` → BLOCKED or PASS
-3. Drop forming candle for historical analysis
-4. Compute indicators + regime-weighted score (causal)
-5. Structure analysis (trend_engine)
-6. Statistical edge evaluation on the score series
-7. Multi-horizon forecast (forecast_engine)
-8. Risk / decision gate (agent_core.decide)
-9. Optional journal write + later resolve
-10. Optional backtest on the same causal signal
-11. Optional frozen-signal Walk-Forward validation with isolated OOS folds
-12. Optional standalone Futures isolated-margin estimate through `/api/margin`; it is not part of the historical trade simulator
+1. **Causal inputs:** features used for a decision must have been available at that decision time.
+2. **Evidence before deployment:** in-sample results and indicator agreement do not authorize a trade.
+3. **Net execution economics:** fees, spread, slippage, impact, delay, sizing and configured funding must be represented in the relevant evaluation.
+4. **Uncertainty is explicit:** bootstrap intervals and directional forecasts remain diagnostics unless calibrated and validated.
+5. **Reproducibility:** normalized OHLCV and canonical execution configuration are fingerprinted.
+6. **Fail closed:** missing, stale, mismatched or insufficient OOS evidence blocks eligibility.
+7. **No automatic promotion:** research outputs do not silently change the live signal or execution rules.
 
-## Forecasting Policy
-- Primary distribution: moving-block bootstrap of demeaned log returns.
-- Drift is added only when a t-test on recent returns supports it.
-- Directional probabilities derived from bootstrap mass are labelled **EXPERIMENTAL_UNCALIBRATED** until the Forecast Journal has enough resolved outcomes for calibration.
-- Monte Carlo path frequencies are never presented as real-world probabilities.
+## Application flow
 
-## Known Limitations (honest)
-- Full SMC (order blocks, liquidity sweeps with institutional volume) is partial; structure is based on swing and FVG heuristics.
-- Neural sequence models (LSTM/Transformer) are not included in this release; they require substantial data, GPU, and rigorous walk-forward harnesses that exceed current dependency and validation scope.
-- Backtest remains bar-level next-open; true order-book simulation is not present.
-- Probability calibration is journal-driven and starts empty for new installations.
-- Short-side support in backtest is new and should be treated as experimental until more exhaustive tests pass.
-- Futures margin calculator uses a linear isolated-position approximation; exchange tiers, Cross margin, mark-price mechanics and actual liquidation execution are not modelled.
-- Historical Futures backtests do not yet simulate margin calls, liquidation events or historical funding schedules.
+1. Load OHLCV from a configured source (Ramzinex, CCXT, UDF or CSV).
+2. Normalize and audit timestamps and OHLCV shape using `data_integrity.py`; invalid data is blocked, not synthetically filled.
+3. Compute indicators and causal market context.
+4. Produce trend, regime, statistical-edge and forecast diagnostics.
+5. Evaluate the decision using the configured risk and trade gates.
+6. Optionally run the next-open backtest and sequential Walk-Forward evaluation.
+7. Record provenance and OOS experiment evidence where enabled.
+8. Apply `strategy_validation.py` before a strategy can be marked eligible.
 
-## Futures margin assumptions
-`margin_engine.py` estimates initial margin as `entry_price * quantity / leverage`. It solves for the price at which isolated equity reaches a reserve based on `maintenance_margin_rate + liquidation_fee_rate`. The extra fee reserve is intentionally conservative and exchange-neutral. Quantity is in base units and all monetary outputs are in quote currency. It must not be treated as an exchange liquidation oracle.
+## Core modules
 
-## Testing
-See `tests/`. Critical invariants: no look-ahead in scores, fee accounting, data integrity blocking, edge engine sample guards.
+| Module | Responsibility and boundary |
+|---|---|
+| `app.py` | HTTP API, dashboard, orchestration, configuration and request validation. |
+| `data_integrity.py` | OHLCV integrity, timestamp spacing, gaps and stale-candle warnings. Does not repair or fill candles. |
+| `trend_engine.py` | Market-structure and trend diagnostics. |
+| `market_regime_intelligence.py` | Causal regime and transition diagnostics; research output does not automatically tune signals. |
+| `statistical_edge.py` | Forward-return association and sample/effective-sample diagnostics. |
+| `forecast_engine.py` | Distributional forecast diagnostics; probabilities require calibration before operational interpretation. |
+| `backtest_engine.py` | Bar-level next-open simulator with configured transaction costs, optional ATR exits and synthetic futures exposure. |
+| `walk_forward.py` | Chronological, non-overlapping OOS evaluation of the supplied frozen signal. |
+| `research_provenance.py` | Dataset/config fingerprints, run identity and diagnostic cohort consistency. |
+| `research_statistics.py` | Moving-block bootstrap, block permutation, matched random-entry control and Benjamini-Hochberg correction. |
+| `research_protocol.py` | Chronological split, purged/embargoed split and feature-availability audit primitives. |
+| `research_rule_engine.py` | Safe declarative Long/Flat research-rule compiler; no arbitrary Python expressions. |
+| `research_registry.py` | Append-only hypothesis/experiment registry and registered-family FDR calculations. |
+| `research_robustness.py` | Parameter-neighborhood, cross-symbol and regime stability summaries. |
+| `entry_edge_research.py`, `exit_policy_research.py` | OOS trade-level entry and exit diagnostics; not automatic optimizers. |
+| `holdout_vault.py` | Local single-use holdout lifecycle control. Not a cryptographic boundary against filesystem administrators. |
+| `strategy_validation.py` | Fail-closed OOS evidence gate for a precise market/configuration identity. |
+| `iran_crypto_market.py`, `iran_crypto_mcp.py` | Optional read-only Iranian exchange data integration through MCP. Not used to silently augment historical research samples. |
+| `agent_core.py` | Decision support, trade gate and local prediction journal. |
+| `margin_engine.py` | Exchange-neutral isolated-margin estimate; not an exchange liquidation oracle. |
+
+## Quant Research Engine (QRE) data flow
+
+1. Fingerprint the exact normalized OHLCV window and canonical strategy/execution settings.
+2. Run the existing causal signal through sequential OOS Walk-Forward folds.
+3. Register hypotheses before evaluating them; declarative rules are compiled from supported causal features.
+4. Estimate dependence-aware uncertainty and compare against pre-defined random-entry and entry-timing controls.
+5. Preserve completed and failed experiments in the registry and adjust the registered p-value family using FDR.
+6. Keep the final holdout separate from ordinary research endpoints and permit only one exact-configuration evaluation.
+7. Evaluate the latest matching evidence using the fail-closed strategy gate.
+
+The detailed protocol and API contracts are maintained in `docs/QUANT_RESEARCH_ENGINE.md`.
+
+## Execution model and limitations
+
+- The historical simulator observes the signal at candle close and normally fills at the next candle open, with optional additional execution delay.
+- OHLC bars do not reveal the true intrabar path, order-book depth, queue position or actual market impact. When both ATR stop and target are touched in one bar, the simulator uses a conservative stop-first assumption.
+- Futures exposure is synthetic. The historical backtest does not model exchange liquidation, margin calls or historical funding schedules; configured constant per-bar funding is only a simplified assumption.
+- The buy-and-hold benchmark is synthetic and uses the configured cost model, not an exchange-native index.
+- The entry-timing permutation and matched random-entry controls are diagnostics, not full stop/target/order-book execution simulations.
+- Holdout sealing is a local logical control. A person with filesystem access can alter local state.
+- LAN mode uses HTTP; do not expose it directly to the public internet. Use a trusted network, firewall and HTTPS reverse proxy where remote access is required.
+- Optional MCP integration is read-only by design and remains disabled unless configured.
+
+## Validation and release policy
+
+GitHub Actions runs the Python test suite on Python 3.12 and 3.13, dependency auditing, Bandit scanning and advisory Ruff analysis. A green required CI run is evidence of software checks, not proof of trading profitability, live exchange compatibility or Windows deployment readiness.
+
+Before a release is considered operationally ready, separately verify:
+- Windows / Python 3.12 installation and runtime.
+- Ramzinex read-only connectivity and data normalization.
+- Historical dataset provenance, gap policy and symbol/timeframe alignment.
+- OOS evidence on untouched chronological data for the exact strategy configuration.
+- Execution costs, stress scenarios and exchange-specific futures mechanics.
+
+No release should claim profitability without independently reproducible, sufficiently powered, net-of-cost OOS evidence.

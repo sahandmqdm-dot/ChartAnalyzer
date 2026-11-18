@@ -1,6 +1,9 @@
-numpy>=1.24
+numpy>=2.5.4
+dependabot/pip/requests-gte-2.34.2
+numpy>=2.5.4
 pandas>=2.0
 requests>=2.31
-pytest>=7.0
+pytest>=9.2.0main
+pytest>=9.2.0
 # Optional: ccxt for additional exchanges
 # scipy is useful for future statistical extensions but not required for core V6

@@ -1,74 +1,105 @@
-# گزارش ممیزی امنیتی ChartAnalyzer
+name: CI
 
-**شاخه بررسی:** `security-audit-fixes-2026-11-18-v2`  
-**شاخه مبنا:** `main`  
-**دامنه:** برنامه Python، سرور HTTP و API، داشبورد، فایل‌های محلی، SQLite، MCP، تنظیمات و CI  
-**نوع بررسی:** بازبینی ایستای کد، اصلاحات دفاعی و آزمون‌های بازگشتی؛ این گزارش ادعای تست نفوذ زنده یا ممیزی مستقل شخص ثالث نیست.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
-## خلاصه اجرایی
+permissions:
+  contents: read
 
-در بررسی، چند ریسک قابل اصلاح پیدا شد. اصلاحات زیر در همین شاخه اعمال شده‌اند و هنوز وارد `main` نشده‌اند:
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-| شدت اولیه | مسئله | وضعیت |
-|---|---|---|
-| بالا | امکان درخواست مرورگری cross-origin به APIهای محلی، به‌خصوص GETهای دارای اثر جانبی، با توجه به مجوز Loopback | اصلاح شد؛ بررسی Origin و Fetch Metadata برای همه روش‌ها |
-| بالا | بررسی UDF allowlist با تطبیق ساده پیشوند URL | اصلاح شد؛ تطبیق scheme، hostname، port و مرز مسیر |
-| متوسط | خواندن CSV بدون سقف اندازه و تعداد ردیف | اصلاح شد؛ سقف 25 MiB و 250,000 ردیف |
-| متوسط | انتقال متغیرهای محیطی حاوی API key و توکن LAN به فرایند فرزند MCP | اصلاح شد؛ محیط فرزند حداقلی و allowlist شده |
-| متوسط | مصرف‌شدن Holdout پیش از پایان موفق بک‌تست | اصلاح شد؛ claim پس از محاسبه و تولید provenance و قفل بین‌پردازه‌ای |
-| متوسط | ورودی‌های بزرگ و بدون سقف در robustness و رجیستری پژوهش | اصلاح شد؛ سقف 5,000 ردیف، 64 KiB برای specification و 256 KiB برای metrics |
-| متوسط | بازشدن SQLite پیش از محدودشدن مجوز فایل | اصلاح شد؛ ایجاد/تغییر مجوز پیش از اتصال و رد مسیر symlink |
-| متوسط | دریافت نسخه شناور MCP از PyPI | اصلاح شد؛ پیش‌فرض روی نسخه 0.5.2 قفل شد |
-| پایین | هدرهای امنیتی و محدودیت‌های درخواست HTTP | تقویت شد |
-| پایین | وابستگی به tagهای قابل‌تغییر GitHub Actions | اصلاح شد؛ pin به commit SHA و فعال‌سازی Dependabot |
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} tests
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest-cov
+      - name: Compile Python sources
+        run: python -m compileall -q .
+      - name: Run tests and measure coverage
+        run: |
+          python -m pytest -q tests/ --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-python-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: warn
+          retention-days: 14
 
-## جزئیات اصلاحات و محل کد
+  security-audit:
+    name: Python dependency security audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install audit tool
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+      - name: Audit dependencies
+        run: python -m pip_audit -r requirements.txt
 
-- `app.py:353` — تابع `_udf_url_allowed`: دیگر دامنه‌ای مانند `trusted.example.attacker.invalid` صرفاً به‌دلیل پیشوند مشترک پذیرفته نمی‌شود.
-- `app.py:72` — تابع `_read_csv_bounded`: فایل پیش از parse از نظر اندازه و تعداد ردیف محدود می‌شود.
-- `app.py:2119` — تابع `_bounded_research_rows`: ورودی‌های robustness از نظر نوع و تعداد کنترل می‌شوند.
-- `app.py:3182-3215` — اعتبارسنجی توکن و سیاست same-origin؛ درخواست‌های cross-site، از جمله GET، رد می‌شوند.
-- `app.py:3283` و `app.py:3424` — timeout اتصال، صف محدود و سقف workerهای هم‌زمان سرور.
-- `app.py:2203` — Holdout تنها پس از موفقیت بک‌تست و ساخت provenance مصرف می‌شود.
-- `iran_crypto_mcp.py:22` — محیط فرایند MCP فقط متغیرهای مجاز را دریافت می‌کند؛ کلیدهای LLM و توکن LAN منتقل نمی‌شوند.
-- `iran_crypto_market.py:12` — نسخه پیش‌فرض MCP روی `0.5.2` pin شده و پیکربندی اجرا اعتبارسنجی می‌شود.
-- `research_registry.py:14-15, 41, 99` — اندازه specification و metrics محدود شده و فایل SQLite قبل از بازشدن خصوصی می‌شود.
-- `agent_core.py:26` — فایل journal نیز پیش از اتصال SQLite با مجوز مالک محدود می‌شود.
-- `.github/workflows/ci.yml` — Bandit به‌عنوان اسکن امنیتی blocking اضافه و Actionها به SHA ثابت pin شده‌اند.
-- `.github/dependabot.yml` — به‌روزرسانی هفتگی وابستگی‌های Python و GitHub Actions فعال شده است.
+  bandit:
+    name: Python security static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install Bandit
+        run: python -m pip install bandit
+      - name: Scan application code
+        # B104 is intentionally excluded: --lan binds 0.0.0.0 only when explicitly
+        # requested and then requires the configured/generated access token.
+        run: bandit -r . -ll --skip B104 -x tests,.git,.venv,venv
 
-## آزمون‌های بازگشتی اضافه‌شده
-
-- دور زدن UDF allowlist با دامنه جعلی، مسیر مشابه، scheme متفاوت، credential و query string
-- رد درخواست مرورگری cross-origin و پذیرش درخواست same-origin
-- مصرف‌نشدن Holdout در صورت شکست بک‌تست
-- رد CSV بزرگ یا دارای ردیف بیش از حد
-- محدودیت نوع و تعداد ردیف‌های robustness
-- رد specification و metrics بیش از سقف
-- مجوز 0600 فایل SQLite و رد مسیر symlink در POSIX
-- عدم انتقال کلیدهای محیطی به MCP
-- pin بودن نسخه پیش‌فرض MCP و مهاجرت تنظیم قدیمی
-- اعتبارسنجی توکن LAN و تنظیمات اجرای MCP
-
-## بررسی فایل‌های حساس
-
-در درخت فایل‌های شاخه ممیزی، فایل واقعی `config.json`، فایل `.env`، پایگاه داده محلی، کلید خصوصی یا فایل credential ردیابی‌شده پیدا نشد. الگوهای این فایل‌ها در `.gitignore` قرار دارند. فایل `config.example.json` نمونه تنظیمات است و نباید حاوی secret واقعی باشد.
-
-## ریسک‌های باقی‌مانده
-
-1. **LAN هنوز HTTP است، نه HTTPS.** در شبکه‌ای که امکان شنود دارد، توکن ممکن است افشا شود. سرور داخلی را مستقیماً در اینترنت منتشر نکنید.
-2. **Loopback همچنان عمداً بدون توکن مجاز است.** کنترل Origin/Fetch Metadata حمله مرورگری cross-site را محدود می‌کند؛ اما فرایند محلیِ مخرب همچنان می‌تواند به سرویس محلی درخواست بفرستد.
-3. **توکن LAN مشترک است.** حساب کاربری مستقل، نقش‌ها، نشست‌های قابل ابطال و ممیزی per-user وجود ندارد.
-4. **فرمان و آرگومان MCP تنظیم مدیریتی محسوب می‌شوند.** هر کسی که بتواند `config.json` را تغییر دهد می‌تواند executable دیگری را اجرا کند. این فایل را در اختیار کاربر غیرقابل‌اعتماد نگذارید.
-5. **نسخه اصلی MCP pin شده، اما تمام وابستگی‌های transitive محیط uvx به‌صورت lockfile و hash قفل نشده‌اند.** ارتقا را آگاهانه انجام دهید.
-6. **CSP هنوز برای اسکریپت‌ها و styleهای inline اجازه لازم را دارد.** مقادیر پویا escape می‌شوند، اما مهاجرت کامل به nonce/hash CSP همچنان کار آینده است.
-7. **UDF فقط به میزبان‌های allowlist‌شده محدود است.** مدیر باید فقط میزبان‌های قابل اعتماد را وارد کند؛ HTTP و DNS میزبان‌های allowlist‌شده همچنان سطح اعتماد جداگانه‌اند.
-8. **Ruff در حال حاضر advisory است.** خطاهای سبک موجود نباید با شکست اسکن امنیتی Bandit اشتباه گرفته شوند؛ بهتر است بدهی lint در کار جداگانه پاک‌سازی و سپس Ruff اجباری شود.
-
-## راهنمای انتشار
-
-- ابتدا CI کامل همین شاخه را سبز کنید.
-- تغییرات را بازبینی کنید؛ این PR به‌صورت خودکار روی `main` اعمال نشده است.
-- برای دسترسی از راه دور، HTTPS reverse proxy، فایروال و کنترل دسترسی شبکه را اضافه کنید.
-- اگر توکن یا provider key قبلاً در شبکه یا log افشا شده، آن را rotate کنید.
-- پس از merge، برنامه را ابتدا در حالت loopback اجرا و سپس LAN را فقط در شبکه مورد اعتماد فعال کنید.
+  static-analysis:
+    name: Static analysis (advisory)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install Ruff
+        run: python -m pip install ruff
+      - name: Run Ruff
+        run: ruff check . --output-format=github

@@ -124,16 +124,37 @@ def test_live_gate_still_requires_matching_oos_validation_and_existing_ev_checks
     assert blocked["deployment_validation"]["status"] == "MISSING"
 
 
-def test_canonical_research_fingerprint_ignores_report_side_runtime_fields():
+def test_canonical_research_fingerprint_ignores_untrusted_report_metrics_but_tracks_wf_settings():
     import app
     from research_provenance import config_fingerprint
     C=app._merge(app.DEFAULTS,{})
-    a=app._research_execution_config('1h','USDTIRR',None,C)
-    b=app._research_execution_config('1h','USDTIRR',{
+    baseline=app._research_execution_config('1h','USDTIRR',None,C)
+    report_only=app._research_execution_config('1h','USDTIRR',{
         'fee_per_side':0.049,'spread_slippage_rt':0.04,'stop_atr_mult':9.0,
-        'market_type':'futures','leverage':99
+        'market_type':'futures','leverage':99,'trades':999,'strategy_pct':42.0
     },C)
-    assert config_fingerprint(a)==config_fingerprint(b)
+    assert config_fingerprint(baseline)==config_fingerprint(report_only)
+
+    # A request-level evaluation override must not reuse evidence from the
+    # configured/default split, warm-up or embargo settings.
+    for override in (
+        {'configured_n_splits':7},
+        {'configured_warmup_bars':240,'effective_warmup_bars':240},
+        {'configured_gap_bars':3},
+    ):
+        changed=app._research_execution_config('1h','USDTIRR',override,C)
+        assert config_fingerprint(baseline)!=config_fingerprint(changed)
+
+    # The ordinary live gate and an OOS run using the exact configured values
+    # must still compute the same fingerprint.
+    configured=C['walk_forward']
+    same=app._research_execution_config('1h','USDTIRR',{
+        'configured_n_splits':configured['n_splits'],
+        'configured_warmup_bars':configured['warmup_bars'],
+        'configured_gap_bars':configured['gap_bars'],
+        'effective_warmup_bars':max(configured['warmup_bars'],app.required_indicator_warmup('1h',C)),
+    },C)
+    assert config_fingerprint(baseline)==config_fingerprint(same)
 
 
 def test_research_lab_routes_are_registered():

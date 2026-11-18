@@ -1111,7 +1111,9 @@ def walk_forward_backtest(df, tf, symbol="", n_splits=None, warmup_bars=None, ga
     entry_market_regime = mri_frame["regime"].to_numpy(dtype=object) if mri_frame is not None else None
     entry_regime_transition = mri_frame["transition"].to_numpy(dtype=bool) if mri_frame is not None else None
     allowed = filter_restricted_bars(df, C, tf)
+    configured_splits = int(n_splits if n_splits is not None else wf.get("n_splits", 5))
     configured_warmup = int(warmup_bars if warmup_bars is not None else wf.get("warmup_bars", 120))
+    configured_gap = int(gap_bars if gap_bars is not None else wf.get("gap_bars", 0))
     effective_warmup = max(configured_warmup, required_indicator_warmup(tf, C))
     engine_kwargs.update({
         "atr": _backtest_atr(df, indicators),
@@ -1124,9 +1126,9 @@ def walk_forward_backtest(df, tf, symbol="", n_splits=None, warmup_bars=None, ga
         df, signal, entry_regime=entry_regime, entry_market_regime=entry_market_regime,
         entry_regime_transition=entry_regime_transition,
         entry_allowed=allowed, entry_components=components,
-        n_splits=int(n_splits if n_splits is not None else wf.get("n_splits", 5)),
+        n_splits=configured_splits,
         warmup_bars=effective_warmup,
-        gap_bars=int(gap_bars if gap_bars is not None else wf.get("gap_bars", 0)),
+        gap_bars=configured_gap,
         engine_kwargs=engine_kwargs,
         include_diagnostics=bool(include_diagnostics),
     )
@@ -1145,7 +1147,10 @@ def walk_forward_backtest(df, tf, symbol="", n_splits=None, warmup_bars=None, ga
     result["cost_multiplier"] = multiplier
     result["funding_fee_per_bar"] = float(engine_kwargs["funding_fee_per_bar"])
     result["execution_model"] = f"signal close; extra delay {int(engine_kwargs['execution_delay_bars'])} bars; next-open fill; OHLC intrabar ATR stop/target; stop-first if both levels touch"
+    result["configured_n_splits"] = configured_splits
     result["configured_warmup_bars"] = configured_warmup
+    result["configured_gap_bars"] = configured_gap
+    result["effective_warmup_bars"] = effective_warmup
     result["required_indicator_warmup_bars"] = required_indicator_warmup(tf, C)
     result["warmup_adjustment_applied"] = effective_warmup > configured_warmup
     result["restricted_hours_config"] = copy.deepcopy(C.get("restricted_hours") or {})
@@ -1724,13 +1729,24 @@ def api_trend_mtf(source: str = "ramzinex", symbol: str = "USDTIRR", exchange: s
 
 
 def _research_execution_config(tf, symbol, result=None, C=None):
-    """Canonical config derived only from the active config used by the engine.
+    """Canonical execution/evaluation config used by both provenance and the live gate.
 
-    Runtime result fields are deliberately ignored: provenance and the live gate
-    must fingerprint the exact same configuration, never a report-side override.
+    Only explicitly whitelisted Walk-Forward settings are read from the result;
+    report metrics and incidental runtime fields never affect the fingerprint.
+    A request override therefore cannot reuse evidence generated with a different
+    split, warm-up or embargo configuration.
     """
     C = _merge(DEFAULTS, C if C is not None else conf())
     bt = C.get("backtest") or {}
+    wf = C.get("walk_forward") or {}
+    evaluation = result if isinstance(result, dict) else {}
+    configured_splits = int(evaluation.get("configured_n_splits", wf.get("n_splits", 5)))
+    configured_warmup = int(evaluation.get("configured_warmup_bars", wf.get("warmup_bars", 120)))
+    configured_gap = int(evaluation.get("configured_gap_bars", wf.get("gap_bars", 0)))
+    effective_warmup = int(evaluation.get(
+        "effective_warmup_bars", max(configured_warmup, required_indicator_warmup(tf, C))
+    ))
+    cost_multiplier = float(evaluation.get("cost_multiplier", 1.0))
     market_type = str(bt.get("market_type", "spot")).lower()
     allow_short = bool(bt.get("allow_short_futures", True)) if market_type == "futures" else False
     leverage = float(bt.get("futures_leverage", 1.0)) if market_type == "futures" else 1.0
@@ -1754,6 +1770,13 @@ def _research_execution_config(tf, symbol, result=None, C=None):
         "stop_atr_mult": float(bt.get("stop_atr_mult", 1.5)),
         "target_atr_mult": float(bt.get("target_atr_mult", 2.0)),
         "restricted_hours": C.get("restricted_hours", {}),
+        "walk_forward": {
+            "n_splits": configured_splits,
+            "configured_warmup_bars": configured_warmup,
+            "effective_warmup_bars": effective_warmup,
+            "gap_bars": configured_gap,
+        },
+        "cost_multiplier": cost_multiplier,
     }
 
 
