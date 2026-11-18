@@ -5,15 +5,14 @@ The adapter is deliberately read-only. It never exposes account or trading tools
 from __future__ import annotations
 
 import json
-import os
 import math
+import os
 import queue
-from collections import deque
 import shutil
 import subprocess
 import threading
-import time
-from typing import Any, Dict, Optional
+from collections import deque
+from typing import Any
 
 
 class MCPError(RuntimeError):
@@ -51,7 +50,7 @@ class StdioMCPClient:
         self.proc = None
         self._reader = None
         self._stderr_reader = None
-        self._responses: Dict[int, queue.Queue] = {}
+        self._responses: dict[int, queue.Queue] = {}
         self._lock = threading.RLock()
         self._init_lock = threading.RLock()
         self._write_lock = threading.Lock()
@@ -88,8 +87,8 @@ class StdioMCPClient:
                 if not line:
                     break
                 self._stderr_tail.append(line.rstrip()[:500])
-        except Exception:
-            pass
+        except OSError as exc:
+            self._stderr_tail.append(f"stderr read failed: {type(exc).__name__}")
 
     def _read_stdout(self):
         try:
@@ -102,8 +101,8 @@ class StdioMCPClient:
                     self._stderr_tail.append("MCP response line exceeded 1 MB; child process terminated")
                     try:
                         self.proc.kill()
-                    except Exception:
-                        pass
+                    except OSError as exc:
+                        self._stderr_tail.append(f"could not terminate oversized MCP child: {type(exc).__name__}")
                     break
                 line = line.strip()
                 if not line:
@@ -191,7 +190,7 @@ class StdioMCPClient:
         self.initialize()
         return self._tools
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]):
+    def call_tool(self, name: str, arguments: dict[str, Any]):
         tools = self.tools
         if name not in tools:
             raise MCPError(f"Tool not available from iran-crypto-mcp: {name}")
