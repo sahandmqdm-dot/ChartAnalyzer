@@ -33,7 +33,7 @@
   "iran_crypto_mcp": {
     "enabled": false,
     "command": "uvx",
-    "args": ["iran-crypto-mcp"],
+    "args": ["--from", "iran-crypto-mcp==0.5.2", "iran-crypto-mcp"],
     "timeout_sec": 25,
     "default_quote": "IRT",
     "default_exchange": "wallex",
