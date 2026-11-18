@@ -1536,7 +1536,9 @@ def _iran_mcp_call(method, **kwargs):
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, redact(f"{type(exc).__name__}: {exc}"))
     except Exception as exc:
-        raise HTTPException(502, redact(f"Iran Crypto MCP unavailable: {type(exc).__name__}: {exc}"))
+        # Child-process stderr and upstream exceptions may contain local paths or secrets.
+        print("[iran-mcp]", redact(f"{type(exc).__name__}: {exc}")[:300])
+        raise HTTPException(502, "Iran Crypto MCP unavailable; inspect the local application console.")
 
 
 @app.get("/api/iran-crypto/compare")
