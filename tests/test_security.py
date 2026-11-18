@@ -1,11 +1,17 @@
 import os
 import inspect
+import io
+import queue
 
 import pytest
 
 import app
 from iran_crypto_market import IranCryptoMarket
 from iran_crypto_mcp import MCPError, StdioMCPClient, _child_environment
+from research_rule_engine import compile_long_flat_rule
+from research_registry import ResearchRegistry
+from holdout_vault import HoldoutVault
+import pandas as pd
 
 
 @pytest.mark.parametrize("url,allow,expected", [
@@ -74,3 +80,75 @@ def test_http_response_security_headers_are_defined():
     assert "nosniff" in inspect.getsource(app.make_handler)
     assert "frame-ancestors 'none'" in app.CSP
     assert "base-uri 'none'" in app.CSP
+
+
+
+@pytest.mark.parametrize("address", [
+    "127.0.0.1",
+    "127.0.0.2",
+    "127.255.255.254",
+    "::1",
+    "::ffff:127.0.0.1",
+])
+def test_all_loopback_addresses_are_recognized(address):
+    assert app._loopback(address)
+
+
+@pytest.mark.parametrize("address", ["192.0.2.1", "10.0.0.1", "2001:db8::1", "not-an-ip"])
+def test_non_loopback_addresses_are_not_trusted(address):
+    assert not app._loopback(address)
+
+
+def test_holdout_vault_rejects_non_object_metadata_and_writes_private_file(tmp_path):
+    path = tmp_path / "vault.json"
+    path.write_text("[]", encoding="utf-8")
+    vault = HoldoutVault(path)
+    assert vault.status()["status"] == "CORRUPT"
+    path.unlink()
+    vault.seal(dataset_id="D1", config_hash="C1", source="csv", symbol="BTCUSDT",
+               timeframe="1h", start_timestamp=1, end_timestamp=2)
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600
+    vault.claim(dataset_id="D1", config_hash="C1", source="csv", symbol="BTCUSDT",
+                timeframe="1h", start_timestamp=1, end_timestamp=2)
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_research_registry_database_is_private(tmp_path):
+    path = tmp_path / "research.db"
+    registry = ResearchRegistry(path)
+    registry.summary()
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("spec", [
+    {"entry": {"all": [{"feature": "score", "op": ">", "value": 0}]}, "max_holding_bars": 5001},
+    {"entry": {"all": [{"feature": "score", "op": ">", "value": float("inf")}]}},
+    {"entry": {"all": [{"feature": "score", "op": ">", "value": 0, "python": "eval"}]}},
+    {"entry": {"all": [{"feature": "score", "op": ">", "value": 0}] * 33}},
+    {"entry": {"all": [{"feature": "score", "op": ">", "value": True}]}},
+])
+def test_research_rule_compiler_rejects_unbounded_or_unsafe_specs(spec):
+    features = pd.DataFrame({"score": [0.0, 1.0, 2.0]})
+    with pytest.raises(ValueError):
+        compile_long_flat_rule(features, spec)
+
+
+def test_mcp_stdout_line_limit_terminates_oversized_child():
+    class FakeProcess:
+        def __init__(self):
+            self.stdout = io.StringIO("x" * 1_000_001)
+            self.killed = False
+
+        def kill(self):
+            self.killed = True
+
+    client = StdioMCPClient("python", ["-c", "pass"])
+    client.proc = FakeProcess()
+    waiter = queue.Queue(maxsize=1)
+    client._responses[1] = waiter
+    client._read_stdout()
+    assert client.proc.killed
+    assert waiter.get_nowait() == {"_transport_closed": True}
