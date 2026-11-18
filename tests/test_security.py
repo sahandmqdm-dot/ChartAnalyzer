@@ -37,6 +37,7 @@ def test_mcp_child_environment_does_not_forward_provider_secrets(monkeypatch):
 
 @pytest.mark.parametrize("config", [
     {"command": 123, "args": ["iran-crypto-mcp"], "timeout_sec": 25},
+    {"command": "uvx" + chr(0) + "bad", "args": ["iran-crypto-mcp"], "timeout_sec": 25},
     {"command": "uvx", "args": "iran-crypto-mcp", "timeout_sec": 25},
     {"command": "uvx", "args": ["iran-crypto-mcp", None], "timeout_sec": 25},
     {"command": "uvx", "args": ["iran-crypto-mcp"], "timeout_sec": 999},
