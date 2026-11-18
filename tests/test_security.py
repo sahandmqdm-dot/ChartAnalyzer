@@ -67,6 +67,10 @@ def test_access_token_is_safe_for_query_and_cookie_transport(token, expected):
     assert app._valid_access_token(token) is expected
 
 
+def test_default_server_host_matches_documented_loopback_address():
+    assert app.DEFAULT_HOST == "127.0.0.1"
+
+
 def test_auth_uses_constant_time_comparison_and_loopback_policy():
     assert app._eq("same-token", "same-token")
     assert not app._eq("same-token", "other-token")
