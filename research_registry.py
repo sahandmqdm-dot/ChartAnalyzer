@@ -1,6 +1,12 @@
 """Append-only research hypothesis and experiment registry for ChartAnalyzer QRE."""
 from __future__ import annotations
-import hashlib, json, sqlite3, time, math, os
+
+import hashlib
+import json
+import math
+import os
+import sqlite3
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
