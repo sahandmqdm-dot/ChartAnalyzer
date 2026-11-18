@@ -39,6 +39,18 @@ class ResearchRegistry:
         self._init()
 
     def _db(self):
+        # Create/chmod the database before SQLite opens it, avoiding a permissive window.
+        if os.name == "posix":
+            if os.path.islink(self.path):
+                raise OSError("SQLite database path must not be a symbolic link")
+            flags = os.O_CREAT | os.O_RDWR
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(self.path, flags, 0o600)
+            try:
+                os.fchmod(fd, 0o600)
+            finally:
+                os.close(fd)
         con = sqlite3.connect(self.path, timeout=15)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys=ON")
