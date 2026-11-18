@@ -25,7 +25,7 @@ if ($config -isnot [System.Collections.IDictionary]) { throw "config.json root m
 $config["iran_crypto_mcp"] = @{
     enabled = $true
     command = $uvx.Source
-    args = @("iran-crypto-mcp")
+    args = @("--from", "iran-crypto-mcp==0.5.2", "iran-crypto-mcp")
     timeout_sec = 30
     default_quote = "IRT"
     default_exchange = "wallex"

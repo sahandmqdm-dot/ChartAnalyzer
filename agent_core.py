@@ -23,16 +23,35 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS predictions(
  UNIQUE(key, tf, bar, horizon_h))"""
 
 
+def _secure_sqlite_file(path):
+    """Create/chmod the database before SQLite opens it, avoiding a permissive window."""
+    if os.name != "posix":
+        return
+    if os.path.islink(path):
+        raise OSError("SQLite database path must not be a symbolic link")
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+
+
 def _db():
-    new = not os.path.exists(DB_PATH)
+    _secure_sqlite_file(DB_PATH)
     con = sqlite3.connect(DB_PATH, timeout=15)
     con.row_factory = sqlite3.Row
     con.execute(SCHEMA)
-    if new:
-        try:
-            os.chmod(DB_PATH, 0o600)
-        except OSError:
-            pass
+    # SQLite may create WAL/SHM sidecars; keep all journal state owner-readable only.
+    if os.name == "posix":
+        for candidate in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"):
+            try:
+                if os.path.exists(candidate):
+                    os.chmod(candidate, 0o600)
+            except OSError:
+                pass
     return con
 
 

@@ -15,6 +15,7 @@ The forecast is a probability cone, not a prediction of the future path.
 """
 import os, re, sys, time, json, math, stat, socket, secrets, inspect, threading, copy
 import urllib.parse
+import posixpath
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -22,6 +23,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 import pandas as pd
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import ipaddress
 import agent_core as AC
 import trend_engine as TE
 import predictive_intelligence as PMI
@@ -62,6 +64,21 @@ RAMZINEX = "https://publicapi.ramzinex.ir/exchange/api/v1.0/exchange/chart/tv/v2
 TF_MIN = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "12h": 720, "1d": 1440}
 SYM_RE = re.compile(r"^[A-Za-z0-9_\-/:.]{1,24}$")
 EX_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+
+CSV_MAX_BYTES = 25 * 1024 * 1024
+CSV_MAX_ROWS = 250_000
+
+
+def _read_csv_bounded(path):
+    """Read a local OHLCV CSV with hard size and row limits to avoid memory exhaustion."""
+    size = os.path.getsize(path)
+    if size > CSV_MAX_BYTES:
+        raise ValueError(f"CSV file exceeds the {CSV_MAX_BYTES // (1024 * 1024)} MiB safety limit")
+    frame = pd.read_csv(path, nrows=CSV_MAX_ROWS + 1)
+    if len(frame) > CSV_MAX_ROWS:
+        raise ValueError(f"CSV file exceeds the {CSV_MAX_ROWS:,} row safety limit")
+    return frame
+
 
 # ---------------------------------------------------------------- config
 # NOTE: the numbers below are starting points (heuristics), not tuned values.
@@ -333,6 +350,42 @@ def closed_candles(df, tf, now=None):
     return df.loc[df["time"].astype(float) + bar_sec <= now_ts].copy().reset_index(drop=True)
 
 
+def _udf_url_allowed(url, allowlist):
+    """Match a UDF URL against an exact trusted origin and a path-boundary prefix."""
+    try:
+        target = urllib.parse.urlsplit(str(url).strip())
+        if target.scheme not in ("http", "https") or not target.hostname:
+            return False
+        if target.username is not None or target.password is not None or target.query or target.fragment:
+            return False
+        if "%" in target.path or "\\\\" in target.path:
+            return False
+        target_port = target.port or (443 if target.scheme == "https" else 80)
+        target_host = target.hostname.rstrip(".").lower()
+        target_path = posixpath.normpath("/" + target.path.lstrip("/")).rstrip("/")
+        for item in allowlist:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            allowed = urllib.parse.urlsplit(item.strip())
+            if allowed.scheme not in ("http", "https") or not allowed.hostname:
+                continue
+            if allowed.username is not None or allowed.password is not None or allowed.query or allowed.fragment:
+                continue
+            if "%" in allowed.path or "\\\\" in allowed.path:
+                continue
+            allowed_port = allowed.port or (443 if allowed.scheme == "https" else 80)
+            allowed_host = allowed.hostname.rstrip(".").lower()
+            allowed_path = posixpath.normpath("/" + allowed.path.lstrip("/")).rstrip("/")
+            if (target.scheme == allowed.scheme and target_host == allowed_host
+                    and target_port == allowed_port
+                    and (not allowed_path or target_path == allowed_path
+                         or target_path.startswith(allowed_path + "/"))):
+                return True
+    except (TypeError, ValueError):
+        return False
+    return False
+
+
 def load(source, symbol, tf, n, exchange="coinex", udf_url="", csv_path=""):
     if tf not in TF_MIN:
         raise ValueError("unknown timeframe")
@@ -353,9 +406,12 @@ def load(source, symbol, tf, n, exchange="coinex", udf_url="", csv_path=""):
         allow = [a for a in (C.get("udf_allowlist") or []) if isinstance(a, str) and a]
         if not allow:
             raise ValueError("udf disabled: add trusted base URLs to 'udf_allowlist' in config.json")
-        if not any(udf_url.startswith(a) for a in allow):
-            raise ValueError("udf_url is not in udf_allowlist")
-        df = _udf(udf_url.rstrip("/") + ("" if udf_url.endswith("history") else "/history"), symbol, tf, n)
+        if not _udf_url_allowed(udf_url, allow):
+            raise ValueError("udf_url must match an exact trusted origin and path in udf_allowlist")
+        base = udf_url.rstrip("/")
+        path = urllib.parse.urlsplit(base).path.rstrip("/")
+        endpoint = base if path.endswith("/history") or path == "history" else base + "/history"
+        df = _udf(endpoint, symbol, tf, n)
     elif source == "ccxt":
         import ccxt
         if not EX_RE.match(exchange or "") or exchange not in ccxt.exchanges:
@@ -372,7 +428,7 @@ def load(source, symbol, tf, n, exchange="coinex", udf_url="", csv_path=""):
         full = os.path.realpath(os.path.join(base, name))
         if os.path.dirname(full) != base or not os.path.isfile(full):
             raise ValueError(f"csv: file not found in {base}")
-        df = pd.read_csv(full)
+        df = _read_csv_bounded(full)
         df.columns = [str(c).strip().lower() for c in df.columns]
         if "time" not in df.columns:
             for alt in ("date", "datetime", "timestamp"):
@@ -1501,7 +1557,9 @@ def _iran_mcp_call(method, **kwargs):
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, redact(f"{type(exc).__name__}: {exc}"))
     except Exception as exc:
-        raise HTTPException(502, redact(f"Iran Crypto MCP unavailable: {type(exc).__name__}: {exc}"))
+        # Child-process stderr and upstream exceptions may contain local paths or secrets.
+        print("[iran-mcp]", redact(f"{type(exc).__name__}: {exc}")[:300])
+        raise HTTPException(502, "Iran Crypto MCP unavailable; inspect the local application console.")
 
 
 @app.get("/api/iran-crypto/compare")
@@ -2058,13 +2116,26 @@ def api_research_split_preview(n: int = 1000, train_ratio: float = 0.60,
     except Exception as e: raise HTTPException(400,redact(f"{type(e).__name__}: {e}"))
 
 
+def _bounded_research_rows(payload, key, limit=5000):
+    rows = payload.get(key)
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise TypeError(f"{key} must be a JSON array")
+    if len(rows) > limit:
+        raise ValueError(f"{key} exceeds the {limit:,} row limit")
+    if any(not isinstance(row, dict) for row in rows):
+        raise TypeError(f"{key} must contain JSON objects only")
+    return rows
+
+
 @app.post("/api/research-lab/robustness")
 def api_research_robustness(payload: dict):
     from research_robustness import parameter_neighborhood_stability, cross_symbol_stability, regime_stability
     try:
-        return {"parameter_stability":parameter_neighborhood_stability(payload.get("parameter_runs") or []),
-                "cross_symbol_stability":cross_symbol_stability(payload.get("symbol_runs") or []),
-                "regime_stability":regime_stability(payload.get("regime_runs") or []),
+        return {"parameter_stability":parameter_neighborhood_stability(_bounded_research_rows(payload, "parameter_runs")),
+                "cross_symbol_stability":cross_symbol_stability(_bounded_research_rows(payload, "symbol_runs")),
+                "regime_stability":regime_stability(_bounded_research_rows(payload, "regime_runs")),
                 "warning":"Only pre-registered, genuinely OOS experiment rows should be supplied. This endpoint summarizes evidence; it does not create it."}
     except Exception as e: raise HTTPException(400,redact(f"{type(e).__name__}: {e}"))
 
@@ -2141,12 +2212,14 @@ def api_evaluate_holdout(payload: dict):
         audit=_audit_research_frame(df,source,tf); C=conf()
         did=dataset_fingerprint(df,source=source,symbol=symbol,timeframe=tf)
         ch=config_fingerprint(_research_execution_config(tf,symbol,None,C))
-        claim=HoldoutVault(HOLDOUT_VAULT_PATH).claim(
-            dataset_id=did,config_hash=ch,source=source,symbol=symbol,timeframe=tf,
-            start_timestamp=float(df["time"].iloc[0]),end_timestamp=float(df["time"].iloc[-1]))
+        # Complete all fallible analysis work before consuming the one-time seal.
+        # A transient backtest failure must not permanently burn the final sample.
         result=backtest(df,tf,symbol=symbol)
         result=_attach_research_provenance(result,df,source=source,symbol=symbol,tf=tf,
             requested_n=count,audit=audit,scope="single_use_final_holdout")
+        claim=HoldoutVault(HOLDOUT_VAULT_PATH).claim(
+            dataset_id=did,config_hash=ch,source=source,symbol=symbol,timeframe=tf,
+            start_timestamp=float(df["time"].iloc[0]),end_timestamp=float(df["time"].iloc[-1]))
         return {"status":"HOLDOUT_CONSUMED_ONCE","claim":claim,"provenance":result.get("provenance"),
                 "metrics":{k:result.get(k) for k in ("trades","strategy_pct","net_expectancy_pct","net_profit_factor",
                     "net_win_rate_pct","max_dd_pct","buyhold_net_pct","sharpe_approx")},
@@ -2488,7 +2561,7 @@ local model <input id=lm list=lml placeholder="auto" size=22><datalist id=lml></
 <button onclick=explain()>Send</button><div id=out></div>
 <script>
 const $=id=>document.getElementById(id);
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 let last=null,FC=null,SF=true,TRD=null,ST=true,TIM=new Map(),LV=[],D=[],V={start:0,count:100},DR=[],mode=null,pend=null,M=null,drag=null;
 const CV=$('cv'),X2=CV.getContext('2d'),AX=64;
 function toggleTR(){ST=!ST;render();}
@@ -2593,7 +2666,7 @@ function showGroups(j){
   (details.length?'<ul>'+details.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<div class=n>No integrity warnings.</div>')+'</div>';
  $('grp').innerHTML=integrity+Object.entries(j.groups).map(([g,o])=>'<div class=box><b>'+esc(g)+'</b>'+bar(o.score)+'<span class='+sc(o.score)+'>'+esc(o.verdict)+' '+o.score+'</span>'+
   '<details><summary class=n>'+o.n+' indicators</summary><table><tr><th>Indicator<th>Value<th>Meaning / unit<th>Signal<th>Note</tr>'+
-  (by[g]||[]).map(i=>'<tr><td>'+esc(i.name)+'<td>'+i.value+'<td>'+esc(i.meaning)+' ('+esc(i.unit)+')<td class='+sc(i.signal)+'>'+i.signal+'<td>'+esc(i.note)+(i.error?' <span class=s>'+esc(i.error)+'</span>':'')).join('')+
+  (by[g]||[]).map(i=>'<tr><td>'+esc(i.name)+'<td>'+esc(i.value)+'<td>'+esc(i.meaning)+' ('+esc(i.unit)+')<td class='+sc(i.signal)+'>'+esc(i.signal)+'<td>'+esc(i.note)+(i.error?' <span class=s>'+esc(i.error)+'</span>':'')).join('')+
   '</table></details></div>').join('');}
 async function fetchMtf(){
  const el=$('mtf');el.textContent='multi-timeframe...';
@@ -3093,11 +3166,48 @@ def _clean(o):
 
 
 def _loopback(ip):
-    return ip in ("127.1.0.1", "::1") or ip.startswith("::ffff:127.")
+    """Recognize the complete IPv4/IPv6 loopback ranges, including IPv4-mapped IPv6."""
+    try:
+        addr = ipaddress.ip_address(str(ip).split("%", 1)[0])
+        mapped = getattr(addr, "ipv4_mapped", None)
+        return addr.is_loopback or bool(mapped and mapped.is_loopback)
+    except ValueError:
+        return False
 
 
 def _eq(a, b):
     return secrets.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
+def _valid_access_token(token):
+    """Cookie-safe shared token: URL-safe ASCII only, bounded length."""
+    return isinstance(token, str) and re.fullmatch(r"[A-Za-z0-9._~-]{16,512}", token) is not None
+
+
+def _same_origin_request(headers, host):
+    """Reject cross-origin browser requests, including stateful GET requests.
+
+    Sec-Fetch-Site catches cross-site requests even when browsers omit Origin.
+    Origin/Referer are checked against the exact Host because the app intentionally
+    permits loopback clients without a token.
+    """
+    fetch_site = (headers.get("Sec-Fetch-Site") or "").strip().lower()
+    if fetch_site and fetch_site not in ("same-origin", "none"):
+        return False
+    origin = headers.get("Origin")
+    referer = headers.get("Referer")
+    candidate = origin or referer
+    if not candidate:
+        return True  # non-browser clients and older browsers may omit both
+    try:
+        parsed = urllib.parse.urlsplit(candidate)
+        if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != host:
+            return False
+        if parsed.username is not None or parsed.password is not None:
+            return False
+        return not (origin and (parsed.path not in ("", "/") or parsed.query or parsed.fragment))
+    except (TypeError, ValueError):
+        return False
 
 
 def authorized(ip, params, cookie_header, token):
@@ -3132,6 +3242,14 @@ def _blocked(ip):
 def _fail(ip):
     now = time.time()
     with _FL:
+        if ip not in _FAILS and len(_FAILS) >= 4096:
+            # Bound memory under distributed failed-login attempts.
+            stale = [addr for addr, (_, first_seen) in _FAILS.items() if now - first_seen > 600]
+            for addr in stale:
+                _FAILS.pop(addr, None)
+            if len(_FAILS) >= 4096:
+                oldest = min(_FAILS, key=lambda addr: _FAILS[addr][1])
+                _FAILS.pop(oldest, None)
         n, t0 = _FAILS.get(ip, (0, now))
         _FAILS[ip] = (n + 1, t0 if now - t0 <= 600 else now)
 
@@ -3157,6 +3275,11 @@ def make_handler(token, hosts):
     class H(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def setup(self):
+            super().setup()
+            # Prevent slow clients from holding a request thread indefinitely.
+            self.connection.settimeout(15)
+
         def log_message(self, *a):
             pass
 
@@ -3165,6 +3288,8 @@ def make_handler(token, hosts):
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
             self.send_header("Content-Security-Policy", CSP)
 
         def _cookie(self):
@@ -3187,6 +3312,11 @@ def make_handler(token, hosts):
             host = (self.headers.get("Host") or "").lower()
             if host not in hosts:  # blocks DNS-rebinding; add your name to allowed_hosts if needed
                 return self._send(400, json.dumps({"detail": "host not allowed - add it to allowed_hosts in config.json"}))
+            # Loopback bypass is useful for local clients, but must not become a
+            # browser CSRF bypass. Apply this to GET as well as POST: some GET
+            # endpoints start research jobs and persist their results.
+            if not _same_origin_request(self.headers, host):
+                return self._send(403, json.dumps({"detail": "cross-origin request refused"}))
             ip = self.client_address[0]
             if _blocked(ip):
                 return self._send(429, json.dumps({"detail": "too many failed attempts"}))
@@ -3212,13 +3342,14 @@ def make_handler(token, hosts):
                 ct = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
                 if ct != "application/json":   # forces a CORS preflight -> blocks cross-site form/text posts
                     return self._send(415, json.dumps({"detail": "Content-Type must be application/json"}))
-                org = self.headers.get("Origin")
-                if org and urllib.parse.urlparse(org).netloc.lower() != host:
-                    return self._send(403, json.dumps({"detail": "cross-origin request refused"}))
+                if self.headers.get("Transfer-Encoding"):
+                    return self._send(400, json.dumps({"detail": "Transfer-Encoding is not supported"}))
                 try:
                     n = int(self.headers.get("Content-Length") or 0)
                 except ValueError:
                     return self._send(400, json.dumps({"detail": "bad Content-Length"}))
+                if n < 0:
+                    return self._send(400, json.dumps({"detail": "Content-Length cannot be negative"}))
                 if n > 5_000_000:
                     return self._send(413, json.dumps({"detail": "payload too large"}))
                 try:
@@ -3267,8 +3398,8 @@ def serve():
     if exposed and not token:
         token = secrets.token_urlsafe(16)
         print("(no access_token in config.json - generated a temporary one for this run)")
-    if exposed and len(token) < 16:
-        print("WARNING: access_token is shorter than 16 characters - use a long random one.")
+    if exposed and not _valid_access_token(token):
+        raise SystemExit("ACCESS_TOKEN/access_token must be 16-512 URL-safe ASCII characters (letters, digits, . _ ~ -).")
     hosts = {f"{h}:{port}" for h in ("127.1.0.1", "localhost", "[::1]")}
     ip = lan_ip() if exposed else ""
     if exposed:
@@ -3278,12 +3409,46 @@ def serve():
         h = str(h).lower()
         hosts.add(h if ":" in h else f"{h}:{port}")
     try:
-        if os.name == "posix" and os.path.exists(CFG_PATH) and _secret_values() and \
-                (os.stat(CFG_PATH).st_mode & (stat.S_IRWXG | stat.S_IRWXO)):
-            print(f"WARNING: {CFG_PATH} holds keys and is readable by other users. Run:  chmod 600 config.json")
+        if os.name == "posix" and os.path.exists(CFG_PATH):
+            mode = os.stat(CFG_PATH).st_mode
+            shared_write = bool(mode & (stat.S_IWGRP | stat.S_IWOTH))
+            shared_read = bool(mode & (stat.S_IRGRP | stat.S_IROTH))
+            if shared_write:
+                print(f"WARNING: {CFG_PATH} is writable by other users; they could alter MCP executable settings. Run: chmod 600 config.json")
+            elif _secret_values() and shared_read:
+                print(f"WARNING: {CFG_PATH} holds keys and is readable by other users. Run: chmod 600 config.json")
     except OSError:
         pass
-    srv = ThreadingHTTPServer((host, port), make_handler(token, hosts))
+    class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+        """Cap concurrent request threads so LAN clients cannot exhaust the process."""
+        request_queue_size = 32
+        daemon_threads = True
+
+        def __init__(self, server_address, handler, max_workers=16):
+            if not isinstance(max_workers, int) or not 1 <= max_workers <= 128:
+                raise ValueError("max_workers must be between 1 and 128")
+            self.max_workers = max_workers
+            self._worker_slots = threading.BoundedSemaphore(max_workers)
+            super().__init__(server_address, handler)
+
+        def process_request(self, request, client_address):
+            if not self._worker_slots.acquire(timeout=1):
+                self.shutdown_request(request)
+                return
+            try:
+                super().process_request(request, client_address)
+            except BaseException:
+                self._worker_slots.release()
+                raise
+
+        def process_request_thread(self, request, client_address):
+            try:
+                super().process_request_thread(request, client_address)
+            finally:
+                self._worker_slots.release()
+
+    hosts.add(f"127.0.0.1:{port}")
+    srv = BoundedThreadingHTTPServer((host, port), make_handler(token, hosts), max_workers=16)
     print(f"Chart Analyzer listening on {host}:{port}")
     if exposed:
         print(f"\n  Open on your phone (same Wi-Fi):  http://{ip or '<phone-wifi-ip>'}:{port}/?t={token}\n")

@@ -5,30 +5,52 @@ The adapter is deliberately read-only. It never exposes account or trading tools
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
-from collections import deque
 import shutil
 import subprocess
 import threading
-import time
-from typing import Any, Dict, Optional
+from collections import deque
+from typing import Any
 
 
 class MCPError(RuntimeError):
     pass
 
 
+def _child_environment(extra=None):
+    """Build a minimal environment for the MCP subprocess; never inherit API secrets."""
+    keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT",
+            "WINDIR", "TEMP", "TMP", "SSL_CERT_FILE", "SSL_CERT_DIR", "UV_CACHE_DIR")
+    env = {key: os.environ[key] for key in keep if key in os.environ}
+    env.update({str(k): str(v) for k, v in (extra or {}).items()
+                if str(k) in ("IRAN_CRYPTO_MCP_PROXY",)})
+    return env
+
+
 class StdioMCPClient:
     def __init__(self, command: str = "uvx", args=None, timeout: float = 25.0, env=None):
-        self.command = command
-        self.args = list(args or ["iran-crypto-mcp"])
-        self.timeout = max(3.0, float(timeout))
+        if not isinstance(command, str) or not command.strip() or chr(0) in command:
+            raise MCPError("MCP command must be a non-empty executable name or path")
+        if args is None:
+            args = ["iran-crypto-mcp"]
+        if not isinstance(args, list) or len(args) > 32 or not all(isinstance(x, str) and chr(0) not in x for x in args):
+            raise MCPError("MCP args must be a list of at most 32 plain strings")
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError) as exc:
+            raise MCPError("MCP timeout must be numeric") from exc
+        if not math.isfinite(timeout) or not 3.0 <= timeout <= 120.0:
+            raise MCPError("MCP timeout must be finite and between 3 and 120 seconds")
+        self.command = command.strip()
+        self.args = list(args)
+        self.timeout = timeout
         self.env = dict(env or {})
         self.proc = None
         self._reader = None
         self._stderr_reader = None
-        self._responses: Dict[int, queue.Queue] = {}
+        self._responses: dict[int, queue.Queue] = {}
         self._lock = threading.RLock()
         self._init_lock = threading.RLock()
         self._write_lock = threading.Lock()
@@ -42,13 +64,13 @@ class StdioMCPClient:
         if self.proc is not None:
             self._tools = None
         executable = shutil.which(self.command) or self.command
-        env = os.environ.copy()
-        env.update(self.env)
+        # Do not pass provider/API credentials or the LAN access token to this child.
+        env = _child_environment(self.env)
         try:
             self.proc = subprocess.Popen(
                 [executable, *self.args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-                bufsize=1, env=env,
+                bufsize=1, env=env, close_fds=True,
             )
         except FileNotFoundError as exc:
             raise MCPError(f"MCP command not found: {self.command}. Install uv/uvx or configure command path.") from exc
@@ -59,15 +81,29 @@ class StdioMCPClient:
 
     def _drain_stderr(self):
         try:
-            for line in self.proc.stderr:
-                # Keep a short diagnostic tail; never include market payloads.
+            while True:
+                # Bounded reads prevent a noisy child from allocating an unbounded line.
+                line = self.proc.stderr.readline(1001)
+                if not line:
+                    break
                 self._stderr_tail.append(line.rstrip()[:500])
-        except Exception:
-            pass
+        except OSError as exc:
+            self._stderr_tail.append(f"stderr read failed: {type(exc).__name__}")
 
     def _read_stdout(self):
         try:
-            for line in self.proc.stdout:
+            while True:
+                # readline(size) caps memory use even if the child never emits a newline.
+                line = self.proc.stdout.readline(1_000_001)
+                if not line:
+                    break
+                if len(line) > 1_000_000:
+                    self._stderr_tail.append("MCP response line exceeded 1 MB; child process terminated")
+                    try:
+                        self.proc.kill()
+                    except OSError as exc:
+                        self._stderr_tail.append(f"could not terminate oversized MCP child: {type(exc).__name__}")
+                    break
                 line = line.strip()
                 if not line:
                     continue
@@ -75,14 +111,22 @@ class StdioMCPClient:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(msg, dict):
+                    continue
                 rid = msg.get("id")
                 if rid is not None:
                     waiter = self._responses.get(rid)
                     if waiter is not None:
-                        waiter.put(msg)
+                        try:
+                            waiter.put_nowait(msg)
+                        except queue.Full:
+                            pass
         finally:
             for waiter in list(self._responses.values()):
-                waiter.put({"_transport_closed": True})
+                try:
+                    waiter.put_nowait({"_transport_closed": True})
+                except queue.Full:
+                    pass
 
     def _request(self, method: str, params=None):
         self._start()
@@ -102,6 +146,9 @@ class StdioMCPClient:
                 response = waiter.get(timeout=self.timeout)
             except queue.Empty as exc:
                 detail = " | ".join(list(self._stderr_tail)[-5:])
+                # A timed-out tool may still be consuming CPU/network resources; terminate
+                # the child rather than leave an unresponsive process behind.
+                self.close()
                 raise MCPError(f"MCP request timed out: {method}" + (f": {detail}" if detail else "")) from exc
             if response.get("_transport_closed"):
                 detail = " | ".join(list(self._stderr_tail)[-5:])
@@ -143,7 +190,7 @@ class StdioMCPClient:
         self.initialize()
         return self._tools
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]):
+    def call_tool(self, name: str, arguments: dict[str, Any]):
         tools = self.tools
         if name not in tools:
             raise MCPError(f"Tool not available from iran-crypto-mcp: {name}")

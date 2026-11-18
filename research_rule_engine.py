@@ -4,6 +4,8 @@ No Python/eval expressions are accepted. Every feature is trailing/causal and
 signals are emitted at candle close for next-open execution.
 """
 from __future__ import annotations
+
+import math
 import numpy as np
 import pandas as pd
 
@@ -31,11 +33,30 @@ def build_feature_frame(df, indicators):
 
 
 def _condition(features, spec):
-    if not isinstance(spec,dict): raise ValueError("each condition must be an object")
-    feature=str(spec.get("feature") or "")
-    op=str(spec.get("op") or "")
+    if not isinstance(spec, dict):
+        raise ValueError("each condition must be an object")
+    if set(spec) - {"feature", "op", "value", "value2"}:
+        raise ValueError("unsupported condition fields")
+    feature = str(spec.get("feature") or "")
+    op = str(spec.get("op") or "")
+    if not feature or len(feature) > 64:
+        raise ValueError("feature name must contain 1..64 characters")
+    if op not in OPS:
+        raise ValueError("unsupported operator: " + op)
+    if "value" not in spec:
+        raise ValueError("condition value is required")
+    for key in ("value", "value2"):
+        value = spec.get(key)
+        if value is not None and not isinstance(value, (str, int, float, bool)):
+            raise ValueError("condition values must be scalar")
+        if isinstance(value, str) and len(value) > 256:
+            raise ValueError("condition string values cannot exceed 256 characters")
+        if key in spec and isinstance(value, (int, float)) and not isinstance(value, bool):
+            if not math.isfinite(float(value)):
+                raise ValueError("condition numeric values must be finite")
+        if op in {">", ">=", "<", "<=", "between", "crosses_above", "crosses_below"} and isinstance(value, bool):
+            raise ValueError("numeric operators require numeric, non-boolean values")
     if feature not in features.columns: raise ValueError(f"unknown research feature: {feature}")
-    if op not in OPS: raise ValueError(f"unsupported operator: {op}")
     x=features[feature]
     if op=="crosses_above":
         y=float(spec["value"]); return (x.shift(1)<=y)&(x>y)
@@ -55,11 +76,14 @@ def _condition(features, spec):
 
 
 def _group(features, group):
-    if not isinstance(group,dict): raise ValueError("entry/exit must be a condition group")
+    if not isinstance(group, dict) or set(group) - {"all", "any"}:
+        raise ValueError("entry/exit must contain only an all or any condition group")
     all_rules=group.get("all"); any_rules=group.get("any")
     if (all_rules is None)==(any_rules is None): raise ValueError("condition group must contain exactly one of 'all' or 'any'")
     rules=all_rules if all_rules is not None else any_rules
     if not isinstance(rules,list) or not rules: raise ValueError("condition list cannot be empty")
+    if len(rules) > 32:
+        raise ValueError("a condition group cannot contain more than 32 rules")
     masks=[_condition(features,r).fillna(False).to_numpy(dtype=bool) for r in rules]
     return np.logical_and.reduce(masks) if all_rules is not None else np.logical_or.reduce(masks)
 
@@ -69,12 +93,24 @@ def compile_long_flat_rule(features, specification):
     if not isinstance(specification,dict): raise ValueError("rule specification must be an object")
     if set(specification)-{"entry","exit","max_holding_bars","description","version"}:
         raise ValueError("unsupported top-level rule fields")
+    for key in ("description", "version"):
+        value = specification.get(key)
+        if value is not None and (not isinstance(value, str) or len(value) > 256):
+            raise ValueError(key + " must be a string of at most 256 characters")
     if "entry" not in specification: raise ValueError("entry rule is required")
-    entry=_group(features,specification["entry"])
-    exit_mask=_group(features,specification["exit"]) if specification.get("exit") is not None else np.zeros(len(features),dtype=bool)
+    entry_group = specification["entry"]
+    exit_group = specification.get("exit")
+    total_rules = sum(len(g.get("all", g.get("any", []))) for g in (entry_group, exit_group)
+                      if isinstance(g, dict))
+    if total_rules > 64:
+        raise ValueError("a rule specification cannot contain more than 64 conditions")
+    entry=_group(features,entry_group)
+    exit_mask=_group(features,exit_group) if exit_group is not None else np.zeros(len(features),dtype=bool)
     max_hold=specification.get("max_holding_bars")
-    if max_hold is not None and (isinstance(max_hold,bool) or int(max_hold)!=max_hold or int(max_hold)<1):
-        raise ValueError("max_holding_bars must be a positive integer")
+    if max_hold is not None and (isinstance(max_hold,bool) or not isinstance(max_hold,(int,float))
+                                 or not math.isfinite(float(max_hold)) or int(max_hold)!=max_hold
+                                 or not 1 <= int(max_hold) <= 5000):
+        raise ValueError("max_holding_bars must be an integer from 1 to 5000")
     signal=np.zeros(len(features),dtype=float); active=False; entry_i=None
     for i in range(len(features)):
         if active and ((exit_mask[i]) or (max_hold is not None and i-entry_i>=int(max_hold))):
