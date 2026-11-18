@@ -118,6 +118,16 @@ def test_csv_ingestion_rejects_oversized_file_before_parsing(tmp_path, monkeypat
         app._read_csv_bounded(path)
 
 
+def test_research_robustness_payloads_are_bounded_and_typed():
+    assert app._bounded_research_rows({"rows": [{"symbol": "BTC"}]}, "rows") == [{"symbol": "BTC"}]
+    with pytest.raises(ValueError, match="JSON array"):
+        app._bounded_research_rows({"rows": {}}, "rows")
+    with pytest.raises(ValueError, match="JSON objects"):
+        app._bounded_research_rows({"rows": ["not-an-object"]}, "rows")
+    with pytest.raises(ValueError, match="row limit"):
+        app._bounded_research_rows({"rows": [{}] * 5001}, "rows")
+
+
 def test_holdout_is_not_consumed_when_backtest_fails(tmp_path, monkeypatch):
     import research_provenance as provenance
 
