@@ -10,8 +10,29 @@ class HoldoutVault:
         self.path=Path(path)
     def _read(self):
         if not self.path.exists(): return None
-        try: return json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception: return {"status":"CORRUPT"}
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {"status": "CORRUPT"}
+        except Exception:
+            return {"status":"CORRUPT"}
+
+    def _write_atomic(self, data):
+        """Atomically persist vault metadata with owner-only permissions."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=self.path.name)
+        try:
+            if os.name == "posix":
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(data, stream, sort_keys=True, separators=(",", ":"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, self.path)
+            if os.name == "posix":
+                os.chmod(self.path, 0o600)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
     def status(self):
         d=self._read()
         if d is None: return {"status":"UNCONFIGURED","locked":True,"message":"No final holdout has been sealed."}
@@ -32,13 +53,7 @@ class HoldoutVault:
                "source":str(source),"symbol":str(symbol).upper(),"timeframe":str(timeframe),
                "start_timestamp":float(start_timestamp),"end_timestamp":float(end_timestamp),
                "sealed_at":time.time(),"access_count":0}
-            self.path.parent.mkdir(parents=True,exist_ok=True)
-            fd,tmp=tempfile.mkstemp(dir=str(self.path.parent),prefix=self.path.name)
-            try:
-                with os.fdopen(fd,"w",encoding="utf-8") as f: json.dump(d,f,sort_keys=True); f.flush(); os.fsync(f.fileno())
-                os.replace(tmp,self.path)
-            finally:
-                if os.path.exists(tmp): os.unlink(tmp)
+            self._write_atomic(d)
         return self.status()
     def overlaps(self, *, source, symbol, timeframe, start_timestamp, end_timestamp):
         d=self._read()
@@ -62,5 +77,5 @@ class HoldoutVault:
             failed=[k for k,v in checks.items() if not v]
             if failed: raise ValueError("holdout identity mismatch: "+", ".join(failed))
             d["access_count"]=1; d["last_access_at"]=time.time(); d["status"]="OPENED_ONCE"
-            self.path.write_text(json.dumps(d,sort_keys=True),encoding="utf-8")
+            self._write_atomic(d)
             return {"access_count":1,"status":"OPENED_ONCE","checks":checks}
