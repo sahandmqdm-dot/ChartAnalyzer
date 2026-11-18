@@ -1,6 +1,6 @@
 """Append-only research hypothesis and experiment registry for ChartAnalyzer QRE."""
 from __future__ import annotations
-import hashlib, json, sqlite3, time, math
+import hashlib, json, sqlite3, time, math, os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -35,6 +35,14 @@ class ResearchRegistry:
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys=ON")
         con.execute("PRAGMA journal_mode=WAL")
+        # The research registry contains experiment metadata and holdout lineage.
+        if os.name == "posix":
+            for candidate in (self.path, self.path + "-wal", self.path + "-shm"):
+                try:
+                    if os.path.exists(candidate):
+                        os.chmod(candidate, 0o600)
+                except OSError:
+                    pass
         return con
 
     def _init(self):
