@@ -13,7 +13,7 @@
 - The optional MCP integration is read-only, launches without a shell, validates its launch configuration, receives a minimal child-process environment without the application's LLM keys or LAN token, and bounds stdio line size and request timeout.
 - Holdout metadata is written atomically with owner-only permissions on POSIX; the journal and research SQLite databases and sidecars are restricted to owner access.
 - Declarative research rules reject unknown fields and bound condition count, string sizes, numeric values and maximum holding duration.
-- The one-time holdout is consumed only after the backtest and provenance generation complete successfully.
+- The one-time holdout is consumed only after the backtest and provenance generation complete successfully; a private OS-level lock serializes seal/claim across processes.
 - Local configuration, environment files, database files and runtime artifacts are excluded by .gitignore.
 
 ## Deployment guidance
