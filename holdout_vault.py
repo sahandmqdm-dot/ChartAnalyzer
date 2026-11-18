@@ -1,6 +1,12 @@
 """One-way final holdout seal with single-use evaluation claim."""
 from __future__ import annotations
-import json, os, tempfile, time, threading, math
+
+import json
+import math
+import os
+import tempfile
+import threading
+import time
 from pathlib import Path
 
 _LOCK=threading.RLock()
@@ -13,7 +19,7 @@ class HoldoutVault:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else {"status": "CORRUPT"}
-        except Exception:
+        except (OSError, UnicodeError, json.JSONDecodeError):
             return {"status":"CORRUPT"}
 
     def _write_atomic(self, data):
