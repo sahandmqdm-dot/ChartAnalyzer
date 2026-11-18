@@ -81,7 +81,8 @@ class StdioMCPClient:
         try:
             for line in self.proc.stdout:
                 if len(line) > 1_000_000:
-                    raise MCPError("MCP response line exceeded 1 MB")
+                    self._stderr_tail.append("MCP response line exceeded 1 MB; connection closed")
+                    break
                 line = line.strip()
                 if not line:
                     continue
