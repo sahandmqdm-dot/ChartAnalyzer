@@ -1,6 +1,6 @@
 numpy>=2.5.4
 pandas>=2.0
-requests>=2.31
+requests>=2.34.2
 pytest>=9.2.0
 # Optional: ccxt for additional exchanges
 # scipy is useful for future statistical extensions but not required for core V6
