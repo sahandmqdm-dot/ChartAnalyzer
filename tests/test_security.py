@@ -82,6 +82,50 @@ def test_http_response_security_headers_are_defined():
     assert "base-uri 'none'" in app.CSP
 
 
+@pytest.mark.parametrize("headers,host,expected", [
+    ({}, "127.1.0.1:8765", True),
+    ({"Sec-Fetch-Site": "same-origin"}, "127.1.0.1:8765", True),
+    ({"Sec-Fetch-Site": "none"}, "127.1.0.1:8765", True),
+    ({"Sec-Fetch-Site": "cross-site"}, "127.1.0.1:8765", False),
+    ({"Sec-Fetch-Site": "same-site"}, "127.1.0.1:8765", False),
+    ({"Origin": "http://127.1.0.1:8765"}, "127.1.0.1:8765", True),
+    ({"Origin": "https://attacker.example"}, "127.1.0.1:8765", False),
+    ({"Origin": "null"}, "127.1.0.1:8765", False),
+    ({"Origin": "http://127.1.0.1:8765/path"}, "127.1.0.1:8765", False),
+    ({"Referer": "http://127.1.0.1:8765/dashboard"}, "127.1.0.1:8765", True),
+    ({"Referer": "http://attacker.example/"}, "127.1.0.1:8765", False),
+])
+def test_browser_request_origin_policy(headers, host, expected):
+    assert app._same_origin_request(headers, host) is expected
+
+
+def test_holdout_is_not_consumed_when_backtest_fails(tmp_path, monkeypatch):
+    import research_provenance as provenance
+
+    path = tmp_path / "holdout.json"
+    vault = HoldoutVault(path)
+    vault.seal(dataset_id="D1", config_hash="C1", source="csv", symbol="BTCUSDT",
+               timeframe="1h", start_timestamp=1, end_timestamp=2)
+    frame = pd.DataFrame({"time": [1.0, 2.0]})
+    monkeypatch.setattr(app, "HOLDOUT_VAULT_PATH", str(path))
+    monkeypatch.setattr(app, "load", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {"state": "OK"})
+    monkeypatch.setattr(app, "conf", lambda: {})
+    monkeypatch.setattr(app, "_research_execution_config", lambda *args, **kwargs: {})
+    monkeypatch.setattr(provenance, "dataset_fingerprint", lambda *args, **kwargs: "D1")
+    monkeypatch.setattr(provenance, "config_fingerprint", lambda *args, **kwargs: "C1")
+
+    def fail_backtest(*args, **kwargs):
+        raise RuntimeError("simulated transient backtest failure")
+
+    monkeypatch.setattr(app, "backtest", fail_backtest)
+    payload = {"source": "csv", "symbol": "BTCUSDT", "tf": "1h", "n": 100}
+    with pytest.raises(app.HTTPException):
+        app.api_evaluate_holdout(payload)
+    assert vault.status()["status"] == "SEALED"
+    assert vault.status()["access_count"] == 0
+
+
 
 @pytest.mark.parametrize("address", [
     "127.0.0.1",
