@@ -46,11 +46,15 @@ def _condition(features, spec):
         raise ValueError("condition value is required")
     for key in ("value", "value2"):
         value = spec.get(key)
+        if value is not None and not isinstance(value, (str, int, float, bool)):
+            raise ValueError("condition values must be scalar")
         if isinstance(value, str) and len(value) > 256:
             raise ValueError("condition string values cannot exceed 256 characters")
         if key in spec and isinstance(value, (int, float)) and not isinstance(value, bool):
             if not math.isfinite(float(value)):
                 raise ValueError("condition numeric values must be finite")
+        if op in {">", ">=", "<", "<=", "between", "crosses_above", "crosses_below"} and isinstance(value, bool):
+            raise ValueError("numeric operators require numeric, non-boolean values")
     if feature not in features.columns: raise ValueError(f"unknown research feature: {feature}")
     if op not in OPS: raise ValueError(f"unsupported operator: {op}")
     x=features[feature]
