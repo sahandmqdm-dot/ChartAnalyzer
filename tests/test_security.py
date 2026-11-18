@@ -99,6 +99,25 @@ def test_browser_request_origin_policy(headers, host, expected):
     assert app._same_origin_request(headers, host) is expected
 
 
+def test_csv_ingestion_rejects_more_than_row_limit(tmp_path, monkeypatch):
+    path = tmp_path / "large.csv"
+    path.write_text("header\\n", encoding="utf-8")
+    monkeypatch.setattr(app.pd, "read_csv",
+                        lambda *_args, **_kwargs: pd.DataFrame({"x": range(app.CSV_MAX_ROWS + 1)}))
+    with pytest.raises(ValueError, match="row safety limit"):
+        app._read_csv_bounded(path)
+
+
+def test_csv_ingestion_rejects_oversized_file_before_parsing(tmp_path, monkeypatch):
+    path = tmp_path / "huge.csv"
+    path.write_text("header\\n", encoding="utf-8")
+    monkeypatch.setattr(app.os.path, "getsize", lambda _path: app.CSV_MAX_BYTES + 1)
+    monkeypatch.setattr(app.pd, "read_csv",
+                        lambda *_args, **_kwargs: pytest.fail("oversized CSV must not be parsed"))
+    with pytest.raises(ValueError, match="MiB safety limit"):
+        app._read_csv_bounded(path)
+
+
 def test_holdout_is_not_consumed_when_backtest_fails(tmp_path, monkeypatch):
     import research_provenance as provenance
 
