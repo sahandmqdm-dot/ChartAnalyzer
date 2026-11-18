@@ -20,6 +20,13 @@ config.json
 secrets*.json
 credentials*.json
 token*.json
+.secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
 
 # Runtime data and local state
 data/
