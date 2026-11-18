@@ -2117,7 +2117,9 @@ def api_research_split_preview(n: int = 1000, train_ratio: float = 0.60,
 
 
 def _bounded_research_rows(payload, key, limit=5000):
-    rows = payload.get(key) or []
+    rows = payload.get(key)
+    if rows is None:
+        return []
     if not isinstance(rows, list):
         raise ValueError(f"{key} must be a JSON array")
     if len(rows) > limit:
