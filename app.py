@@ -3137,6 +3137,11 @@ def _eq(a, b):
     return secrets.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
 
 
+def _valid_access_token(token):
+    """Cookie-safe shared token: URL-safe ASCII only, bounded length."""
+    return isinstance(token, str) and re.fullmatch(r"[A-Za-z0-9._~-]{16,512}", token) is not None
+
+
 def authorized(ip, params, cookie_header, token):
     """Loopback is always allowed. Any other client needs the token (query ?t= or cookie at=)."""
     if _loopback(ip):
@@ -3315,8 +3320,8 @@ def serve():
     if exposed and not token:
         token = secrets.token_urlsafe(16)
         print("(no access_token in config.json - generated a temporary one for this run)")
-    if exposed and len(token) < 16:
-        print("WARNING: access_token is shorter than 16 characters - use a long random one.")
+    if exposed and not _valid_access_token(token):
+        raise SystemExit("ACCESS_TOKEN/access_token must be 16-512 URL-safe ASCII characters (letters, digits, . _ ~ -).")
     hosts = {f"{h}:{port}" for h in ("127.1.0.1", "localhost", "[::1]")}
     ip = lan_ip() if exposed else ""
     if exposed:
