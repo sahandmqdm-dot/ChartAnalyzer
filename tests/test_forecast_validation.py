@@ -23,7 +23,7 @@ def make_forecast(**overrides):
         "horizon_bars": 4,
         "issued_at": ISSUED,
         "target_at": TARGET,
-        "data_cutoff_at": ISSUED - timedelta(hours=1),
+        "data_cutoff_at": ISSUED - datetime.timedelta(hours=1),
         "model_id": "scenario-bootstrap",
         "model_version": "1.0.0",
         "dataset_fingerprint": "a" * 64,
@@ -47,7 +47,7 @@ def test_forecast_identity_is_deterministic_and_payload_sensitive():
 
 def test_lookahead_data_cutoff_is_rejected():
     with pytest.raises(ForecastValidationError, match="look-ahead"):
-        make_forecast(data_cutoff_at=ISSUED + timedelta(seconds=1))
+        make_forecast(data_cutoff_at=ISSUED + datetime.timedelta(seconds=1))
 
 
 def test_horizon_must_be_a_positive_integer():
@@ -82,21 +82,21 @@ def test_naive_timestamps_are_rejected():
 def test_forecast_cannot_be_resolved_before_target():
     forecast = make_forecast()
     with pytest.raises(ForecastValidationError, match="before its target"):
-        resolve_forecast(forecast, 0.01, TARGET - timedelta(seconds=1))
+        resolve_forecast(forecast, 0.01, TARGET - datetime.timedelta(seconds=1))
 
 
 def test_evaluation_metrics_and_non_actionable_output():
     rows = []
     for index in range(10):
         forecast = make_forecast(
-            issued_at=ISSUED + timedelta(days=index),
-            data_cutoff_at=ISSUED + timedelta(days=index) - timedelta(hours=1),
-            target_at=TARGET + timedelta(days=index),
+            issued_at=ISSUED + datetime.timedelta(days=index),
+            data_cutoff_at=ISSUED + datetime.timedelta(days=index) - datetime.timedelta(hours=1),
+            target_at=TARGET + datetime.timedelta(days=index),
             q10=-0.02, q50=0.0, q90=0.02,
             probability_up=0.8,
         )
         actual = 0.01 if index < 8 else -0.01
-        rows.append(resolve_forecast(forecast, actual, TARGET + timedelta(days=index)))
+        rows.append(resolve_forecast(forecast, actual, TARGET + datetime.timedelta(days=index)))
     report = evaluate_forecasts(rows, min_segment_count=5)
     assert report["status"] == "EVALUATED_OUT_OF_SAMPLE"
     assert report["overall"]["n"] == 10
@@ -110,13 +110,13 @@ def test_calibration_report_counts_each_bin_and_reports_sample_size():
     rows = []
     for index in range(6):
         forecast = make_forecast(
-            issued_at=ISSUED + timedelta(days=index),
-            data_cutoff_at=ISSUED + timedelta(days=index) - timedelta(minutes=1),
-            target_at=TARGET + timedelta(days=index),
+            issued_at=ISSUED + datetime.timedelta(days=index),
+            data_cutoff_at=ISSUED + datetime.timedelta(days=index) - datetime.timedelta(minutes=1),
+            target_at=TARGET + datetime.timedelta(days=index),
             probability_up=0.9,
         )
         rows.append(resolve_forecast(forecast, 0.01 if index < 5 else -0.01,
-                                     TARGET + timedelta(days=index)))
+                                     TARGET + datetime.timedelta(days=index)))
     result = calibration_report(rows, bins=10, min_bin_count=5)
     assert result["n"] == 6
     assert result["reliability_table"][0]["n"] == 6
@@ -139,9 +139,9 @@ def test_empty_evaluation_is_explicit():
 
 def test_insufficient_segment_sample_is_flagged_not_hidden():
     rows = [
-        resolve_forecast(make_forecast(issued_at=ISSUED + timedelta(days=i),
-            data_cutoff_at=ISSUED + timedelta(days=i) - timedelta(minutes=1),
-            target_at=TARGET + timedelta(days=i)), 0.0, TARGET + timedelta(days=i))
+        resolve_forecast(make_forecast(issued_at=ISSUED + datetime.timedelta(days=i),
+            data_cutoff_at=ISSUED + datetime.timedelta(days=i) - datetime.timedelta(minutes=1),
+            target_at=TARGET + datetime.timedelta(days=i)), 0.0, TARGET + datetime.timedelta(days=i))
         for i in range(3)
     ]
     result = evaluate_forecasts(rows, min_segment_count=5)
