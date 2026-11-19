@@ -34,6 +34,7 @@ def test_valid_long_rounds_quantity_and_prices(rules, plan):
 def test_short_requires_shortable_and_borrow(rules, plan):
     plan.update({"side": "short", "stop_loss": 205, "targets": [{"price": 190}]})
     rules["shortable"] = False
+    rules["borrow_available"] = False
     out = apply_equity_filters(plan, rules)
     assert out["status"] == "NO_TRADE"
     assert any("not marked shortable" in x for x in out["blockers"])
