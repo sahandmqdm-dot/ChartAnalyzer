@@ -7,7 +7,13 @@ forecasting and (later) optional signal workflows. It is not itself a signal
 generator. Consumers receive normalized observations plus explicit provenance
 and quality warnings.
 
-## Initial adapter
+## Initial adapters
+
+The hub now includes three distinct public adapters:
+
+- `BinanceUSDMPublicAdapter` for Binance USD-M linear perpetuals.
+- `BinanceSpotPublicAdapter` for Binance spot.
+- `CoinbaseExchangeSpotAdapter` for Coinbase Exchange spot.
 
 `BinanceUSDMPublicAdapter` uses public Binance USD-M endpoints only:
 
@@ -15,9 +21,8 @@ and quality warnings.
 - `/fapi/v1/fundingRate` for funding event history.
 - `/futures/data/openInterestHist` for aggregate open-interest history.
 
-No API key, account endpoint, private position, or order endpoint is used.
-The adapter is deliberately limited to the USD-M linear-perpetual market.
-Spot, inverse futures, equities and local exchanges require distinct adapters
+No API key, account endpoint, private position, or order endpoint is used. Binance spot and Coinbase spot use separate provider identities, endpoints and market-type metadata. Spot adapters expose OHLCV only and cannot be used for derivatives requests. The USD-M adapter remains limited to linear perpetual contracts.
+Inverse futures, equities and local exchanges require distinct adapters
 and canonical instrument metadata; they must not be silently mixed.
 
 ## Data contracts and quality
@@ -39,10 +44,10 @@ and canonical instrument metadata; they must not be silently mixed.
 
 ## Resilience
 
-The adapter has bounded timeouts, bounded retries, exponential backoff and
+Adapters have bounded timeouts, bounded retries, exponential backoff and
 Retry-After handling for HTTP 418/429. Repeated throttling raises a typed
 exception. HTTP 5xx and transport failures fail closed after the retry budget.
-The unit suite uses injected transports and does not require network access.
+The unit suite uses injected transports and does not require network access. The provider registry checks capabilities, so a spot-only adapter cannot be called for funding or open-interest history.
 
 ## Research integrity
 

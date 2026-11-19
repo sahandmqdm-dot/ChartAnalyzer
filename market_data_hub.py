@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -143,6 +144,8 @@ class BinanceUSDMPublicAdapter:
     provider = "binance_usdm"
     market_type = "linear_perpetual"
     base_url = "https://fapi.binance.com"
+    klines_endpoint = "/fapi/v1/klines"
+    supports_derivatives = True
     intervals = frozenset({"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h",
                            "6h", "8h", "12h", "1d", "3d", "1w", "1M"})
     oi_periods = frozenset({"5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"})
@@ -172,10 +175,13 @@ class BinanceUSDMPublicAdapter:
             raise ProviderUnavailableError(f"Binance transport failed: {type(exc).__name__}") from exc
 
     def _get(self, path: str, params: Mapping[str, Any]) -> tuple[Any, datetime]:
-        if self.base_url != "https://fapi.binance.com":
-            raise ValueError("Binance adapter base URL is pinned to the reviewed HTTPS public API host")
-        if not path.startswith("/fapi/v1/") and not path.startswith("/futures/data/"):
-            raise ValueError("endpoint is not in the public market-data allowlist")
+        allowed = {
+            "https://fapi.binance.com": ("/fapi/v1/", "/futures/data/"),
+            "https://api.binance.com": ("/api/v3/",),
+        }
+        prefixes = allowed.get(self.base_url)
+        if prefixes is None or not path.startswith(prefixes):
+            raise ValueError("endpoint or host is not in the pinned public market-data allowlist")
         query = urlencode({key: value for key, value in params.items() if value is not None})
         url = f"{self.base_url}{path}?{query}"
         for attempt in range(self.config.max_retries + 1):
@@ -220,7 +226,7 @@ class BinanceUSDMPublicAdapter:
             raise ValueError(f"unsupported Binance interval: {interval}")
         if isinstance(limit, bool) or not 1 <= int(limit) <= self.config.max_limit:
             raise ValueError(f"limit must be between 1 and {self.config.max_limit}")
-        raw, retrieved = self._get("/fapi/v1/klines", {"symbol": symbol, "interval": interval, "limit": int(limit)})
+        raw, retrieved = self._get(self.klines_endpoint, {"symbol": symbol, "interval": interval, "limit": int(limit)})
         if not isinstance(raw, list):
             raise DataValidationError("klines payload must be a list")
         bars: list[OHLCVBar] = []
@@ -254,7 +260,7 @@ class BinanceUSDMPublicAdapter:
             if any(delta > _interval_seconds(interval) * 1.5 for delta in durations):
                 warnings.append("candle history contains gaps; no interpolation was performed")
         provenance = DataProvenance(
-            provider=self.provider, endpoint="/fapi/v1/klines", instrument_id=symbol,
+            provider=self.provider, endpoint=self.klines_endpoint, instrument_id=symbol,
             retrieved_at=retrieved, source_timestamp_semantics="exchange_kline_open_time_utc",
             market_type=self.market_type, raw_record_count=len(raw), normalized_record_count=len(bars),
         )
@@ -319,6 +325,123 @@ def _interval_seconds(interval: str) -> int:
     return int(interval[:-1]) * units[interval[-1]]
 
 
+class BinanceSpotPublicAdapter(BinanceUSDMPublicAdapter):
+    """Public Binance spot candles; separate identity from USD-M futures."""
+
+    provider = "binance_spot"
+    market_type = "spot"
+    base_url = "https://api.binance.com"
+    klines_endpoint = "/api/v3/klines"
+    supports_derivatives = False
+
+
+class CoinbaseExchangeSpotAdapter:
+    """Public Coinbase Exchange spot candles; no credentials or account scope."""
+
+    provider = "coinbase_exchange_spot"
+    market_type = "spot"
+    base_url = "https://api.exchange.coinbase.com"
+    supports_derivatives = False
+    intervals = MappingProxyType({
+        "1m": 60, "5m": 300, "15m": 900, "1h": 3600,
+        "6h": 21600, "1d": 86400,
+    })
+
+    def __init__(
+        self,
+        config: ProviderConfig | None = None,
+        *,
+        transport: Callable[[str, float], tuple[int, Mapping[str, str], bytes]] | None = None,
+        clock: Callable[[], float] = time.time,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.config = config or ProviderConfig(max_limit=300)
+        self._transport = transport or BinanceUSDMPublicAdapter._http_get
+        self._clock = clock
+        self._sleep = sleeper
+
+    @staticmethod
+    def _product(value: str) -> str:
+        product = str(value).strip().upper()
+        parts = product.split("-")
+        if len(parts) != 2 or not all(part.isalnum() for part in parts):
+            raise ValueError("Coinbase product must use BASE-QUOTE format, e.g. BTC-USD")
+        return product
+
+    def _get(self, path: str, params: Mapping[str, Any]) -> tuple[Any, datetime]:
+        if self.base_url != "https://api.exchange.coinbase.com" or not path.startswith("/products/"):
+            raise ValueError("Coinbase adapter is pinned to the public products endpoint")
+        query = urlencode({key: value for key, value in params.items() if value is not None})
+        url = f"{self.base_url}{path}?{query}"
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                status, headers, body = self._transport(url, self.config.timeout_seconds)
+            except ProviderUnavailableError:
+                if attempt >= self.config.max_retries:
+                    raise
+                self._sleep(self.config.backoff_seconds * (2 ** attempt))
+                continue
+            if status == 200:
+                try:
+                    return json.loads(body), datetime.fromtimestamp(self._clock(), UTC)
+                except (ValueError, TypeError) as exc:
+                    raise DataValidationError("Coinbase returned invalid JSON") from exc
+            if status == 429:
+                if attempt >= self.config.max_retries:
+                    raise ProviderRateLimitError("Coinbase rate limit retry budget exhausted")
+                retry_after = headers.get("Retry-After")
+                try:
+                    delay = min(30.0, max(0.0, float(retry_after))) if retry_after else self.config.backoff_seconds * (2 ** attempt)
+                except (TypeError, ValueError):
+                    delay = self.config.backoff_seconds * (2 ** attempt)
+                self._sleep(delay)
+                continue
+            if status >= 500 and attempt < self.config.max_retries:
+                self._sleep(self.config.backoff_seconds * (2 ** attempt))
+                continue
+            raise ProviderUnavailableError(f"Coinbase returned HTTP {status}")
+        raise ProviderUnavailableError("Coinbase retry budget exhausted")
+
+    def fetch_ohlcv(self, symbol: str, interval: str = "1h", limit: int = 300) -> OHLCVBatch:
+        product = self._product(symbol)
+        if interval not in self.intervals:
+            raise ValueError(f"unsupported Coinbase candle interval: {interval}")
+        if isinstance(limit, bool) or not 1 <= int(limit) <= min(300, self.config.max_limit):
+            raise ValueError(f"limit must be between 1 and {min(300, self.config.max_limit)}")
+        path = f"/products/{product}/candles"
+        raw, retrieved = self._get(path, {"granularity": self.intervals[interval]})
+        if not isinstance(raw, list):
+            raise DataValidationError("Coinbase candles payload must be a list")
+        bars = []
+        for row in raw:
+            if not isinstance(row, Sequence) or len(row) < 6:
+                raise DataValidationError("malformed Coinbase candle row")
+            opened = datetime.fromtimestamp(int(row[0]), UTC)
+            bars.append(OHLCVBar(
+                instrument_id=product, provider=self.provider, interval=interval,
+                open_time=opened,
+                close_time=datetime.fromtimestamp(int(row[0]) + self.intervals[interval] - 1, UTC),
+                low=row[1], high=row[2], open=row[3], close=row[4], volume=row[5],
+            ))
+        bars.sort(key=lambda bar: bar.open_time)
+        if len(bars) > int(limit):
+            bars = bars[-int(limit):]
+        warnings = []
+        if len(bars) > 1:
+            deltas = [(bars[i].open_time - bars[i-1].open_time).total_seconds()
+                      for i in range(1, len(bars))]
+            if any(delta > self.intervals[interval] * 1.5 for delta in deltas):
+                warnings.append("candle history contains gaps; no interpolation was performed")
+        if bars and bars[-1].close_time >= retrieved:
+            warnings.append("latest candle may still be forming; downstream closed-bar policy must exclude it")
+        provenance = DataProvenance(
+            provider=self.provider, endpoint=path, instrument_id=product,
+            retrieved_at=retrieved, source_timestamp_semantics="coinbase_exchange_candle_start_time_utc",
+            market_type=self.market_type, raw_record_count=len(raw), normalized_record_count=len(bars),
+        )
+        return OHLCVBatch(tuple(bars), provenance, tuple(warnings))
+
+
 class MarketDataHub:
     """Small provider registry. Data is returned with source provenance, never blended."""
 
@@ -329,9 +452,8 @@ class MarketDataHub:
         key = str(name).strip().lower()
         if not key or key in self._adapters:
             raise ValueError("provider name must be non-empty and unique")
-        for method in ("fetch_ohlcv", "fetch_funding_history", "fetch_open_interest_history"):
-            if not callable(getattr(adapter, method, None)):
-                raise TypeError(f"adapter is missing {method}")
+        if not callable(getattr(adapter, "fetch_ohlcv", None)):
+            raise TypeError("adapter is missing fetch_ohlcv")
         self._adapters[key] = adapter
 
     def provider(self, name: str) -> Any:
@@ -359,17 +481,30 @@ class MarketDataHub:
     def fetch_derivatives(self, provider: str, symbol: str, *, oi_period: str = "1h",
                           funding_limit: int = 100, oi_limit: int = 30) -> dict[str, Any]:
         adapter = self.provider(provider)
+        if not getattr(adapter, "supports_derivatives", False):
+            raise MarketDataError(f"provider {provider} does not expose derivatives history")
+        if not callable(getattr(adapter, "fetch_funding_history", None)) or not callable(getattr(adapter, "fetch_open_interest_history", None)):
+            raise MarketDataError(f"provider {provider} is missing derivatives capabilities")
         funding = adapter.fetch_funding_history(symbol, funding_limit)
         oi = adapter.fetch_open_interest_history(symbol, oi_period, oi_limit)
         if funding["provider"] != oi["provider"] or funding["market_type"] != oi["market_type"]:
             raise DataValidationError("derivatives provider or market type mismatch")
+        for section in (funding, oi):
+            if not isinstance(section.get("records"), list):
+                raise DataValidationError("derivatives provider records must be a list")
+            for record in section["records"]:
+                if not isinstance(record, Mapping):
+                    raise DataValidationError("derivatives observations must be mappings")
+                if record.get("provider") != funding["provider"] or record.get("instrument_id") != str(symbol).strip().upper():
+                    raise DataValidationError("derivatives observation identity mismatch")
         return {"provider": funding["provider"], "market_type": funding["market_type"],
                 "funding": funding, "open_interest": oi, "actionable": False,
                 "policy": "Independent provider observations; no synthetic merge or position inference."}
 
 
 __all__ = [
-    "BinanceUSDMPublicAdapter", "DataProvenance", "DataValidationError",
+    "BinanceSpotPublicAdapter", "BinanceUSDMPublicAdapter", "CoinbaseExchangeSpotAdapter",
+    "DataProvenance", "DataValidationError",
     "MarketDataError", "MarketDataHub", "OHLCVBar", "OHLCVBatch",
     "ProviderConfig", "ProviderRateLimitError", "ProviderUnavailableError",
 ]
