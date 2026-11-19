@@ -164,7 +164,7 @@ class BinanceUSDMPublicAdapter:
     def _http_get(url: str, timeout: float) -> tuple[int, Mapping[str, str], bytes]:
         request = Request(url, headers={"Accept": "application/json", "User-Agent": "ChartAnalyzer/MarketDataHub"})
         try:
-            with urlopen(request, timeout=timeout) as response:
+            with urlopen(request, timeout=timeout) as response:  # nosec B310: fixed HTTPS Binance public-data host
                 return response.status, dict(response.headers.items()), response.read()
         except HTTPError as exc:
             return exc.code, dict(exc.headers.items()) if exc.headers else {}, exc.read()
