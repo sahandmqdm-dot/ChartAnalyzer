@@ -104,8 +104,13 @@ class MarketDataNormalizer:
         vals={name:cls._pick(row,name) for name in ("open","high","low","close","volume")}
         qv=cls._pick(row,"quote_volume",False); count=cls._pick(row,"trade_count",False)
         if count is not None:
-            try: count=int(count)
-            except (TypeError,ValueError,OverflowError) as exc: raise ValueError("trade_count must be an integer") from exc
+            try:
+                numeric_count = float(count)
+                if not math.isfinite(numeric_count) or not numeric_count.is_integer() or numeric_count < 0:
+                    raise ValueError("trade_count must be a non-negative integer")
+                count = int(numeric_count)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("trade_count must be a non-negative integer") from exc
         return Candle(timestamp=ts,**vals,quote_volume=qv,trade_count=count)
 
     @classmethod
