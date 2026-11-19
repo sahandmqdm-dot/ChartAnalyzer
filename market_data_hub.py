@@ -172,6 +172,8 @@ class BinanceUSDMPublicAdapter:
             raise ProviderUnavailableError(f"Binance transport failed: {type(exc).__name__}") from exc
 
     def _get(self, path: str, params: Mapping[str, Any]) -> tuple[Any, datetime]:
+        if self.base_url != "https://fapi.binance.com":
+            raise ValueError("Binance adapter base URL is pinned to the reviewed HTTPS public API host")
         if not path.startswith("/fapi/v1/") and not path.startswith("/futures/data/"):
             raise ValueError("endpoint is not in the public market-data allowlist")
         query = urlencode({key: value for key, value in params.items() if value is not None})
