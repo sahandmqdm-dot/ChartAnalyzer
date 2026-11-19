@@ -56,3 +56,12 @@ def test_normalizer_reports_gaps_without_filling():
 
 def test_naive_timestamp_rejected():
     with pytest.raises(ValueError,match="timezone-aware"): Candle(datetime(2026,1,1),100,101,99,100,1)
+
+def test_instrument_normalizes_enum_strings_and_rejects_unknown_values():
+    item=Instrument("us:NASDAQ:MSFT","msft","nasdaq","equity","equity_cash","msft","usd",
+                    timezone="America/New_York",status="active")
+    assert item.asset_class is AssetClass.EQUITY
+    assert item.market_type is MarketType.EQUITY_CASH
+    assert item.status is InstrumentStatus.ACTIVE
+    with pytest.raises(ValueError):
+        Instrument("bad","MSFT","NASDAQ","unknown","equity_cash","MSFT","USD")
