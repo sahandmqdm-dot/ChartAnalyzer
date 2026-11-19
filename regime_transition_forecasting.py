@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from itertools import pairwise
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import pairwise
 from typing import Any
 
 _EPSILON = 1e-12
@@ -226,7 +226,16 @@ class RegimeForecastRecord:
             raise RegimeForecastError("data_cutoff_at cannot be after issued_at")
         if target <= issued:
             raise RegimeForecastError("target_at must be after issued_at")
-        pairs = tuple((str(state), float(probability)) for state, probability in self.probabilities)
+        normalized_pairs = []
+        for state, probability in self.probabilities:
+            if isinstance(probability, bool):
+                raise RegimeForecastError("state probabilities must be numeric")
+            try:
+                numeric_probability = float(probability)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise RegimeForecastError("state probabilities must be numeric") from exc
+            normalized_pairs.append((str(state), numeric_probability))
+        pairs = tuple(normalized_pairs)
         if len(pairs) < 2 or len({state for state, _ in pairs}) != len(pairs):
             raise RegimeForecastError("probabilities must cover at least two unique states")
         if any(not math.isfinite(p) or p < 0 or p > 1 for _, p in pairs):
@@ -336,6 +345,9 @@ def evaluate_regime_forecasts(rows: Iterable[ResolvedRegimeForecast]) -> dict[st
         buckets[(f.instrument_id, f.market_type, f.timeframe, f.horizon_bars, f.model_id)].append(row)
     cohorts = {}
     for key, group in sorted(buckets.items()):
+        state_sets = {tuple(state for state, _ in row.forecast.probabilities) for row in group}
+        if len(state_sets) != 1:
+            raise RegimeForecastError("all forecasts in a cohort must use the same regime-state vocabulary")
         cohorts["|".join(map(str, key))] = _score_regime_group(group)
     overall = next(iter(cohorts.values())) if len(cohorts) == 1 else {
         "status": "NOT_AGGREGATED_MIXED_COHORTS", "n": len(records)
