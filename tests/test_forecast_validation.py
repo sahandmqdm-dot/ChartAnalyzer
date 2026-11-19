@@ -50,6 +50,13 @@ def test_lookahead_data_cutoff_is_rejected():
         make_forecast(data_cutoff_at=ISSUED + timedelta(seconds=1))
 
 
+def test_horizon_must_be_a_positive_integer():
+    with pytest.raises(ForecastValidationError, match="positive integer"):
+        make_forecast(horizon_bars=1.5)
+    with pytest.raises(ForecastValidationError, match="positive integer"):
+        make_forecast(horizon_bars=True)
+
+
 def test_forecast_target_must_be_in_future():
     with pytest.raises(ForecastValidationError, match="after issued_at"):
         make_forecast(target_at=ISSUED)
