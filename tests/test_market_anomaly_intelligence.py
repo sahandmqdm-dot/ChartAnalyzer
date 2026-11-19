@@ -28,6 +28,7 @@ def test_output_is_causal_and_first_baseline_rows_are_unavailable():
     result = analyze_market_anomalies(candles, window=40)
     assert result.iloc[:40]["state"].eq("INSUFFICIENT_BASELINE").all()
     changed_future = candles.copy()
+    changed_future.loc[150:, "open"] *= 2
     changed_future.loc[150:, "close"] *= 2
     changed_future.loc[150:, "high"] *= 2
     changed_future.loc[150:, "low"] *= 2
