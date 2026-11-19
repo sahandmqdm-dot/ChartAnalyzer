@@ -282,7 +282,16 @@ def create_regime_forecast_record(
         _aware(target_at, "target_at"),
         _aware(data_cutoff_at, "data_cutoff_at"),
     )
-    pairs = tuple(sorted((str(k), float(v)) for k, v in probabilities.items()))
+    normalized_pairs = []
+    for state, probability in probabilities.items():
+        if isinstance(probability, bool):
+            raise RegimeForecastError("state probabilities must be numeric")
+        try:
+            numeric_probability = float(probability)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RegimeForecastError("state probabilities must be numeric") from exc
+        normalized_pairs.append((str(state), numeric_probability))
+    pairs = tuple(sorted(normalized_pairs))
     payload = {
         "instrument_id": instrument_id, "market_type": market_type,
         "timeframe": timeframe, "horizon_bars": horizon_bars,
