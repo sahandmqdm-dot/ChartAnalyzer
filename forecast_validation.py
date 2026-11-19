@@ -207,7 +207,11 @@ def calibration_report(rows: Iterable[ResolvedForecast], *, bins: int = 10,
         raise ValueError("bins must be between 2 and 20")
     if isinstance(min_bin_count, bool) or int(min_bin_count) < 1:
         raise ValueError("min_bin_count must be positive")
-    selected = [r for r in rows if r.forecast.probability_up is not None]
+    all_rows = list(rows)
+    cohort_keys = {(r.forecast.instrument_id, r.forecast.market_type, r.forecast.timeframe, r.forecast.horizon_bars) for r in all_rows}
+    if len(cohort_keys) > 1:
+        raise ForecastValidationError("calibration requires one comparable instrument/market/timeframe/horizon cohort")
+    selected = [r for r in all_rows if r.forecast.probability_up is not None]
     groups: list[list[ResolvedForecast]] = [[] for _ in range(int(bins))]
     for row in selected:
         p = row.forecast.probability_up
@@ -249,43 +253,75 @@ def calibration_report(rows: Iterable[ResolvedForecast], *, bins: int = 10,
 
 
 def evaluate_forecasts(rows: Iterable[ResolvedForecast], *, min_segment_count: int = 5) -> dict[str, Any]:
-    """Evaluate resolved OOS forecasts overall and by model, horizon and regime."""
+    """Evaluate forecasts without pooling incomparable instruments or horizons."""
     records = list(rows)
     if not records:
         return {"status": "NO_RESOLVED_FORECASTS", "overall": _score_group([]),
-                "calibration": calibration_report([]), "segments": {}}
+                "calibration": calibration_report([]), "segments": {}, "cohorts": {}}
     if any(not isinstance(row, ResolvedForecast) for row in records):
         raise TypeError("rows must contain ResolvedForecast values")
     ids = [row.forecast.forecast_id for row in records]
     if len(ids) != len(set(ids)):
         raise ForecastValidationError("duplicate forecast_id in evaluation cohort")
-    segments: dict[str, dict[str, Any]] = {}
-    dimensions = {
-        "model": lambda r: r.forecast.model_id,
-        "horizon_bars": lambda r: str(r.forecast.horizon_bars),
-        "regime": lambda r: r.forecast.regime,
-        "instrument": lambda r: r.forecast.instrument_id,
-    }
-    for dimension, key_fn in dimensions.items():
-        buckets: dict[str, list[ResolvedForecast]] = defaultdict(list)
-        for row in records:
-            buckets[key_fn(row)].append(row)
-        segments[dimension] = {
-            key: {**_score_group(group), "sample_sufficient": len(group) >= min_segment_count}
-            for key, group in sorted(buckets.items())
+
+    cohort_buckets: dict[tuple[str, str, str, int], list[ResolvedForecast]] = defaultdict(list)
+    for row in records:
+        forecast = row.forecast
+        key = (forecast.instrument_id, forecast.market_type, forecast.timeframe, forecast.horizon_bars)
+        cohort_buckets[key].append(row)
+
+    cohorts: dict[str, dict[str, Any]] = {}
+    for key, group in sorted(cohort_buckets.items()):
+        cohort_id = "|".join(map(str, key))
+        dimensions = {
+            "model": lambda r: r.forecast.model_id,
+            "regime": lambda r: r.forecast.regime,
+        }
+        segments: dict[str, dict[str, Any]] = {}
+        for dimension, key_fn in dimensions.items():
+            buckets: dict[str, list[ResolvedForecast]] = defaultdict(list)
+            for row in group:
+                buckets[key_fn(row)].append(row)
+            segments[dimension] = {
+                label: {**_score_group(items), "sample_sufficient": len(items) >= min_segment_count}
+                for label, items in sorted(buckets.items())
+            }
+        cohorts[cohort_id] = {
+            "instrument_id": key[0], "market_type": key[1],
+            "timeframe": key[2], "horizon_bars": key[3],
+            "overall": _score_group(group),
+            "calibration": calibration_report(group),
+            "segments": segments,
+        }
+
+    if len(cohorts) == 1:
+        only = next(iter(cohorts.values()))
+        overall = only["overall"]
+        calibration = only["calibration"]
+        segments = only["segments"]
+    else:
+        overall = {"status": "NOT_AGGREGATED_MIXED_COHORTS", "n": len(records)}
+        calibration = {
+            "status": "SEGMENTED_BY_COMPARABLE_COHORT",
+            "cohorts": {key: value["calibration"] for key, value in cohorts.items()},
+        }
+        segments = {
+            "status": "SEGMENTED_BY_COMPARABLE_COHORT",
+            "cohorts": {key: value["segments"] for key, value in cohorts.items()},
         }
     return {
         "schema": "forecast_evaluation_v1",
         "status": "EVALUATED_OUT_OF_SAMPLE",
         "n_resolved": len(records),
-        "overall": _score_group(records),
-        "calibration": calibration_report(records),
+        "overall": overall,
+        "calibration": calibration,
         "segments": segments,
+        "cohorts": cohorts,
         "research_guardrails": [
             "Only forecasts resolved at or after target_at are scored.",
             "Forecast identity includes point-in-time data cutoff and dataset fingerprint.",
             "Probability metrics are historical diagnostics, not guarantees of future calibration.",
-            "Do not pool instruments, market types or horizons without an explicit comparability policy.",
+            "Different instruments, market types, timeframes and horizons are never pooled into one score.",
             "No trade signal, position sizing or order instruction is produced.",
         ],
         "actionable": False,
