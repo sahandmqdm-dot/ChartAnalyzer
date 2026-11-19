@@ -18,7 +18,7 @@ def test_regular_and_extended_sessions_are_dst_aware():
 @pytest.mark.parametrize("utc,phase", [
     (datetime(2026, 1, 5, 9, 0, tzinfo=timezone.utc), SessionPhase.PRE_MARKET),
     (datetime(2026, 1, 5, 22, 0, tzinfo=timezone.utc), SessionPhase.AFTER_HOURS),
-    (datetime(2026, 1, 5, 23, 0, tzinfo=timezone.utc), SessionPhase.CLOSED),
+    (datetime(2026, 1, 6, 1, 0, tzinfo=timezone.utc), SessionPhase.CLOSED),
 ])
 def test_session_phases(utc, phase):
     assert USMarketCalendar().session_for(utc).phase is phase
