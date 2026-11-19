@@ -11,7 +11,7 @@ import json
 import math
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -68,7 +68,7 @@ class ForecastRecord:
                     "model_id", "model_version", "dataset_fingerprint", "regime")
         if any(not str(getattr(self, name)).strip() for name in required):
             raise ForecastValidationError("forecast identity fields must be non-empty")
-        if isinstance(self.horizon_bars, bool) or int(self.horizon_bars) < 1:
+        if isinstance(self.horizon_bars, bool) or not isinstance(self.horizon_bars, int) or self.horizon_bars < 1:
             raise ForecastValidationError("horizon_bars must be a positive integer")
         issued = _aware(self.issued_at, "issued_at")
         target = _aware(self.target_at, "target_at")
@@ -128,6 +128,8 @@ def create_forecast_record(
     probability_up: float | None = None,
 ) -> ForecastRecord:
     """Create a stable forecast identity from its complete point-in-time payload."""
+    if isinstance(horizon_bars, bool) or not isinstance(horizon_bars, int) or horizon_bars < 1:
+        raise ForecastValidationError("horizon_bars must be a positive integer")
     issued, target, cutoff = (_aware(issued_at, "issued_at"),
                               _aware(target_at, "target_at"),
                               _aware(data_cutoff_at, "data_cutoff_at"))
