@@ -27,7 +27,10 @@ def _robust_zscore(series: pd.Series, window: int, min_periods: int) -> pd.Serie
     scale = 1.4826 * mad
     fallback = rolling.std(ddof=1)
     scale = scale.where(scale > 1e-12, fallback)
-    return ((series - median) / scale.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
+    # A constant trailing baseline is valid information, not missing data.
+    # The small floor keeps an unchanged value at z=0 and makes a true deviation visible.
+    scale = scale.where(scale > 1e-12, 1e-8)
+    return ((series - median) / scale).replace([np.inf, -np.inf], np.nan)
 
 
 def analyze_market_anomalies(
