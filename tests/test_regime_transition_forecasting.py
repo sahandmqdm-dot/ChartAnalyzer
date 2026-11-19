@@ -91,6 +91,8 @@ def make_forecast(instrument="BTCUSDT", horizon=4, probability=None):
 def test_forecast_record_rejects_bad_probabilities_and_lookahead():
     with pytest.raises(RegimeForecastError, match="sum to one"):
         make_forecast(probability={"trending": 0.8, "ranging": 0.1, "volatile": 0.2})
+    with pytest.raises(RegimeForecastError, match="numeric"):
+        make_forecast(probability={"trending": True, "ranging": 0.0, "volatile": 0.0})
     with pytest.raises(RegimeForecastError, match="cannot be after"):
         create_regime_forecast_record(
             instrument_id="BTCUSDT", market_type="linear_perpetual", timeframe="1h",
