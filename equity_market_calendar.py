@@ -80,12 +80,14 @@ def market_holidays(year: int) -> frozenset[date]:
         _nth_weekday(year, 2, 0, 3),       # Washington's Birthday
         _easter_sunday(year) - timedelta(days=2),  # Good Friday
         _last_weekday(year, 5, 0),         # Memorial Day
-        _observed(date(year, 6, 19)),      # Juneteenth
         _observed(date(year, 7, 4)),       # Independence Day
         _nth_weekday(year, 9, 0, 1),       # Labor Day
         _nth_weekday(year, 11, 3, 4),      # Thanksgiving
         _observed(date(year, 12, 25)),     # Christmas
     }
+    # Juneteenth became a federal market holiday in 2022.
+    if year >= 2022:
+        days.add(_observed(date(year, 6, 19)))
     # New Year's Day can be observed on December 31 of the prior year.
     days.add(_observed(date(year + 1, 1, 1)))
     return frozenset(d for d in days if d.year == year)
