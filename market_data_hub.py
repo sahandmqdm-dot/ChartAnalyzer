@@ -341,10 +341,18 @@ class MarketDataHub:
             raise MarketDataError(f"unknown market-data provider: {name}") from exc
 
     def fetch_ohlcv(self, provider: str, symbol: str, interval: str = "1h", limit: int = 500) -> OHLCVBatch:
-        batch = self.provider(provider).fetch_ohlcv(symbol, interval, limit)
+        adapter = self.provider(provider)
+        batch = adapter.fetch_ohlcv(symbol, interval, limit)
         if not isinstance(batch, OHLCVBatch):
             raise DataValidationError("provider returned a non-normalized OHLCV result")
-        if any(bar.provider != provider for bar in batch.bars):
+        expected_providers = {str(provider).strip().lower()}
+        adapter_provider = getattr(adapter, "provider", None)
+        if adapter_provider:
+            expected_providers.add(str(adapter_provider).strip().lower())
+        provenance_provider = str(getattr(batch.provenance, "provider", "")).strip().lower()
+        if provenance_provider not in expected_providers:
+            raise DataValidationError("provider identity mismatch in OHLCV provenance")
+        if any(str(bar.provider).strip().lower() not in expected_providers for bar in batch.bars):
             raise DataValidationError("provider identity mismatch in OHLCV records")
         return batch
 
