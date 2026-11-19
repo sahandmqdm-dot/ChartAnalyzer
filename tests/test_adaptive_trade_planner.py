@@ -57,3 +57,9 @@ def test_targets_r_multiples_and_cost_block():
     p=plan(target_r_multiples=(2,3))
     assert [x["r_multiple"] for x in p["targets"]]==[2,3]
     assert plan(fee_roundtrip_rate=.2,slippage_roundtrip_rate=.04)["status"]=="NO_TRADE"
+
+def test_blocks_when_even_one_x_cannot_preserve_liquidation_buffer():
+    p=plan(atr=40000,stop_atr_multiple=1.5)
+    assert p["leverage"]==1
+    assert p["status"]=="NO_TRADE"
+    assert any("Even 1x leverage" in reason for reason in p["blockers"])
