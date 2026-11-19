@@ -34,7 +34,7 @@ def validate_margin_tiers(tiers: list[dict[str, Any]]) -> list[dict[str, float]]
     previous_mmr = -1.0
     for index, tier in enumerate(tiers):
         if not isinstance(tier, dict):
-            raise ValueError(f"tier {index} must be a mapping")
+            raise TypeError(f"tier {index} must be a mapping")
         required = ("notional_cap", "maintenance_margin_rate", "maintenance_amount", "max_leverage")
         missing = [key for key in required if key not in tier or tier[key] is None]
         if missing:
@@ -198,4 +198,4 @@ def calculate_tiered_isolated_margin(
     return out
 
 
-__all__ = ["validate_margin_tiers", "select_margin_tier", "calculate_tiered_isolated_margin"]
+__all__ = ["calculate_tiered_isolated_margin", "select_margin_tier", "validate_margin_tiers"]
