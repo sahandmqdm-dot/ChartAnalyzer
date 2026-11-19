@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+import datetime
 
 import pytest
 
@@ -11,8 +11,8 @@ from forecast_validation import (
 )
 
 
-ISSUED = datetime(2026, 11, 1, tzinfo=UTC)
-TARGET = ISSUED + timedelta(hours=4)
+ISSUED = datetime.datetime(2026, 11, 1, tzinfo=datetime.UTC)
+TARGET = ISSUED + datetime.timedelta(hours=4)
 
 
 def make_forecast(**overrides):
@@ -76,7 +76,7 @@ def test_probability_must_be_valid(probability):
 
 def test_naive_timestamps_are_rejected():
     with pytest.raises(ForecastValidationError, match="timezone-aware"):
-        make_forecast(issued_at=datetime(2026, 11, 1))
+        make_forecast(issued_at=datetime.datetime(2026, 11, 1))
 
 
 def test_forecast_cannot_be_resolved_before_target():
