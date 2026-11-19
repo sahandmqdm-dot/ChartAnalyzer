@@ -4,7 +4,9 @@ from datetime import UTC, datetime
 import pytest
 
 from market_data_hub import (
+    BinanceSpotPublicAdapter,
     BinanceUSDMPublicAdapter,
+    CoinbaseExchangeSpotAdapter,
     DataValidationError,
     MarketDataError,
     MarketDataHub,
@@ -167,3 +169,56 @@ def test_ohlcv_bar_rejects_naive_time_and_negative_volume():
     with pytest.raises(DataValidationError):
         OHLCVBar("BTCUSDT", "x", "1h", datetime(2026, 1, 1, tzinfo=UTC),
                  datetime(2026, 1, 1, 1, tzinfo=UTC), 1, 2, 0.5, 1.5, -1)
+
+
+
+def test_binance_spot_adapter_uses_separate_host_and_market_identity():
+    payload = [kline()]
+    body = json.dumps(payload).encode()
+
+    def transport(url, timeout):
+        assert "https://api.binance.com/api/v3/klines" in url
+        return 200, {}, body
+
+    adapter = BinanceSpotPublicAdapter(transport=transport, clock=lambda: NOW)
+    batch = adapter.fetch_ohlcv("BTCUSDT", "1h", 1)
+    assert batch.provenance.provider == "binance_spot"
+    assert batch.provenance.market_type == "spot"
+    assert batch.bars[0].provider == "binance_spot"
+
+
+def test_coinbase_spot_adapter_normalizes_candles_and_provenance():
+    rows = [
+        [int(NOW - 3600), "99", "111", "100", "105", "12.5"],
+        [int(NOW - 7200), "95", "106", "101", "100", "10.0"],
+    ]
+    body = json.dumps(rows).encode()
+
+    def transport(url, timeout):
+        assert "https://api.exchange.coinbase.com/products/BTC-USD/candles" in url
+        assert "granularity=3600" in url
+        return 200, {}, body
+
+    adapter = CoinbaseExchangeSpotAdapter(transport=transport, clock=lambda: NOW)
+    batch = adapter.fetch_ohlcv("BTC-USD", "1h", 2)
+    assert len(batch.bars) == 2
+    assert batch.bars[0].open == 101
+    assert batch.bars[-1].close == 105
+    assert batch.provenance.provider == "coinbase_exchange_spot"
+    assert batch.provenance.market_type == "spot"
+
+
+def test_coinbase_rejects_invalid_product_and_bad_payload():
+    adapter = CoinbaseExchangeSpotAdapter(transport=fake_transport([]), clock=lambda: NOW)
+    with pytest.raises(ValueError, match="BASE-QUOTE"):
+        adapter.fetch_ohlcv("BTC/USD", "1h", 10)
+    with pytest.raises(DataValidationError):
+        adapter.fetch_ohlcv("BTC-USD", "1h", 10)
+
+
+def test_spot_provider_cannot_be_used_for_derivatives_history():
+    hub = MarketDataHub({"binance_spot": BinanceSpotPublicAdapter(
+        transport=fake_transport([kline()]), clock=lambda: NOW
+    )})
+    with pytest.raises(MarketDataError, match="does not expose derivatives"):
+        hub.fetch_derivatives("binance_spot", "BTCUSDT")
