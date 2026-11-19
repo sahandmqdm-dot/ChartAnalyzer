@@ -65,3 +65,9 @@ def test_instrument_normalizes_enum_strings_and_rejects_unknown_values():
     assert item.status is InstrumentStatus.ACTIVE
     with pytest.raises(ValueError):
         Instrument("bad","MSFT","NASDAQ","unknown","equity_cash","MSFT","USD")
+
+def test_fractional_trade_count_is_rejected():
+    bad = row(1767225600)
+    bad["trade_count"] = 1.5
+    with pytest.raises(ValueError, match="trade_count"):
+        MarketDataNormalizer.candle(bad)
