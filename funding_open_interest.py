@@ -7,20 +7,21 @@ never creates orders or actionable trade instructions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 import math
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 
 def _utc(name: str, value: datetime) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be a timezone-aware datetime")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 def _finite(name: str, value: Any, *, minimum: float | None = None) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{name} must be numeric")
+        raise TypeError(f"{name} must be numeric")
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
