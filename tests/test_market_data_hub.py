@@ -151,6 +151,7 @@ def test_hub_rejects_unknown_provider_and_mismatched_batch_provider():
 
 def test_hub_derivatives_output_is_never_actionable():
     class Adapter:
+        supports_derivatives = True
         def fetch_ohlcv(self, *args):
             return OHLCVBatch((), None)
         def fetch_funding_history(self, *args):
@@ -209,7 +210,10 @@ def test_coinbase_spot_adapter_normalizes_candles_and_provenance():
 
 
 def test_coinbase_rejects_invalid_product_and_bad_payload():
-    adapter = CoinbaseExchangeSpotAdapter(transport=fake_transport([]), clock=lambda: NOW)
+    adapter = CoinbaseExchangeSpotAdapter(
+        transport=lambda url, timeout: (200, {}, json.dumps([["bad"]]).encode()),
+        clock=lambda: NOW,
+    )
     with pytest.raises(ValueError, match="BASE-QUOTE"):
         adapter.fetch_ohlcv("BTC/USD", "1h", 10)
     with pytest.raises(DataValidationError):
