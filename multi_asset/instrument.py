@@ -47,6 +47,12 @@ class Instrument:
     contract_type: str | None = None
 
     def __post_init__(self) -> None:
+        try:
+            asset_class = AssetClass(self.asset_class)
+            market_type = MarketType(self.market_type)
+            status = InstrumentStatus(self.status)
+        except ValueError as exc:
+            raise ValueError("asset_class, market_type and status must use supported values") from exc
         cid, symbol, venue = str(self.canonical_id).strip(), str(self.symbol).strip().upper(), str(self.venue).strip().upper()
         if not cid or len(cid) > 96:
             raise ValueError("canonical_id must contain 1..96 characters")
@@ -67,17 +73,20 @@ class Instrument:
             raise ValueError("contract_multiplier must be positive and finite") from exc
         if not math.isfinite(multiplier) or multiplier <= 0:
             raise ValueError("contract_multiplier must be positive and finite")
-        if self.asset_class == AssetClass.CRYPTO_FUTURES:
-            if self.market_type not in {MarketType.LINEAR_FUTURES, MarketType.INVERSE_FUTURES}:
+        if asset_class == AssetClass.CRYPTO_FUTURES:
+            if market_type not in {MarketType.LINEAR_FUTURES, MarketType.INVERSE_FUTURES}:
                 raise ValueError("crypto futures require a futures market_type")
             if self.contract_type not in {"linear", "inverse"}:
                 raise ValueError("crypto futures require contract_type linear or inverse")
-            if (self.contract_type == "linear") != (self.market_type == MarketType.LINEAR_FUTURES):
+            if (self.contract_type == "linear") != (market_type == MarketType.LINEAR_FUTURES):
                 raise ValueError("contract_type and market_type are inconsistent")
-        elif self.market_type in {MarketType.LINEAR_FUTURES, MarketType.INVERSE_FUTURES}:
+        elif market_type in {MarketType.LINEAR_FUTURES, MarketType.INVERSE_FUTURES}:
             raise ValueError("futures market_type requires crypto_futures asset_class")
         elif self.contract_type is not None:
             raise ValueError("contract_type is only valid for futures instruments")
+        object.__setattr__(self, "asset_class", asset_class)
+        object.__setattr__(self, "market_type", market_type)
+        object.__setattr__(self, "status", status)
         object.__setattr__(self, "canonical_id", cid)
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "venue", venue)
