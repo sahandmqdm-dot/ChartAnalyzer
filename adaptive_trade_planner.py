@@ -98,7 +98,7 @@ def build_trade_plan(*, side: str, entry_price: float, atr: float, account_equit
             "gross_pnl": gross, "estimated_net_pnl_before_funding": gross-modeled_cost})
 
     blockers = []
-    if not signal_valid: blockers.append("No valid current signal was explicitly supplied.")
+    if market == "futures" and lev_headroom < 1.0:\n        blockers.append("Even 1x leverage cannot satisfy the configured liquidation-distance buffer.")\n    if not signal_valid: blockers.append("No valid current signal was explicitly supplied.")
     if not data_integrity_valid: blockers.append("OHLCV/data-integrity validation has not passed.")
     if not oos_authorized: blockers.append("Matching fresh out-of-sample deployment authorization is absent.")
     if deployment_gate is not None and deployment_gate.get("eligible") is not True:
