@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from itertools import pairwise
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
@@ -96,7 +97,7 @@ def fit_regime_transition_model(
     index = {state: i for i, state in enumerate(state_names)}
     size = len(state_names)
     counts = [[0 for _ in range(size)] for _ in range(size)]
-    for previous, following in zip(labels, labels[1:]):
+    for previous, following in pairwise(labels):
         counts[index[previous]][index[following]] += 1
     row_counts = [sum(row) for row in counts]
     matrix = [
