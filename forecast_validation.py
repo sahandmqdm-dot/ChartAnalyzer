@@ -151,7 +151,8 @@ def create_forecast_record(
         "probability_up": None if probability_up is None else _finite(probability_up, "probability_up"),
         "target_kind": "log_return",
     }
-    return ForecastRecord(forecast_id=_canonical_hash(payload), **payload)
+    record_payload = {**payload, "issued_at": issued, "target_at": target, "data_cutoff_at": cutoff}
+    return ForecastRecord(forecast_id=_canonical_hash(payload), **record_payload)
 
 
 def resolve_forecast(forecast: ForecastRecord, actual_log_return: float,
