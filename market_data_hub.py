@@ -324,6 +324,125 @@ def _interval_seconds(interval: str) -> int:
     return int(interval[:-1]) * units[interval[-1]]
 
 
+class BinanceSpotPublicAdapter(BinanceUSDMPublicAdapter):
+    """Public Binance spot candles; separate identity from USD-M futures."""
+
+    provider = "binance_spot"
+    market_type = "spot"
+    base_url = "https://api.binance.com"
+    klines_endpoint = "/api/v3/klines"
+    supports_derivatives = False
+
+
+class CoinbaseExchangeSpotAdapter:
+    """Public Coinbase Exchange spot candles; no credentials or account scope."""
+
+    provider = "coinbase_exchange_spot"
+    market_type = "spot"
+    base_url = "https://api.exchange.coinbase.com"
+    supports_derivatives = False
+    intervals = {
+        "1m": 60, "5m": 300, "15m": 900, "1h": 3600,
+        "6h": 21600, "1d": 86400,
+    }
+
+    def __init__(
+        self,
+        config: ProviderConfig | None = None,
+        *,
+        transport: Callable[[str, float], tuple[int, Mapping[str, str], bytes]] | None = None,
+        clock: Callable[[], float] = time.time,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.config = config or ProviderConfig(max_limit=300)
+        if self.config.max_limit > 300:
+            raise ValueError("Coinbase candle limit cannot exceed 300")
+        self._transport = transport or BinanceUSDMPublicAdapter._http_get
+        self._clock = clock
+        self._sleep = sleeper
+
+    @staticmethod
+    def _product(value: str) -> str:
+        product = str(value).strip().upper()
+        parts = product.split("-")
+        if len(parts) != 2 or not all(part.isalnum() for part in parts):
+            raise ValueError("Coinbase product must use BASE-QUOTE format, e.g. BTC-USD")
+        return product
+
+    def _get(self, path: str, params: Mapping[str, Any]) -> tuple[Any, datetime]:
+        if self.base_url != "https://api.exchange.coinbase.com" or not path.startswith("/products/"):
+            raise ValueError("Coinbase adapter is pinned to the public products endpoint")
+        query = urlencode({key: value for key, value in params.items() if value is not None})
+        url = f"{self.base_url}{path}?{query}"
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                status, headers, body = self._transport(url, self.config.timeout_seconds)
+            except ProviderUnavailableError:
+                if attempt >= self.config.max_retries:
+                    raise
+                self._sleep(self.config.backoff_seconds * (2 ** attempt))
+                continue
+            if status == 200:
+                try:
+                    return json.loads(body), datetime.fromtimestamp(self._clock(), UTC)
+                except (ValueError, TypeError) as exc:
+                    raise DataValidationError("Coinbase returned invalid JSON") from exc
+            if status == 429:
+                if attempt >= self.config.max_retries:
+                    raise ProviderRateLimitError("Coinbase rate limit retry budget exhausted")
+                retry_after = headers.get("Retry-After")
+                try:
+                    delay = min(30.0, max(0.0, float(retry_after))) if retry_after else self.config.backoff_seconds * (2 ** attempt)
+                except (TypeError, ValueError):
+                    delay = self.config.backoff_seconds * (2 ** attempt)
+                self._sleep(delay)
+                continue
+            if status >= 500 and attempt < self.config.max_retries:
+                self._sleep(self.config.backoff_seconds * (2 ** attempt))
+                continue
+            raise ProviderUnavailableError(f"Coinbase returned HTTP {status}")
+        raise ProviderUnavailableError("Coinbase retry budget exhausted")
+
+    def fetch_ohlcv(self, symbol: str, interval: str = "1h", limit: int = 300) -> OHLCVBatch:
+        product = self._product(symbol)
+        if interval not in self.intervals:
+            raise ValueError(f"unsupported Coinbase candle interval: {interval}")
+        if isinstance(limit, bool) or not 1 <= int(limit) <= min(300, self.config.max_limit):
+            raise ValueError(f"limit must be between 1 and {min(300, self.config.max_limit)}")
+        path = f"/products/{product}/candles"
+        raw, retrieved = self._get(path, {"granularity": self.intervals[interval]})
+        if not isinstance(raw, list):
+            raise DataValidationError("Coinbase candles payload must be a list")
+        bars = []
+        for row in raw:
+            if not isinstance(row, Sequence) or len(row) < 6:
+                raise DataValidationError("malformed Coinbase candle row")
+            opened = datetime.fromtimestamp(int(row[0]), UTC)
+            bars.append(OHLCVBar(
+                instrument_id=product, provider=self.provider, interval=interval,
+                open_time=opened,
+                close_time=datetime.fromtimestamp(int(row[0]) + self.intervals[interval] - 1, UTC),
+                low=row[1], high=row[2], open=row[3], close=row[4], volume=row[5],
+            ))
+        bars.sort(key=lambda bar: bar.open_time)
+        if len(bars) > int(limit):
+            bars = bars[-int(limit):]
+        warnings = []
+        if len(bars) > 1:
+            deltas = [(bars[i].open_time - bars[i-1].open_time).total_seconds()
+                      for i in range(1, len(bars))]
+            if any(delta > self.intervals[interval] * 1.5 for delta in deltas):
+                warnings.append("candle history contains gaps; no interpolation was performed")
+        if bars and bars[-1].close_time >= retrieved:
+            warnings.append("latest candle may still be forming; downstream closed-bar policy must exclude it")
+        provenance = DataProvenance(
+            provider=self.provider, endpoint=path, instrument_id=product,
+            retrieved_at=retrieved, source_timestamp_semantics="coinbase_exchange_candle_start_time_utc",
+            market_type=self.market_type, raw_record_count=len(raw), normalized_record_count=len(bars),
+        )
+        return OHLCVBatch(tuple(bars), provenance, tuple(warnings))
+
+
 class MarketDataHub:
     """Small provider registry. Data is returned with source provenance, never blended."""
 
@@ -377,7 +496,8 @@ class MarketDataHub:
 
 
 __all__ = [
-    "BinanceUSDMPublicAdapter", "DataProvenance", "DataValidationError",
+    "BinanceSpotPublicAdapter", "BinanceUSDMPublicAdapter", "CoinbaseExchangeSpotAdapter",
+    "DataProvenance", "DataValidationError",
     "MarketDataError", "MarketDataHub", "OHLCVBar", "OHLCVBatch",
     "ProviderConfig", "ProviderRateLimitError", "ProviderUnavailableError",
 ]
