@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -12,7 +12,7 @@ from funding_open_interest import (
 )
 
 
-NOW = datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
 
 
 def make_funding(**kwargs):
@@ -56,7 +56,7 @@ def test_fresh_snapshot_is_valid_and_never_actionable():
     assert result["valid"] is True
     assert result["status"] == "VALID_READ_ONLY_CONTEXT"
     assert result["actionable"] is False
-    assert result["funding"]["mark_index_basis_pct"] == pytest.approx(100 / 90000)
+    assert result["funding"]["mark_index_basis_pct"] == pytest.approx((90010 / 90000 - 1.0) * 100.0)
     assert result["open_interest"]["change_pct"] is None
 
 
