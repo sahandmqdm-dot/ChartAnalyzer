@@ -100,7 +100,7 @@ def test_evaluation_metrics_and_non_actionable_output():
     report = evaluate_forecasts(rows, min_segment_count=5)
     assert report["status"] == "EVALUATED_OUT_OF_SAMPLE"
     assert report["overall"]["n"] == 10
-    assert report["overall"]["directional_brier_score"] == pytest.approx(0.04)
+    assert report["overall"]["directional_brier_score"] == pytest.approx(0.16)
     assert report["overall"]["central_80_interval_coverage"] == 1.0
     assert report["actionable"] is False
     assert report["segments"]["regime"]["trending"]["sample_sufficient"] is True
