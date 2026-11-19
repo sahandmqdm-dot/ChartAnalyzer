@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -341,10 +342,10 @@ class CoinbaseExchangeSpotAdapter:
     market_type = "spot"
     base_url = "https://api.exchange.coinbase.com"
     supports_derivatives = False
-    intervals = {
+    intervals = MappingProxyType({
         "1m": 60, "5m": 300, "15m": 900, "1h": 3600,
         "6h": 21600, "1d": 86400,
-    }
+    })
 
     def __init__(
         self,
