@@ -55,3 +55,7 @@ def test_invalid_venue_and_naive_timestamp_rejected():
 def test_market_holidays_do_not_mark_weekends_as_trading_days():
     cal = USMarketCalendar()
     assert not cal.is_trading_day(date(2026, 1, 4))
+
+def test_juneteenth_market_closure_starts_in_2022():
+    assert date(2021, 6, 18) not in market_holidays(2021)
+    assert date(2022, 6, 20) in market_holidays(2022)
