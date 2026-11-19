@@ -146,3 +146,17 @@ def test_insufficient_segment_sample_is_flagged_not_hidden():
     ]
     result = evaluate_forecasts(rows, min_segment_count=5)
     assert result["segments"]["model"]["scenario-bootstrap"]["sample_sufficient"] is False
+
+
+def test_mixed_instruments_are_never_pooled_into_one_score():
+    btc = make_forecast()
+    eth = make_forecast(instrument_id="ETHUSDT")
+    rows = [
+        resolve_forecast(btc, 0.01, TARGET),
+        resolve_forecast(eth, -0.01, TARGET),
+    ]
+    report = evaluate_forecasts(rows)
+    assert report["overall"]["status"] == "NOT_AGGREGATED_MIXED_COHORTS"
+    assert len(report["cohorts"]) == 2
+    with pytest.raises(ForecastValidationError, match="comparable"):
+        calibration_report(rows)
