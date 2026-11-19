@@ -355,8 +355,6 @@ class CoinbaseExchangeSpotAdapter:
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self.config = config or ProviderConfig(max_limit=300)
-        if self.config.max_limit > 300:
-            raise ValueError("Coinbase candle limit cannot exceed 300")
         self._transport = transport or BinanceUSDMPublicAdapter._http_get
         self._clock = clock
         self._sleep = sleeper
@@ -490,6 +488,14 @@ class MarketDataHub:
         oi = adapter.fetch_open_interest_history(symbol, oi_period, oi_limit)
         if funding["provider"] != oi["provider"] or funding["market_type"] != oi["market_type"]:
             raise DataValidationError("derivatives provider or market type mismatch")
+        for section in (funding, oi):
+            if not isinstance(section.get("records"), list):
+                raise DataValidationError("derivatives provider records must be a list")
+            for record in section["records"]:
+                if not isinstance(record, Mapping):
+                    raise DataValidationError("derivatives observations must be mappings")
+                if record.get("provider") != funding["provider"] or record.get("instrument_id") != str(symbol).strip().upper():
+                    raise DataValidationError("derivatives observation identity mismatch")
         return {"provider": funding["provider"], "market_type": funding["market_type"],
                 "funding": funding, "open_interest": oi, "actionable": False,
                 "policy": "Independent provider observations; no synthetic merge or position inference."}
