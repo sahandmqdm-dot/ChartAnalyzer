@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- Added a read-only RSS/GDELT news service (`news_engine.py`), `GET /api/news` and a dashboard panel. Ported from the 7.9.1 integrated package and hardened: defusedxml parsing (no DTD/entities), streamed byte-capped responses, HTTPS-only redirects, bounded regex input, throttled forced refresh and bounded GDELT cache.
+- LLM `/api/explain` now receives only inert, bounded news fields (title/source/time, max 10); summaries and URLs are dropped and the system prompt marks headlines as unverified, untrusted text.
+- News is informational only. It is not wired to the signal formula, research registry, OOS evidence or deployment gate (enforced by a test).
+- `VERSION`/`APP_VERSION` intentionally unchanged (7.2.0): `APP_VERSION` is hashed into the strategy fingerprint, so a bump would invalidate existing OOS evidence.
+- New dependency: `defusedxml`.
+
 ## 7.2.0 - 2026-11-16
 - Added Quant Research Engine: immutable hypothesis/experiment registry, dataset/config lineage and multiple-testing controls.
 - Added circular moving-block bootstrap inference and block signal-permutation controls.
