@@ -143,6 +143,8 @@ class BinanceUSDMPublicAdapter:
     provider = "binance_usdm"
     market_type = "linear_perpetual"
     base_url = "https://fapi.binance.com"
+    klines_endpoint = "/fapi/v1/klines"
+    supports_derivatives = True
     intervals = frozenset({"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h",
                            "6h", "8h", "12h", "1d", "3d", "1w", "1M"})
     oi_periods = frozenset({"5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"})
@@ -172,10 +174,13 @@ class BinanceUSDMPublicAdapter:
             raise ProviderUnavailableError(f"Binance transport failed: {type(exc).__name__}") from exc
 
     def _get(self, path: str, params: Mapping[str, Any]) -> tuple[Any, datetime]:
-        if self.base_url != "https://fapi.binance.com":
-            raise ValueError("Binance adapter base URL is pinned to the reviewed HTTPS public API host")
-        if not path.startswith("/fapi/v1/") and not path.startswith("/futures/data/"):
-            raise ValueError("endpoint is not in the public market-data allowlist")
+        allowed = {
+            "https://fapi.binance.com": ("/fapi/v1/", "/futures/data/"),
+            "https://api.binance.com": ("/api/v3/",),
+        }
+        prefixes = allowed.get(self.base_url)
+        if prefixes is None or not path.startswith(prefixes):
+            raise ValueError("endpoint or host is not in the pinned public market-data allowlist")
         query = urlencode({key: value for key, value in params.items() if value is not None})
         url = f"{self.base_url}{path}?{query}"
         for attempt in range(self.config.max_retries + 1):
@@ -220,7 +225,7 @@ class BinanceUSDMPublicAdapter:
             raise ValueError(f"unsupported Binance interval: {interval}")
         if isinstance(limit, bool) or not 1 <= int(limit) <= self.config.max_limit:
             raise ValueError(f"limit must be between 1 and {self.config.max_limit}")
-        raw, retrieved = self._get("/fapi/v1/klines", {"symbol": symbol, "interval": interval, "limit": int(limit)})
+        raw, retrieved = self._get(self.klines_endpoint, {"symbol": symbol, "interval": interval, "limit": int(limit)})
         if not isinstance(raw, list):
             raise DataValidationError("klines payload must be a list")
         bars: list[OHLCVBar] = []
@@ -254,7 +259,7 @@ class BinanceUSDMPublicAdapter:
             if any(delta > _interval_seconds(interval) * 1.5 for delta in durations):
                 warnings.append("candle history contains gaps; no interpolation was performed")
         provenance = DataProvenance(
-            provider=self.provider, endpoint="/fapi/v1/klines", instrument_id=symbol,
+            provider=self.provider, endpoint=self.klines_endpoint, instrument_id=symbol,
             retrieved_at=retrieved, source_timestamp_semantics="exchange_kline_open_time_utc",
             market_type=self.market_type, raw_record_count=len(raw), normalized_record_count=len(bars),
         )
@@ -329,9 +334,8 @@ class MarketDataHub:
         key = str(name).strip().lower()
         if not key or key in self._adapters:
             raise ValueError("provider name must be non-empty and unique")
-        for method in ("fetch_ohlcv", "fetch_funding_history", "fetch_open_interest_history"):
-            if not callable(getattr(adapter, method, None)):
-                raise TypeError(f"adapter is missing {method}")
+        if not callable(getattr(adapter, "fetch_ohlcv", None)):
+            raise TypeError("adapter is missing fetch_ohlcv")
         self._adapters[key] = adapter
 
     def provider(self, name: str) -> Any:
@@ -359,6 +363,10 @@ class MarketDataHub:
     def fetch_derivatives(self, provider: str, symbol: str, *, oi_period: str = "1h",
                           funding_limit: int = 100, oi_limit: int = 30) -> dict[str, Any]:
         adapter = self.provider(provider)
+        if not getattr(adapter, "supports_derivatives", False):
+            raise MarketDataError(f"provider {provider} does not expose derivatives history")
+        if not callable(getattr(adapter, "fetch_funding_history", None)) or not callable(getattr(adapter, "fetch_open_interest_history", None)):
+            raise MarketDataError(f"provider {provider} is missing derivatives capabilities")
         funding = adapter.fetch_funding_history(symbol, funding_limit)
         oi = adapter.fetch_open_interest_history(symbol, oi_period, oi_limit)
         if funding["provider"] != oi["provider"] or funding["market_type"] != oi["market_type"]:
