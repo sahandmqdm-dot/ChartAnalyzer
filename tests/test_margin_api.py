@@ -6,6 +6,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import app
+from version import APP_VERSION
 
 
 def test_margin_api_uses_configured_defaults_and_returns_version(monkeypatch):
