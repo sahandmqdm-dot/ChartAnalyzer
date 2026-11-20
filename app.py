@@ -2223,21 +2223,65 @@ def api_research_fingerprint(source: str = "ramzinex", symbol: str = "USDTIRR", 
 
 @app.post("/api/research-lab/holdout/seal")
 def api_seal_holdout(payload: dict):
+    """Seal a verified, strictly later OHLCV sample against the current frozen strategy."""
     from holdout_vault import HoldoutVault
     try:
-        source=str(payload.get("source") or ""); symbol=str(payload.get("symbol") or "")
-        timeframe=str(payload.get("timeframe") or "")
-        start_ts=float(payload.get("start_timestamp")); end_ts=float(payload.get("end_timestamp"))
         from research_registry import ResearchRegistry
-        prior=ResearchRegistry(RESEARCH_REGISTRY_PATH).latest_sample_end(
-            source=source, symbol=symbol, timeframe=timeframe)
-        if prior is not None and start_ts <= float(prior):
+        from research_provenance import dataset_fingerprint, config_fingerprint
+
+        source = str(payload.get("source") or "ramzinex")
+        symbol = str(payload.get("symbol") or "USDTIRR")
+        timeframe = str(payload.get("timeframe") or payload.get("tf") or "1h")
+        count = max(100, min(int(payload.get("n", 1200)), 5000))
+        exchange = str(payload.get("exchange") or "coinex")
+        udf_url = str(payload.get("udf_url") or "")
+        csv_path = str(payload.get("csv_path") or "")
+
+        # Never trust caller-supplied fingerprints or time boundaries. Re-load
+        # the exact candidate sample and derive its identity inside the server.
+        df = load_cached(source, symbol, timeframe, count, exchange, udf_url, csv_path)
+        audit = _audit_research_frame(df, source, timeframe)
+        if not audit.get("valid", False) or int(audit.get("gap_count", 0) or 0) != 0:
+            raise ValueError("final holdout must pass OHLCV integrity with zero candle gaps")
+
+        start_ts = float(df["time"].iloc[0])
+        end_ts = float(df["time"].iloc[-1])
+        if end_ts > time.time() + 60:
+            raise ValueError("holdout contains timestamps in the future")
+
+        registry = ResearchRegistry(RESEARCH_REGISTRY_PATH)
+        prior = registry.latest_sample_end(source=source, symbol=symbol, timeframe=timeframe)
+        if prior is None:
+            raise ValueError("cannot seal a final holdout until a prior research sample is registered")
+        if start_ts <= float(prior):
             raise ValueError("holdout must begin strictly after the latest registered research sample")
-        return HoldoutVault(HOLDOUT_VAULT_PATH).seal(
-            dataset_id=str(payload.get("dataset_id") or ""),
-            config_hash=str(payload.get("config_hash") or ""),
+
+        C = conf()
+        actual_dataset_id = dataset_fingerprint(
+            df, source=source, symbol=symbol, timeframe=timeframe)
+        actual_config_hash = config_fingerprint(
+            _research_execution_config(timeframe, symbol, None, C))
+
+        supplied_dataset_id = payload.get("dataset_id")
+        supplied_config_hash = payload.get("config_hash")
+        if supplied_dataset_id and str(supplied_dataset_id) != actual_dataset_id:
+            raise ValueError("supplied dataset fingerprint does not match the loaded holdout")
+        if supplied_config_hash and str(supplied_config_hash) != actual_config_hash:
+            raise ValueError("supplied strategy fingerprint does not match the current frozen configuration")
+
+        sealed = HoldoutVault(HOLDOUT_VAULT_PATH).seal(
+            dataset_id=actual_dataset_id,
+            config_hash=actual_config_hash,
             source=source, symbol=symbol, timeframe=timeframe,
             start_timestamp=start_ts, end_timestamp=end_ts)
+        return {
+            **sealed,
+            "bars": int(len(df)),
+            "data_integrity": audit,
+            "previous_research_sample_end": float(prior),
+            "independent_temporal_sample": True,
+            "warning": "Seal created from server-verified OHLCV. Do not inspect or tune against this sample before its one-time evaluation.",
+        }
     except Exception as e:
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
