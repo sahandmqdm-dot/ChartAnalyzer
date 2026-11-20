@@ -120,6 +120,19 @@ def test_status_and_evaluation_remain_separate_from_collection(monkeypatch, tmp_
         app.api_prospective_holdout_evaluate({"cohort_id": payload["cohort_id"]})
 
 
+def test_config_fingerprint_binds_research_engine_revision(monkeypatch, tmp_path):
+    import research_provenance
+
+    clock = {"now": BASE_NOW}
+    setup_app(monkeypatch, tmp_path, clock)
+    payload = registration_payload()
+    first, identity = app._prospective_identity(payload)
+    assert identity["research_engine_revision"] == research_provenance.RESEARCH_ENGINE_REVISION
+    monkeypatch.setattr(research_provenance, "RESEARCH_ENGINE_REVISION", "test-revision-change")
+    second, _ = app._prospective_identity(payload)
+    assert first != second
+
+
 def test_register_rejects_collection_window_too_short_for_sample_floor(monkeypatch, tmp_path):
     clock = {"now": BASE_NOW}
     setup_app(monkeypatch, tmp_path, clock)
