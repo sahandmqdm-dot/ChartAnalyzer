@@ -318,8 +318,23 @@ class BinanceDualMarketCollector:
                     )
                     self._active_websockets[spec.market] = websocket
 
-                    def emit_health(state: str) -> None:
-                        ordered = sorted(latency_samples)
+                    health_counters = {
+                        "raw_frame_count": _health_counters["raw_frame_count"],
+                        "typed_event_count": _health_counters["typed_event_count"],
+                        "collector_error_count": _health_counters["collector_error_count"],
+                        "persistence_failure_count": _health_counters["persistence_failure_count"],
+                    }
+
+                    def emit_health(
+                        state: str,
+                        _latency_samples=latency_samples,
+                        _health_counters=health_counters,
+                        _capture=capture,
+                        _session_id=session_id,
+                        _spec=spec,
+                        _reconnect_count=reconnect_count,
+                    ) -> None:
+                        ordered = sorted(_latency_samples)
                         def percentile(fraction: float) -> float | None:
                             if not ordered:
                                 return None
@@ -354,17 +369,17 @@ class BinanceDualMarketCollector:
                                 "typed_event_count": typed_event_count,
                                 "collector_error_count": collector_error_count,
                                 "persistence_failure_count": persistence_failure_count,
-                                "reconnect_count": reconnect_count,
+                                "reconnect_count": _reconnect_count,
                                 "write_pipeline_latency_ms": {
                                     "sample_count": len(ordered),
                                     "p50": percentile(0.50),
                                     "p95": percentile(0.95),
                                     "max": round(ordered[-1], 3) if ordered else None,
                                 },
-                                "orderbook": capture.metrics(),
+                                "orderbook": _capture.metrics(),
                             },
                             received_at=utc_now(),
-                            session_id=session_id,
+                            session_id=_session_id,
                         )
 
                     emit_health("connected")
@@ -392,6 +407,7 @@ class BinanceDualMarketCollector:
                                     session_id=session_id,
                                 )
                                 raw_frame_count += 1
+                                health_counters["raw_frame_count"] = raw_frame_count
                                 envelope = json.loads(message)
                                 stream = str(envelope.get("stream", "unknown"))
                                 payload = envelope.get("data", envelope)
@@ -408,6 +424,7 @@ class BinanceDualMarketCollector:
                                                   sequence=metadata["sequence"],
                                                   session_id=session_id)
                                 typed_event_count += 1
+                                health_counters["typed_event_count"] = typed_event_count
                                 stream_counts[kind] = stream_counts.get(kind, 0) + 1
                                 latency_samples.append((time.perf_counter() - pipeline_started) * 1000.0)
                                 if kind == "orderbook_depth":
@@ -419,6 +436,7 @@ class BinanceDualMarketCollector:
                                                   stream_name=stream,
                                                   session_id=session_id)
                                 collector_error_count += 1
+                                health_counters["collector_error_count"] = collector_error_count
                                 latency_samples.append((time.perf_counter() - pipeline_started) * 1000.0)
                             if raw_frame_count and raw_frame_count % self.health_interval_events == 0:
                                 emit_health("running")
@@ -464,7 +482,7 @@ class BinanceDualMarketCollector:
                                        "termination": "cancelled"},
                                       received_at=interrupted_at, session_id=session_id)
                 raise
-            except Exception as exc:  # noqa: BLE001  # network libraries expose several transport exception types
+            except Exception as exc:  # network libraries expose several transport exception types
                 if isinstance(exc, (OSError, CollectorError)):
                     persistence_failure_count += 1
                 reconnect_count += 1
