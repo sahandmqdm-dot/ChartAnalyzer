@@ -3,6 +3,7 @@ import pytest
 from execution_cost_engine import (
     evaluate_execution,
     market_sweep_fills,
+    record_execution_cost_experiment,
     validate_fee_schedule,
 )
 
@@ -206,3 +207,34 @@ def test_l2_market_sweep_rejects_invalid_sequence_book_and_unsorted_levels():
 def test_market_order_cannot_claim_maker_liquidity():
     with pytest.raises(ValueError, match="must be taker"):
         run(fills=[{"price": 100, "quantity": 1, "liquidity_role": "maker"}])
+
+
+def test_execution_cost_result_is_registered_with_provenance_and_completeness(tmp_path):
+    from research_registry import ResearchRegistry
+
+    registry = ResearchRegistry(tmp_path / "research.db")
+    registry.register("cost-hypothesis-v1", "Execution cost accounting",
+                      {"purpose": "frozen execution cost model"})
+    complete_result = run(impact_bps=0)
+    recorded = record_execution_cost_experiment(
+        registry, experiment_id="cost-exp-001", hypothesis_id="cost-hypothesis-v1",
+        dataset_id="dataset-abc", config_hash="config-abc", source="binance_spot",
+        symbol="BTCUSDT", timeframe="1m", execution_result=complete_result,
+        run_id="replay-001",
+    )
+    assert recorded["created"] is True
+    assert recorded["registry_status"] == "COMPLETED"
+
+    summary = registry.summary()
+    metrics = summary["recent_experiments"][0]["metrics"]
+    assert metrics["fee_schedule_provenance"]["fee_schedule_hash"]
+    assert metrics["cost_model_complete"] is True
+
+    incomplete_result = run()
+    incomplete = record_execution_cost_experiment(
+        registry, experiment_id="cost-exp-002", hypothesis_id="cost-hypothesis-v1",
+        dataset_id="dataset-abc", config_hash="config-abc", source="binance_spot",
+        symbol="BTCUSDT", timeframe="1m", execution_result=incomplete_result,
+    )
+    assert incomplete["registry_status"] == "INCOMPLETE_COST_MODEL"
+    assert registry.summary()["failed_experiments"] == 1
