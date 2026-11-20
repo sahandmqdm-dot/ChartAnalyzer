@@ -45,13 +45,28 @@ Leave the proxy variable unset for the library's default environment proxy behav
 
 ## Current implementation boundary
 
-This first implementation is a durable raw-stream capture foundation, not yet a complete reconstructed market-data product.
+The live collector now connects the WebSocket depth stream to the snapshot/diff synchronizer and persists both raw events and reconstructed-book lifecycle evidence.
 
-- `binance_orderbook.py` now provides a public REST snapshot fetcher, a bounded-by-provider-depth in-memory bid/ask map, buffered diff synchronization, sequence-gap rejection, and top-of-book/depth-imbalance metrics. The caller must buffer WebSocket depth events while fetching the snapshot, then pass that buffer to `synchronize_buffered`. The long-running collector is not yet orchestrating this bootstrap/rebootstrap loop or periodically reconciling snapshots.
-- Raw trade events preserve Binance payload fields, including trade IDs, event/trade timestamps, price, quantity and maker-side flag where supplied.
-- Historical public trade endpoints can sometimes backfill trade IDs, subject to endpoint retention and API limits. Historical L2 order-book deltas cannot be reconstructed after a disconnect. The collector must record those intervals as unrecoverable depth gaps.
-- The next implementation stage must connect the collector's live depth stream to the snapshot/buffer synchronizer, persist explicit depth-gap/rebootstrap lifecycle events, add deterministic replay, schema validation, and a Parquet compaction path. Do not mark an order book valid until snapshot and diff sequence synchronization succeeds.
-- Liquidation stream events are sampled/aggregated provider events, not a complete record of every liquidation.
+- `binance_orderbook.py` provides the public REST snapshot fetcher, bounded in-memory bid/ask map, buffered diff synchronization, sequence-gap rejection, automatic snapshot recovery with bounded retry/backoff, and top-of-book/depth-imbalance metrics. The local book is unreadable until a buffered diff bridges the snapshot sequence.
+- `binance_stream_collector.py` captures Spot and USD-M independently. It records raw `@trade` events (tick-by-tick), `@depth@100ms` updates and USD-M `@forceOrder` events before downstream interpretation. Event time, trade time, receive time, full stream name, native sequence/trade identifiers and session ID are retained.
+- Session manifests and connection transitions are recorded. Graceful stream completion records an ended session; cancellation or transport failure records an interrupted session. A stopped/interrupted session must never be silently treated as uninterrupted market coverage.
+- `binance_pit_vault.py` creates content-addressed session manifests, verifies raw partition hash chains and file digests, and deterministically replays snapshots plus depth diffs. Replay output reports sequence gaps and final book validity.
+- Point-in-time availability is defined by local `received_at`, not exchange `event_time`. An exchange timestamp does not prove that the strategy had received the event at that time. The vault reports missing/invalid event timestamps and event timestamps later than local receipt.
+- The hash chain and content-addressed manifests are tamper-evident, not administrator-proof immutable storage, signed attestations or a substitute for independently controlled backups. The collector is designed for one writer per market/stream/day partition; do not run multiple collector processes against the same data directory.
+- Historical L2 order-book deltas cannot be reconstructed after a disconnect. Snapshot recovery restores a current valid book, but the missing interval remains a recorded data gap. Historical trade backfill is endpoint- and retention-limited.
+- Liquidation stream events are provider-published events, not a guaranteed complete record of every liquidation.
+
+### Seal, verify and replay a closed session
+
+Find the session ID in the raw `session_manifest` JSONL records, then run:
+
+```powershell
+python -m binance_pit_vault --data-dir $env:CHARTANALYZER_DATA_DIR manifest --market spot --session-id "<SESSION_ID>"
+python -m binance_pit_vault --data-dir $env:CHARTANALYZER_DATA_DIR verify --manifest "<PATH_TO_MANIFEST_JSON>"
+python -m binance_pit_vault --data-dir $env:CHARTANALYZER_DATA_DIR replay --market spot --session-id "<SESSION_ID>"
+```
+
+Use `--market usdm` for the Futures stream. Active sessions cannot be sealed or replayed because their source partitions are still changing. Interrupted sessions can be replayed for diagnostics, but the report labels them `incomplete_capture`; integrity success alone does not mean complete coverage or usable research data.
 
 ## Integrity and holdout boundary
 
@@ -68,7 +83,7 @@ The 42-day holdout clock is NOT started by running this collector. Start only af
 ## Tests
 
 ```powershell
-python -m pytest tests/test_binance_stream_collector.py -q
+python -m pytest tests/test_binance_stream_collector.py tests/test_binance_orderbook.py tests/test_binance_pit_vault.py -q
 ```
 
 
