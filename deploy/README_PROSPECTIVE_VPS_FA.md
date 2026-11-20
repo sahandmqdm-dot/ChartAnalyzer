@@ -201,3 +201,30 @@ sudo ls -lh /var/backups/chartanalyzer/prospective_holdouts
 ~~~
 
 هر Backup با `PRAGMA integrity_check` بررسی می‌شود و فایل Manifest شامل SHA-256، زمان ایجاد و اندازه دارد. نگهداری پیش‌فرض 30 روز است. یک نسخه خارج از VPS نیز نگه دارید؛ Backup روی همان دیسک جایگزین Disaster Recovery نیست.
+
+
+## جمع‌آوری مستقل Raw Tick و Order Book از Binance
+
+این سرویس از Prospective PMI Collector جداست. آن را برای آرشیو داده خام Spot و USD-M Futures اجرا کنید؛ فعال‌سازی آن به‌تنهایی به معنی ورود Microstructure به مدل PMI یا شروع Holdout نیست.
+
+ابتدا مسیر داده را ایجاد کنید:
+
+~~~bash
+sudo install -d -o chartanalyzer -g chartanalyzer -m 0700 /var/lib/chartanalyzer/binance_raw
+sudo install -o root -g root -m 0644 deploy/systemd/chartanalyzer-binance-raw-collector.service /etc/systemd/system/
+sudo systemctl daemon-reload
+~~~
+
+سپس سرویس را فعال کنید:
+
+~~~bash
+sudo systemctl enable --now chartanalyzer-binance-raw-collector.service
+sudo systemctl status chartanalyzer-binance-raw-collector.service --no-pager
+sudo journalctl -u chartanalyzer-binance-raw-collector.service -f
+~~~
+
+Collector به‌طور هم‌زمان BTCUSDT Spot و USD-M Futures را می‌گیرد. رویدادهای خام WebSocket پیش از JSON parsing در `raw_frames` ذخیره می‌شوند؛ رویدادهای تایپ‌شده، Snapshot و وضعیت همگام‌سازی Order Book نیز در پارتیشن‌های جداگانه نوشته می‌شوند. متن خام با UTF-8 و پیام باینری با Base64 حفظ می‌شود.
+
+مسیر داده شامل پارتیشن‌های روزانه JSONL و Hash Chain است. پس از توقف تمیز، فایل‌ها flush و fsync می‌شوند. در حال حاضر سیاست fsync پیش‌فرض هر 100 رویداد است؛ بنابراین این طراحی در برابر قطع ناگهانی برق تضمین صفر-اتلاف نمی‌دهد. برای شروع آزمون رسمی باید نرخ واقعی داده، ظرفیت دیسک، تأخیر fsync، شمارنده رویدادهای ازدست‌رفته و بازیابی پس از قطع ناگهانی جداگانه اندازه‌گیری شوند.
+
+اعتبار زنجیره هر پارتیشن را می‌توان با تابع `HashChainJSONLStore.verify_file` در Python بررسی کرد. قبل از استفاده پژوهشی، تمام فایل‌ها را Verify کنید و Manifest روزانه شامل تعداد رویداد، اولین/آخرین timestamp، آخرین hash، تعداد gapها و تعداد خطاهای ذخیره‌سازی را خارج از مسیر داده اصلی آرشیو کنید.
