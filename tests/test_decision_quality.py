@@ -1,15 +1,15 @@
-from datetime import UTC, datetime, timedelta
+import datetime
 
 import pytest
 
 from decision_quality import DecisionQualityError, evaluate_decision_quality
 
 
-T0 = datetime(2026, 1, 1, tzinfo=UTC)
+T0 = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
 
 def record(i, action, net, *, reason=None, start=None, end=None, resolved=None):
-    start = start or T0 + timedelta(hours=i * 5)
+    start = start or T0 + datetime.timedelta(hours=i * 5)
     end = end or start + timedelta(hours=4)
     return {
         "decision_id": f"d{i}",
@@ -52,7 +52,7 @@ def test_requires_outcome_for_no_trade_and_timezone_aware_timestamps():
     with pytest.raises(DecisionQualityError):
         evaluate_decision_quality([row])
     row = record(0, "NO_TRADE", -0.01)
-    row["decision_at"] = datetime(2026, 1, 1)
+    row["decision_at"] = datetime.datetime(2026, 1, 1)
     with pytest.raises(DecisionQualityError, match="timezone-aware"):
         evaluate_decision_quality([row])
 
