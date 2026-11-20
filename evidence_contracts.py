@@ -10,9 +10,10 @@ import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any
 
 
 class EvidenceContractError(ValueError):
@@ -270,7 +271,7 @@ def validate_source_links(
             raise EvidenceContractError("evidence first_seen_at precedes its source first_seen_at")
         if record.available_at < source.first_seen_at:
             raise EvidenceContractError("evidence available_at precedes source availability")
-        if record.published_at is not None and source.published_at is not None:
-            if record.published_at != source.published_at:
-                raise EvidenceContractError("evidence publication timestamp conflicts with source reference")
+        if (record.published_at is not None and source.published_at is not None
+                and record.published_at != source.published_at):
+            raise EvidenceContractError("evidence publication timestamp conflicts with source reference")
     return validated
