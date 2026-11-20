@@ -5,12 +5,11 @@ Every supplied fill carries an explicit liquidity role and provenance.
 """
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
-
 import hashlib
 import json
 import math
+from datetime import datetime
+from typing import Any
 
 
 ENGINE_VERSION = "ExecutionCostEngine 1.0"
