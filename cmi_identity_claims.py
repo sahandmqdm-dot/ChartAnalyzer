@@ -7,19 +7,14 @@ instrument identities, ingest sources, invoke an LLM, or authorize trading.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from threading import RLock
 from typing import Iterable
 
-from evidence_contracts import (
-    EvidenceContractError,
-    EvidenceRecord,
-    canonical_sha256,
-)
-from multi_asset import Instrument, MarketRegistry
+from evidence_contracts import EvidenceRecord, canonical_sha256
+from multi_asset import MarketRegistry
 
 
 class IdentityContractError(ValueError):
@@ -245,6 +240,33 @@ class EntityResolver:
                 return self._entities[entity_id]
             except KeyError as exc:
                 raise KeyError(f"unknown entity: {entity_id}") from exc
+
+    def resolve_instrument(
+        self, *, venue: str, symbol: str, market_type: str
+    ) -> EntityResolutionResult:
+        """Resolve through the existing venue-scoped MarketRegistry.
+
+        The returned candidate is the existing canonical instrument ID, not
+        a newly created entity or a fuzzy ticker match.
+        """
+        query = f"{venue}:{symbol}:{market_type}"
+        if self._market_registry is None:
+            return EntityResolutionResult(
+                ResolutionStatus.UNRESOLVED, query, (), None, 0.0,
+                "MarketRegistry was not supplied",
+            )
+        try:
+            instrument = self._market_registry.get_by_venue(venue, symbol, market_type)
+        except KeyError:
+            return EntityResolutionResult(
+                ResolutionStatus.UNRESOLVED, query, (), None, 0.0,
+                "unknown venue-scoped instrument",
+            )
+        return EntityResolutionResult(
+            ResolutionStatus.RESOLVED, query, (instrument.canonical_id,),
+            ResolutionMethod.VENUE_INSTRUMENT, 1.0,
+            "resolved by existing canonical MarketRegistry",
+        )
 
 
 class ClaimModality(str, Enum):
