@@ -2,7 +2,7 @@
 ChartAnalyzer V7.2.0 - Reproducible Research & OOS Integrity.
 Requires only:  pip install pandas numpy requests      (ccxt optional)
 
-PC / local only :  python app.py                 ->  http://127.1.0.1:8765
+PC / local only :  python app.py                 ->  http://127.0.0.1:8765
 Phone / LAN     :  python app.py --lan           ->  prints http://<ip>:8765/?t=<token>
 Config          :  config.json next to this file (see config.example.json)
 
@@ -55,6 +55,7 @@ class App:
 
 app = App()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_HOST = "127.0.0.1"
 CFG_PATH = os.path.join(BASE_DIR, "config.json")
 VALIDATION_EVIDENCE_PATH = os.path.join(BASE_DIR, "strategy_validation_evidence.json")
 RESEARCH_REGISTRY_PATH = os.path.join(BASE_DIR, "research_registry.db")
@@ -3414,16 +3415,16 @@ def lan_ip():
 def serve():
     c = cfg()
     lan = "--lan" in sys.argv
-    host = "0.0.0.0" if lan else (c.get("host") or os.getenv("HOST", "127.1.0.1"))
+    host = "0.0.0.0" if lan else (c.get("host") or os.getenv("HOST", DEFAULT_HOST))
     port = int(c.get("port") or os.getenv("PORT", 8765))
-    exposed = host not in ("127.1.0.1", "localhost", "::1")
+    exposed = host not in (DEFAULT_HOST, "127.1.0.1", "localhost", "::1")
     token = (c.get("access_token") or os.getenv("ACCESS_TOKEN", "")) if exposed else ""
     if exposed and not token:
         token = secrets.token_urlsafe(16)
         print("(no access_token in config.json - generated a temporary one for this run)")
     if exposed and not _valid_access_token(token):
         raise SystemExit("ACCESS_TOKEN/access_token must be 16-512 URL-safe ASCII characters (letters, digits, . _ ~ -).")
-    hosts = {f"{h}:{port}" for h in ("127.1.0.1", "localhost", "[::1]")}
+    hosts = {f"{h}:{port}" for h in (DEFAULT_HOST, "127.1.0.1", "localhost", "[::1]")}
     ip = lan_ip() if exposed else ""
     if exposed:
         hosts.add(f"{ip}:{port}")
@@ -3478,7 +3479,7 @@ def serve():
         print("  Plain HTTP: anyone sniffing this Wi-Fi can read the token. Use a trusted network only.")
         print("  Anyone on this network WITHOUT the token gets 401. Do not share the link.")
     else:
-        print(f"Open: http://127.1.0.1:{port}")
+        print(f"Open: http://{DEFAULT_HOST}:{port}")
     if journal_items(conf()):
         threading.Thread(target=journal_loop, daemon=True).start()
         print("Journal job running (one prediction per new bar) -> agent_journal.db")
