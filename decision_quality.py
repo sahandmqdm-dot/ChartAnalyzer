@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any, Iterable
+from typing import Any
 
 
 class DecisionQualityError(ValueError):
@@ -20,7 +21,7 @@ class DecisionQualityError(ValueError):
 def _timestamp(value: Any, field: str) -> datetime:
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            value = datetime.fromisoformat(value)
         except ValueError as exc:
             raise DecisionQualityError(f"{field} must be an ISO-8601 timestamp") from exc
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
@@ -108,7 +109,8 @@ def evaluate_decision_quality(records: Iterable[dict[str, Any]]) -> dict[str, An
         })
 
     normalized.sort(key=lambda x: x["decision_at"])
-    for previous, current in zip(normalized, normalized[1:]):
+    from itertools import pairwise
+    for previous, current in pairwise(normalized):
         if current["decision_at"] < previous["horizon_end"]:
             raise DecisionQualityError(
                 "overlapping opportunity horizons are not comparable in this single-unit diagnostic"
