@@ -404,6 +404,8 @@ def replay_orderbook_session(
         }[field] == reference[field]
         for field in comparison_fields
     )
+    # Detect any source mutation that occurred while the two replay passes ran.
+    verify_session_manifest(root, manifest)
     report_body = {
         "schema": "chartanalyzer_l2_replay_report_v1",
         "market": market,
@@ -592,6 +594,7 @@ def reference_replay_orderbook_session(
         if record.get("stream") in {"orderbook_depth", "orderbook_snapshots"}
     )
     result = _reference_replay_records(ordered, market, manifest["symbol"])
+    verify_session_manifest(root, manifest)
     return {
         **result,
         "session_id": session_id,
