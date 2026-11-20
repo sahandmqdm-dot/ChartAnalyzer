@@ -80,11 +80,12 @@ The ledger reuses `forecast_validation.evaluate_forecasts` and reports:
 - Median forecast MAE and RMSE for the median return estimate.
 - Quantile pinball loss for q10, q50 and q90.
 - Coverage and width of the central 80% interval.
+- Matched baseline evaluations and paired block-bootstrap confidence intervals for candidate-minus-baseline differences.
 - Directional Brier score for forecasts that supplied P(return > 0).
 - Reliability/calibration table, including sample-size flags.
 - Separate cohorts by instrument, market type, timeframe and horizon.
 
-The next evaluation layer must compare the candidate against pre-registered, timestamp-matched baselines (zero-return/random-walk, historical unconditional distribution, and a simple volatility-scaled baseline). Candidate-versus-baseline differences should use paired block-bootstrap confidence intervals because forecast outcomes can remain serially dependent even when target windows do not overlap.
+The collector now freezes and records three timestamp-matched baselines alongside every candidate forecast: zero-return point forecast, historical unconditional horizon-return quantiles, and an EWMA-volatility Gaussian distribution. Baseline inputs use only closes available at the same forecast cutoff. At final evaluation, each baseline is scored on the identical realized outcomes, and candidate-minus-baseline differences for pinball loss, median MAE, interval coverage and interval width receive paired moving-block-bootstrap 95% confidence intervals. Negative loss deltas favor the candidate; positive coverage deltas favor the candidate. Width must always be interpreted together with coverage. These are descriptive comparisons, not a guarantee of edge or a multiple-testing-adjusted promotion rule.
 
 No single metric establishes predictive edge. A model should not be considered validated merely because its point estimate is positive or one reliability bin looks favorable.
 
@@ -126,6 +127,14 @@ The API integration is available in the local app. The ledger is stored outside 
 The first integrated collector supports **Spot** data from Ramzinex or CCXT. It uses only fully closed candles. It records the PMI bootstrap quantiles as log-return forecasts and stores the last closed candle's close as the reference price. When the target candle closes, the next tick resolves the outcome from that exact candle. Missing target candles are left unresolved; the resolver never substitutes a nearby candle.
 
 Example one-time registration for Ramzinex USDT/IRR, 1-hour candles and a 4-bar horizon:
+
+A ready-to-run Windows helper uses these defaults (USDTIRR, 1h, 4 bars, 3,000 bootstrap paths, 1,200 history bars, 45-day collection and 200 forecasts):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File ".\\tools\\Register-ProspectiveHoldout.ps1"
+```
+
+You can override the symbol, timeframe, horizon, collection days and sample thresholds with script parameters. The equivalent manual API request is shown below:
 
 ```powershell
 $Base = "http://127.0.0.1:8765"

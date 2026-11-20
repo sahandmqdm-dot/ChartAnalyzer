@@ -48,6 +48,7 @@ A positive technical score is not, by itself, proof of statistical edge. `NO_TRA
 | `entry_edge_research.py`, `exit_policy_research.py` | OOS trade-level entry and exit diagnostics; not automatic optimizers. |
 | `holdout_vault.py` | Historical dataset holdout lifecycle guard; not a creator of future independent samples. |
 | `prospective_holdout.py` | Append-only future forecast/outcome ledger, frozen cohort, non-overlapping horizons, hash-chain verification and one-time final evaluation. |
+| `prospective_baselines.py` | Frozen zero-return, historical unconditional and EWMA-Gaussian forecast baselines with paired moving-block-bootstrap comparison. |
 | `strategy_validation.py` | Fail-closed OOS evidence gate for a precise market/configuration identity. |
 | `iran_crypto_market.py`, `iran_crypto_mcp.py` | Optional read-only Iranian exchange data integration through MCP. Not used to silently augment historical research samples. |
 | `agent_core.py` | Decision support, trade gate and local prediction journal. |

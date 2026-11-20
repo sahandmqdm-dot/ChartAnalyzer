@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import replace
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 
@@ -75,7 +76,7 @@ def paired_block_bootstrap_mean_ci(
             "block_length": min(int(block_length), n), "repetitions": int(repetitions),
         }
     block = min(int(block_length), n)
-    blocks_needed = int(math.ceil(n / block))
+    blocks_needed = math.ceil(n / block)
     rng = np.random.default_rng(int(seed))
     starts = rng.integers(0, n - block + 1, size=(int(repetitions), blocks_needed))
     offsets = np.arange(block)

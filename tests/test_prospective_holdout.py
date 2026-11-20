@@ -13,6 +13,11 @@ END = START + datetime.timedelta(days=7)
 CONFIG = "c" * 64
 INPUT_DATA = "a" * 64
 OUTCOME_DATA = "b" * 64
+BASELINES = {
+    "zero_return_point": {"q10": 0.0, "q50": 0.0, "q90": 0.0},
+    "historical_unconditional": {"q10": -0.02, "q50": 0.001, "q90": 0.025},
+    "ewma_gaussian": {"q10": -0.03, "q50": 0.0, "q90": 0.03},
+}
 
 
 def make_ledger(tmp_path, *, min_forecasts=30):
@@ -65,6 +70,7 @@ def append_forecast(ledger, index=0, **kwargs):
         config_fingerprint=CONFIG,
         input_source="ramzinex-public",
         reference_price=100.0,
+        baseline_quantiles=BASELINES,
         recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
     )
     return forecast
@@ -109,7 +115,7 @@ def test_forecast_must_match_frozen_config_and_model(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="config fingerprint"):
         ledger.record_forecast(
-            forecast, config_fingerprint="d" * 64, input_source="feed", reference_price=100.0,
+            forecast, config_fingerprint="d" * 64, input_source="feed", reference_price=100.0, baseline_quantiles=BASELINES,
             recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
         )
     with pytest.raises(ValueError, match="model_version"):
@@ -121,7 +127,7 @@ def test_forecast_must_be_persisted_before_target(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="strictly before its target"):
         ledger.record_forecast(
-            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
+            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0, baseline_quantiles=BASELINES,
             recorded_at=forecast.target_at,
         )
 
@@ -131,7 +137,7 @@ def test_delayed_forecast_persistence_is_rejected(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="within 60 seconds"):
         ledger.record_forecast(
-            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
+            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0, baseline_quantiles=BASELINES,
             recorded_at=forecast.issued_at + datetime.timedelta(minutes=2),
         )
 
@@ -141,7 +147,7 @@ def test_forecast_target_must_match_declared_horizon(tmp_path):
     forecast = make_forecast(target_at=START + datetime.timedelta(hours=5))
     with pytest.raises(ValueError, match="horizon_bars"):
         ledger.record_forecast(
-            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
+            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0, baseline_quantiles=BASELINES,
             recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
         )
 
@@ -156,7 +162,7 @@ def test_overlapping_forecast_horizons_are_rejected(tmp_path):
     )
     with pytest.raises(ValueError, match="overlapping"):
         ledger.record_forecast(
-            overlapping, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
+            overlapping, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0, baseline_quantiles=BASELINES,
             recorded_at=overlapping.issued_at + datetime.timedelta(seconds=1),
         )
 
@@ -211,6 +217,9 @@ def test_complete_prospective_cohort_evaluates_once_and_is_non_actionable(tmp_pa
     assert report["prospective_holdout"]["forecast_count"] == 30
     assert report["prospective_holdout"]["input_sources"] == ["ramzinex-public"]
     assert report["prospective_holdout"]["outcome_sources"] == ["independent-outcome-feed"]
+    assert report["baseline_comparison"]["n_paired"] == 30
+    assert set(report["baseline_comparison"]["baseline_evaluations"]) == set(BASELINES)
+    assert "paired_comparisons" in report["baseline_comparison"]
     assert ledger.final_report() == report
     with pytest.raises(ValueError, match="already been evaluated"):
         ledger.evaluate_once(now=END + datetime.timedelta(days=2))
@@ -276,6 +285,18 @@ def test_pending_forecast_queue_and_next_issue_time(tmp_path):
     assert ledger.pending_forecasts() == []
 
 
+def test_baseline_registry_is_mandatory_and_frozen(tmp_path):
+    ledger = make_ledger(tmp_path)
+    forecast = make_forecast()
+    with pytest.raises(ValueError, match="frozen baseline registry"):
+        ledger.record_forecast(
+            forecast, config_fingerprint=CONFIG, input_source="feed",
+            reference_price=100.0,
+            baseline_quantiles={"candidate": {"q10": -0.1, "q50": 0.0, "q90": 0.1}},
+            recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
+        )
+
+
 def test_reference_price_must_be_positive_and_finite(tmp_path):
     ledger = make_ledger(tmp_path)
     forecast = make_forecast()
@@ -283,6 +304,7 @@ def test_reference_price_must_be_positive_and_finite(tmp_path):
         ledger.record_forecast(
             forecast, config_fingerprint=CONFIG, input_source="feed",
             reference_price=0.0,
+            baseline_quantiles=BASELINES,
             recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
         )
 
