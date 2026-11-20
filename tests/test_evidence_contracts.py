@@ -211,3 +211,15 @@ def test_evidence_cannot_be_available_before_source_retrieval():
 def test_source_publication_cannot_follow_its_retrieval():
     with pytest.raises(EvidenceContractError, match="published_at cannot be later"):
         source(published_at=T0 + datetime.timedelta(seconds=3))
+
+
+def test_evidence_requires_resolved_entity_scope():
+    with pytest.raises(EvidenceContractError, match="one or more resolved entity_ids"):
+        evidence(entity_ids=())
+
+
+def test_source_link_validation_rejects_invalid_record_types():
+    with pytest.raises(EvidenceContractError, match="EvidenceRecord instances"):
+        validate_source_links([object()], [source()])
+    with pytest.raises(EvidenceContractError, match="SourceReference instances"):
+        validate_source_links([evidence()], [object()])
