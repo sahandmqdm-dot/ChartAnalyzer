@@ -1,5 +1,5 @@
 """
-ChartAnalyzer V7.2.0 - Reproducible Research & OOS Integrity.
+ChartAnalyzer V7.3.0 - Quantitative Market Intelligence & Futures Research.
 Requires only:  pip install pandas numpy requests      (ccxt optional)
 
 PC / local only :  python app.py                 ->  http://127.0.0.1:8765
@@ -2612,7 +2612,7 @@ def _prospective_identity(payload):
     identity = {
         "release_sha": os.getenv("CHARTANALYZER_RELEASE_SHA", "unversioned"),
         "research_engine_revision": research_provenance.RESEARCH_ENGINE_REVISION,
-        "app_version": "7.2.0",
+        "app_version": APP_VERSION,
         "model_id": model_id,
         "model_version": model_version,
         "code_sha256": code_hashes,
