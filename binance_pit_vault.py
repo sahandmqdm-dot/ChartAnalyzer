@@ -111,19 +111,72 @@ def build_session_manifest(
         str(stream).split("@", 1)[0].upper()
         for stream in streams if isinstance(stream, str) and "@" in stream
     })
+    terminal = next(
+        (m for m in reversed(manifests)
+         if m.get("state") in {"ended", "interrupted"}), None
+    )
+    market_events = [
+        r for r in records
+        if r.get("stream") in {"trades", "orderbook_depth", "liquidations"}
+    ]
+    missing_event_time = 0
+    event_after_receive = 0
+    received_times: list[datetime] = []
+    for record in records:
+        received_raw = record.get("received_at")
+        try:
+            received_dt = datetime.fromisoformat(str(received_raw).replace("Z", "+00:00"))
+            if received_dt.tzinfo is None:
+                raise ValueError("naive received_at")
+            received_times.append(received_dt)
+        except (TypeError, ValueError):
+            raise PITVaultError("invalid_or_timezone_naive_received_at")
+    for record in market_events:
+        event_raw = record.get("event_time")
+        if not event_raw:
+            missing_event_time += 1
+            continue
+        try:
+            event_dt = datetime.fromisoformat(str(event_raw).replace("Z", "+00:00"))
+            received_dt = datetime.fromisoformat(
+                str(record["received_at"]).replace("Z", "+00:00")
+            )
+            if event_dt.tzinfo is None or received_dt.tzinfo is None:
+                raise ValueError("naive timestamp")
+            if event_dt > received_dt:
+                event_after_receive += 1
+        except (KeyError, TypeError, ValueError):
+            missing_event_time += 1
+
+    session_state = terminal.get("state") if terminal else "active"
     body = {
         "schema": "chartanalyzer_pit_session_manifest_v1",
         "market": market,
         "session_id": session_id,
         "symbol": symbols[0] if len(symbols) == 1 else None,
         "started_at": started.get("started_at"),
-        "ended_at": next(
-            (m.get("ended_at") for m in reversed(manifests)
-             if m.get("state") in {"ended", "interrupted"}), None
-        ),
+        "ended_at": terminal.get("ended_at") if terminal else None,
+        "session_state": session_state,
+        "session_closed": terminal is not None,
+        "session_complete": bool(terminal and terminal.get("state") == "ended"),
+        "termination": terminal.get("termination") if terminal else None,
         "streams": streams,
         "event_counts": event_counts,
         "total_session_records": len(records),
+        "availability_contract": {
+            "available_at_field": "received_at",
+            "rule": "An event is unavailable to the strategy before local receipt time.",
+            "event_time_is_not_availability_time": True,
+        },
+        "event_time_quality": {
+            "market_events": len(market_events),
+            "missing_or_invalid_event_time": missing_event_time,
+            "event_time_after_receive_time": event_after_receive,
+        },
+        "received_time_range": {
+            "first": min(received_times).isoformat() if received_times else None,
+            "last": max(received_times).isoformat() if received_times else None,
+        },
         "source_files": files,
     }
     manifest_hash = hashlib.sha256(_canonical(body)).hexdigest()
@@ -136,6 +189,8 @@ def persist_session_manifest(
     """Write the manifest atomically under its content hash."""
     root = Path(data_root).expanduser().resolve()
     manifest = build_session_manifest(root, market, session_id)
+    if not manifest["session_closed"]:
+        raise PITVaultError("cannot seal an active capture session")
     directory = root / "vault" / "manifests"
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"{manifest['manifest_hash']}.json"
@@ -196,6 +251,8 @@ def replay_orderbook_session(
 ) -> dict[str, Any]:
     """Replay one session's snapshots and raw depth diffs in receive-time order."""
     manifest = build_session_manifest(data_root, market, session_id)
+    if not manifest["session_closed"]:
+        raise PITVaultError("cannot replay an active capture session")
     verify_session_manifest(data_root, manifest)
     root = Path(data_root).expanduser().resolve()
     records, _ = _session_partitions(root, market, session_id)
@@ -258,6 +315,15 @@ def replay_orderbook_session(
         "session_id": session_id,
         "manifest_hash": manifest["manifest_hash"],
         "integrity_valid": True,
+        "session_state": manifest["session_state"],
+        "session_complete": manifest["session_complete"],
+        "termination": manifest["termination"],
+        "data_quality_status": (
+            "complete_capture" if manifest["session_complete"]
+            else "incomplete_capture"
+        ),
+        "availability_contract": manifest["availability_contract"],
+        "event_time_quality": manifest["event_time_quality"],
         "depth_events": depth_events,
         "snapshots": snapshots,
         "applied_diffs": applied,
