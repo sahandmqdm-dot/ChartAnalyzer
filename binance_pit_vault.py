@@ -136,8 +136,6 @@ def iter_session_records(
                         previous_key = key
                         yield record
             except (OSError, ValueError, TypeError) as exc:
-                if isinstance(exc, PITVaultError):
-                    raise
                 raise PITVaultError(
                     f"unreadable_or_malformed_partition: {source_path.name}"
                 ) from exc
