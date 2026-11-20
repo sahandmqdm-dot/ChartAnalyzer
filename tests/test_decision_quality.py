@@ -1,6 +1,6 @@
-import pytest
-
 from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from decision_quality import DecisionQualityError, evaluate_decision_quality
 
