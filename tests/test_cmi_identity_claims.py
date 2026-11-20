@@ -209,3 +209,17 @@ def test_claim_valid_time_interval_must_have_positive_duration():
     record = evidence()
     with pytest.raises(IdentityContractError, match="must be later"):
         claim(record, valid_time_start=T0, valid_time_end=T0)
+
+
+def test_instrument_reference_requires_market_registry():
+    with pytest.raises(IdentityContractError, match="MarketRegistry is required"):
+        EntityResolver([entity(instrument_id="binance:spot:BTCUSDT")])
+
+
+def test_claim_registry_rejects_invalid_entity_and_evidence_types():
+    record = evidence()
+    item = claim(record)
+    with pytest.raises(IdentityContractError, match="EntityRecord instances"):
+        ClaimRegistry().register_many([item], entities=[object()], evidence=[record])
+    with pytest.raises(IdentityContractError, match="EvidenceRecord instances"):
+        ClaimRegistry().register_many([item], entities=[entity()], evidence=[object()])
