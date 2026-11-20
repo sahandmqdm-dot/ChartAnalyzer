@@ -32,12 +32,26 @@ def _extract_time_axis(df):
         source = "datetime_index"
     if raw.ndim != 1 or len(raw) != len(df) or len(raw) < 2:
         raise ValueError("time axis must be one-dimensional and match candle rows")
+    if np.issubdtype(raw.dtype, np.number):
+        numeric = np.asarray(raw, dtype=float)
+        if not np.isfinite(numeric).all() or np.any(np.diff(numeric) <= 0):
+            raise ValueError("numeric timestamps must be finite, unique, and strictly increasing")
+        return raw, source
     try:
         numeric = np.asarray(raw, dtype=float)
         if not np.isfinite(numeric).all() or np.any(np.diff(numeric) <= 0):
             raise ValueError("numeric timestamps must be finite, unique, and strictly increasing")
         return raw, source
     except (TypeError, ValueError):
+        if all(isinstance(value, (str, np.str_)) for value in raw):
+            try:
+                numeric = np.asarray(raw, dtype=float)
+            except (TypeError, ValueError, OverflowError):
+                numeric = None
+            if numeric is not None:
+                if not np.isfinite(numeric).all() or np.any(np.diff(numeric) <= 0):
+                    raise ValueError("numeric timestamps must be finite, unique, and strictly increasing")
+                return raw, source
         try:
             parsed = np.asarray(raw, dtype="datetime64[ns]")
             ticks = parsed.astype("int64")
