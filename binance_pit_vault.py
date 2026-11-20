@@ -15,7 +15,7 @@ import tempfile
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from binance_orderbook import (
@@ -65,7 +65,10 @@ def _session_source_files(
     if root not in market_root.parents or not market_root.is_dir():
         raise PITVaultError(f"market partition does not exist: {market}")
     files: list[dict[str, Any]] = []
-    for path in sorted(market_root.rglob("*.jsonl")):
+    for candidate in sorted(market_root.rglob("*.jsonl")):
+        path = candidate.resolve()
+        if root not in path.parents:
+            raise PITVaultError("partition_path_escapes_data_root")
         record_count = 0
         session_count = 0
         try:
@@ -423,7 +426,7 @@ def replay_orderbook_session(
 
 
 def _reference_replay_records(
-    ordered_records: list[dict[str, Any]], market: str, symbol: str
+    ordered_records: Iterable[dict[str, Any]], market: str, symbol
 ) -> dict[str, Any]:
     """Independent Decimal-based reference replay; intentionally avoids LocalOrderBook."""
     bids: dict[Decimal, Decimal] = {}
