@@ -17,8 +17,8 @@ def bars(count=100, drift=0.2):
         out.append({
             "time": NOW - timedelta(minutes=1) - timedelta(hours=count-1-index),
             "open": opened,
-            "high": price + 0.3,
-            "low": opened - 0.3,
+            "high": max(opened, price) + 0.3,
+            "low": min(opened, price) - 0.3,
             "close": price,
             "volume": 10.0,
         })
