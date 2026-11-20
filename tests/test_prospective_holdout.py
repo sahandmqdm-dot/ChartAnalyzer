@@ -35,15 +35,16 @@ def make_ledger(tmp_path, *, min_forecasts=30):
 
 
 def make_forecast(index=0, **overrides):
-    issued = START + datetime.timedelta(hours=4 * index)
+    cutoff = START + datetime.timedelta(hours=4 * index)
+    issued = cutoff + datetime.timedelta(minutes=1)
     values = {
         "instrument_id": "BTCUSDT",
         "market_type": "spot",
         "timeframe": "1h",
         "horizon_bars": 4,
         "issued_at": issued,
-        "target_at": issued + datetime.timedelta(hours=4),
-        "data_cutoff_at": issued - datetime.timedelta(seconds=1),
+        "target_at": cutoff + datetime.timedelta(hours=4),
+        "data_cutoff_at": cutoff,
         "model_id": "cmi-scenario",
         "model_version": "1.0.0",
         "dataset_fingerprint": INPUT_DATA,
@@ -149,8 +150,8 @@ def test_overlapping_forecast_horizons_are_rejected(tmp_path):
     first = append_forecast(ledger, 0)
     overlapping = make_forecast(
         1, issued_at=first.issued_at + datetime.timedelta(hours=1),
-        target_at=first.target_at + datetime.timedelta(hours=1),
-        data_cutoff_at=first.issued_at + datetime.timedelta(minutes=59),
+        target_at=first.target_at + datetime.timedelta(minutes=59),
+        data_cutoff_at=first.data_cutoff_at + datetime.timedelta(minutes=59),
     )
     with pytest.raises(ValueError, match="overlapping"):
         ledger.record_forecast(
