@@ -325,8 +325,8 @@ class ClaimRecord:
             value = getattr(self, field)
             if value is not None:
                 object.__setattr__(self, field, _utc(value, field))
-        if self.valid_time_start and self.valid_time_end and self.valid_time_end < self.valid_time_start:
-            raise IdentityContractError("claim valid_time_end cannot precede valid_time_start")
+        if self.valid_time_start and self.valid_time_end and self.valid_time_end <= self.valid_time_start:
+            raise IdentityContractError("claim valid_time_end must be later than valid_time_start")
         for field in ("extraction_method", "extractor_version"):
             value = getattr(self, field)
             if value is not None:
@@ -377,6 +377,8 @@ class ClaimRegistry:
                         raise IdentityContractError(f"missing claim evidence: {evidence_id}")
                     if record.available_at > claim.available_at:
                         raise IdentityContractError("claim available_at precedes cited evidence availability")
+                    if record.entity_ids and claim.subject_entity_id not in record.entity_ids:
+                        raise IdentityContractError("claim subject is not linked by cited evidence")
                 old = staged.get(claim.claim_id)
                 if old is not None and old != claim:
                     raise IdentityContractError(f"claim_id collision: {claim.claim_id}")
