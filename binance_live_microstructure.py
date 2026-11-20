@@ -408,14 +408,34 @@ def _main() -> None:
         description="Build a verified point-in-time feature snapshot from an active Binance session."
     )
     parser.add_argument("--data-dir", default=os.environ.get("CHARTANALYZER_DATA_DIR", "./data/binance_raw"))
-    parser.add_argument("--market", choices=("spot", "usdm"), required=True)
-    parser.add_argument("--session-id", required=True)
-    parser.add_argument("--decision-time", required=True)
+    parser.add_argument("--verify-artifact", help="verify a stored artifact path relative to --data-dir")
+    parser.add_argument("--expected-sha256", help="ledger-bound SHA-256 of the exact artifact bytes")
+    parser.add_argument("--market", choices=("spot", "usdm"))
+    parser.add_argument("--session-id")
+    parser.add_argument("--decision-time")
     parser.add_argument("--windows", default="5,60,300")
     parser.add_argument("--book-depth", type=int, default=10)
     parser.add_argument("--retries", type=int, default=3)
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--output")
     args = parser.parse_args()
+    if args.verify_artifact:
+        if not args.expected_sha256:
+            parser.error("--expected-sha256 is required with --verify-artifact")
+        result = verify_snapshot_artifact(
+            args.data_dir, args.verify_artifact, args.expected_sha256
+        )
+        print(json.dumps(result, indent=2))
+        return
+    missing = [
+        name for name, value in (
+            ("--market", args.market),
+            ("--session-id", args.session_id),
+            ("--decision-time", args.decision_time),
+            ("--output", args.output),
+        ) if not value
+    ]
+    if missing:
+        parser.error("required for snapshot creation: " + ", ".join(missing))
     windows = tuple(int(value.strip()) for value in args.windows.split(",") if value.strip())
     result = build_active_session_snapshot(
         args.data_dir,
