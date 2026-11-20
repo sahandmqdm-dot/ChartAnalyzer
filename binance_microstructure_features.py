@@ -105,6 +105,9 @@ class _ReferenceBook:
     def _apply_diff(self, event: dict[str, Any]) -> bool:
         if self.last_update_id is None:
             raise ValueError("snapshot_required")
+        event_symbol = event.get("s")
+        if event_symbol is not None and str(event_symbol).upper() != self.symbol:
+            raise ValueError("depth_symbol_mismatch")
         first = int(event["U"])
         final = int(event["u"])
         if first < 0 or final < first:
@@ -199,8 +202,12 @@ class _ReferenceBook:
         }
 
 
-def _trade_event(record: dict[str, Any]) -> tuple[datetime, Decimal, Decimal, bool] | None:
+def _trade_event(
+    record: dict[str, Any], expected_symbol: str
+) -> tuple[datetime, Decimal, Decimal, bool] | None:
     payload = record.get("payload", {})
+    if payload.get("s") and str(payload["s"]).upper() != expected_symbol.upper():
+        return None
     maker_is_buyer = payload.get("m")
     if not isinstance(maker_is_buyer, bool):
         return None
@@ -218,9 +225,11 @@ def _trade_event(record: dict[str, Any]) -> tuple[datetime, Decimal, Decimal, bo
 
 
 def _liquidation_event(
-    record: dict[str, Any],
+    record: dict[str, Any], expected_symbol: str
 ) -> tuple[datetime, Decimal, Decimal, str] | None:
     order = record.get("payload", {}).get("o", {})
+    if order.get("s") and str(order["s"]).upper() != expected_symbol.upper():
+        return None
     side = order.get("S")
     if side not in {"BUY", "SELL"}:
         return None
@@ -387,7 +396,7 @@ def build_pit_microstructure_features(
                 processed_counts["orderbook_snapshots"] += 1
                 max_received = max(max_received, received) if max_received else received
             elif stream == "trades":
-                event = _trade_event(pending_record)
+                event = _trade_event(pending_record, str(manifest["symbol"]))
                 if event is not None:
                     for seconds, state in window_state.items():
                         if event[0] > decision - timedelta(seconds=seconds):
@@ -395,7 +404,7 @@ def build_pit_microstructure_features(
                     max_received = max(max_received, received) if max_received else received
                     processed_counts["trades"] += 1
             elif stream == "liquidations":
-                event = _liquidation_event(pending_record)
+                event = _liquidation_event(pending_record, str(manifest["symbol"]))
                 if event is not None:
                     event_received, price, quantity, side = event
                     notional = price * quantity
