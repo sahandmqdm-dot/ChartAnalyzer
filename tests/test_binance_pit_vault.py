@@ -3,8 +3,8 @@ import json
 import pytest
 
 from binance_pit_vault import (
-    PITVaultError,
     build_session_manifest,
+    PITVaultError,
     persist_session_manifest,
     replay_orderbook_session,
     verify_session_manifest,
