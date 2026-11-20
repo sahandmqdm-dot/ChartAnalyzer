@@ -64,6 +64,7 @@ def append_forecast(ledger, index=0, **kwargs):
         forecast,
         config_fingerprint=CONFIG,
         input_source="ramzinex-public",
+        reference_price=100.0,
         recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
     )
     return forecast
@@ -108,7 +109,7 @@ def test_forecast_must_match_frozen_config_and_model(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="config fingerprint"):
         ledger.record_forecast(
-            forecast, config_fingerprint="d" * 64, input_source="feed",
+            forecast, config_fingerprint="d" * 64, input_source="feed", reference_price=100.0,
             recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
         )
     with pytest.raises(ValueError, match="model_version"):
