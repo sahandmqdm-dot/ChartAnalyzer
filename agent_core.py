@@ -7,8 +7,16 @@ If you still have your original file, keep yours - the signatures below match ap
 
 Safety properties: SQLite only through parameterised queries, DB file chmod 600, no network access, no secrets stored.
 """
-import json, math, os, sqlite3, threading, time
+import json
+import math
+import os
+import sqlite3
+import threading
+import time
+from datetime import UTC, datetime
+
 import numpy as np
+
 from decision_quality import DecisionQualityError, evaluate_decision_quality
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_journal.db")
@@ -329,7 +337,7 @@ def evaluate_decision_journal(key, tf, horizon=None):
         try:
             extra = json.loads(row["extra"] or "{}")
             if not isinstance(extra, dict):
-                raise ValueError("extra metadata must be an object")
+                raise TypeError("extra metadata must be an object")
             action = str(extra["decision_action"]).upper()
             reason = str(extra["decision_reason_code"]).strip()
             fee = float(extra["fee_roundtrip"])
@@ -360,7 +368,7 @@ def evaluate_decision_journal(key, tf, horizon=None):
             "instrument_id": str(key),
             "market_type": market_type,
             "timeframe": str(tf),
-            "horizon_bars": int(horizon_bars),
+            "horizon_bars": horizon_bars,
             "decision_at": decision_at,
             "horizon_end": horizon_end,
             "resolved_at": resolved_at,
