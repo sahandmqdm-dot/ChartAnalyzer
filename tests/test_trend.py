@@ -37,3 +37,14 @@ def test_resample_12h_complete_buckets_only():
 if __name__ == "__main__":
     for f in (test_no_lookahead, test_forming_bar_dropped, test_resample_12h_complete_buckets_only):
         f(); print("ok", f.__name__)
+
+
+def test_trend_series_rejects_duplicate_timestamps():
+    d = fake(300)
+    d.loc[150, "time"] = d.loc[149, "time"]
+    try:
+        TE.series(d, "1d")
+    except ValueError as exc:
+        assert "strictly increasing" in str(exc)
+    else:
+        raise AssertionError("unordered timestamps must be rejected")
