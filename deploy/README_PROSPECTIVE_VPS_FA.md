@@ -270,3 +270,103 @@ CHARTANALYZER_BINANCE_HEALTH_EVERY_EVENTS=500 .venv/bin/python -m binance_stream
 در `orderbook_state`، رخداد `buffer_overflow` تعداد دقیق Diffهای دورریخته‌شده در آن Overflow و شمارنده تجمعی را ثبت می‌کند؛ اگر هنگام قطع اتصال/خاموشی هنوز Diffهای اعمال‌نشده در بافر مانده باشند، `buffer_discarded_on_close` نیز تعداد آن‌ها را ثبت می‌کند. رخدادهای Sequence Gap و شکست Snapshot نیز شمارش می‌شوند. این شمارنده‌های سمت Collector در ویژگی‌های PIT و در provenance هر Forecast منعکس می‌شوند؛ آن‌ها را با شمارنده‌های مستقل Replay اشتباه نگیرید.
 
 **محدودیت:** Health eventها بر اساس تعداد فریم هستند، نه یک Heartbeat مستقل زمان‌محور. اگر جریان کاملاً ساکت شود، رکورد دوره‌ای جدیدی تولید نمی‌شود؛ برای تشخیص توقف کامل سرویس باید systemd و پایش بیرونی نیز فعال باشند.
+
+
+# استقرار دوگانه: Windows Local + Linux VPS
+
+دو Collector را می‌توان هم‌زمان اجرا کرد، اما **هر کدام باید Data Directory مستقل داشته باشند**. فایل‌های JSONL زنده دو ماشین را داخل یک مسیر مشترک ادغام نکنید؛ هر Collector زنجیره هش، Session ID و ترتیب دریافت مستقل دارد. VPS را به‌عنوان منبع عملیاتی اصلی و Local را به‌عنوان Capture مستقل/پشتیبان نگه دارید. مقایسه و تطبیق داده‌ها بعد از Seal روزانه و Verify هر دو آرشیو انجام شود.
+
+## A) اجرای Local روی Windows 11 / PowerShell 7
+
+از ریشه Clone مخزن:
+
+~~~powershell
+# فقط در صورت نداشتن محیط مجازی
+py -3.12 -m venv .venv
+
+# نصب وابستگی‌ها در همان محیط مجازی
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# آزمون واقعی دسترسی Spot و USD-M، فضای دیسک و نسخه Python
+.\.venv\Scripts\python.exe scripts\binance_collector_preflight.py --data-dir .\data\binance_raw --min-free-gib 10
+~~~
+
+اگر خروجی overall برابر PASS نبود، Collector را شروع نکنید. هر دو Market باید یک Trade واقعی BTCUSDT دریافت کنند و فضای آزاد باید حداقل ۱۰ GiB باشد.
+
+سپس اسکریپت مدیریت فرایند Windows را اجرا کنید:
+
+~~~powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\deploy\windows\binance-collector.ps1 -Action Start
+.\deploy\windows\binance-collector.ps1 -Action Status
+~~~
+
+توقف کنترل‌شده:
+
+~~~powershell
+.\deploy\windows\binance-collector.ps1 -Action Stop
+~~~
+
+اسکریپت Stop یک Stop Sentinel ایجاد می‌کند تا برنامه با مسیر عادی Shutdown، بافر Order Book را ثبت/تخلیه کند و Hash Chain را ببندد. اگر طی ۴۵ ثانیه متوقف نشود، اسکریپت آن را Force Kill نمی‌کند؛ علت را از runtime\binance_collector\collector.stderr.log بررسی کنید.
+
+تنظیمات اختیاری:
+
+~~~powershell
+# fsync هر ۱۰۰ رکورد و Health هر ۵۰۰ فریم
+.\deploy\windows\binance-collector.ps1 -Action Start -FsyncEveryEvents 100 -HealthEveryEvents 500
+
+# دوام بیشتر با fsync هر رکورد؛ ممکن است throughput به‌شدت کمتر شود
+.\deploy\windows\binance-collector.ps1 -Action Start -FsyncEachEvent
+~~~
+
+داده خام در data\binance_raw و PID/لاگ‌ها در runtime\binance_collector ذخیره می‌شوند. این مسیرها را داخل Git Commit نکنید و در Windows Defender/Backup policy برای آن‌ها فضای کافی و دسترسی مناسب در نظر بگیرید.
+
+## B) آزمون و اجرای Collector روی Linux VPS
+
+پس از نصب Python و وابستگی‌ها و Checkout کردن SHA مورد نظر در /opt/chartanalyzer:
+
+~~~bash
+sudo -u chartanalyzer /opt/chartanalyzer/.venv/bin/python /opt/chartanalyzer/scripts/binance_collector_preflight.py --data-dir /var/lib/chartanalyzer/binance_raw --min-free-gib 10
+~~~
+
+این Preflight یک اتصال WebSocket واقعی به Spot و یک اتصال واقعی به USD-M باز می‌کند و یک Trade BTCUSDT از هر دو می‌خواند. این تست کوتاه جایگزین Soak Test نیست. اگر هر کدام FAIL شد، سرویس را فعال نکنید.
+
+نصب و فعال‌سازی Unit:
+
+~~~bash
+sudo install -d -o chartanalyzer -g chartanalyzer -m 0700 /var/lib/chartanalyzer/binance_raw
+sudo install -o root -g root -m 0644 /opt/chartanalyzer/deploy/systemd/chartanalyzer-binance-raw-collector.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemd-analyze verify /etc/systemd/system/chartanalyzer-binance-raw-collector.service
+sudo systemctl enable --now chartanalyzer-binance-raw-collector.service
+sudo systemctl status chartanalyzer-binance-raw-collector.service --no-pager
+sudo journalctl -u chartanalyzer-binance-raw-collector.service -f
+~~~
+
+Unit به‌صورت پیش‌فرض fsync هر ۱۰۰ رکورد و Health هر ۱۰۰۰ فریم را تنظیم می‌کند. برای تغییر، فایل Unit را با Environmentهای زیر ویرایش کنید و پس از آن daemon-reload و Restart انجام دهید:
+
+- CHARTANALYZER_BINANCE_FSYNC_EVERY_EVENTS
+- CHARTANALYZER_BINANCE_HEALTH_EVERY_EVENTS
+
+## C) پایش و بررسی روزانه روی هر دو میزبان
+
+روی VPS:
+
+~~~bash
+sudo systemctl is-active chartanalyzer-binance-raw-collector.service
+sudo journalctl -u chartanalyzer-binance-raw-collector.service --since today --no-pager
+df -h /var/lib/chartanalyzer/binance_raw
+~~~
+
+روی Windows:
+
+~~~powershell
+.\deploy\windows\binance-collector.ps1 -Action Status
+Get-ChildItem .\data\binance_raw -Recurse -Filter *.jsonl | Measure-Object -Property Length -Sum
+Get-Content .\runtime\binance_collector\collector.stderr.log -Tail 100
+~~~
+
+روز UTC بسته‌شده را جداگانه روی هر میزبان Seal کنید و Manifest را به مقصد مستقل از Data Directory منتقل کنید. از دو میزبان برای یک روز، دو Manifest با شناسه منبع متفاوت نگه دارید. پس از انتقال، هر Manifest را در مقصد خودش Verify کنید. صرف اجرای هم‌زمان Local و VPS به معنی Redundancy اثبات‌شده نیست؛ باید Restore و مقایسه هش‌ها عملاً تست شود.
+
+**قانون شروع آزمون:** این مراحل فقط جمع‌آوری آزمایشی و ظرفیت‌سنجی زیرساخت هستند. شروع ۴۲ روز منوط به Freeze نسخه، تأیید منبع داده و مدل، اثبات ثبت پیش‌بینی پیش از Outcome، Backup/Restore مستقل و پذیرش رسمی گزارش Preflight/Soak Test است. تا آن زمان هیچ‌کدام از Collectorها را به‌عنوان شروع Holdout رسمی تلقی نکنید.
