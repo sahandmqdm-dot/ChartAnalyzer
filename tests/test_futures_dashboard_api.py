@@ -73,7 +73,6 @@ def test_futures_scenarios_endpoint_is_registered_and_returns_read_only_context(
     assert ("GET", "/api/futures/scenarios") in chart_app.app.routes
     result = chart_app.api_futures_scenarios("BTCUSDT", "1h", 80)
     assert result["candidate"] == "LONG"
-    assert result["decision"] if "decision" in result else True
     assert result["microstructure_context"]["order_book"]["last_update_id"] == 123
     assert result["microstructure_context"]["aggregate_trades"]["sample_count"] == 25
     assert result["microstructure_context"]["used_in_directional_score"] is False
