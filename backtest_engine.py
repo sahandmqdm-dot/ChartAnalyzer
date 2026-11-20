@@ -64,7 +64,7 @@ def _extract_time_axis(df):
 
 def _serialize_time_value(value):
     if isinstance(value, np.datetime64):
-        return np.datetime_as_string(value, unit="auto")
+        return np.datetime_as_string(value, unit="s")
     if hasattr(value, "isoformat"):
         return value.isoformat()
     if isinstance(value, np.generic):
