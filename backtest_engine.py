@@ -407,7 +407,6 @@ def run_backtest(
                 peak = max(peak, equity)
                 max_dd = min(max_dd, equity / peak - 1.0 if peak > 0 else -1.0)
                 equity_curve.append(float(equity))
-        equity_bar_indices.append(int(i + 2))
                 equity_bar_indices.append(int(i + 2))
                 continue
             bar_ret = (next_open / fill_px - 1.0) * pos
@@ -451,6 +450,7 @@ def run_backtest(
         peak = max(peak, equity)
         max_dd = min(max_dd, equity / peak - 1.0 if peak > 0 else -1.0)
         equity_curve.append(float(equity))
+        equity_bar_indices.append(int(i + 2))
 
     if pos and entry_px is not None:
         close_trade(float(o[-1]), n - 1, "end_of_data")
