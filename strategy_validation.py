@@ -245,7 +245,7 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
 
 
 def evaluate_strategy_lifecycle(
-    windows: list[Dict[str, Any]], *, min_trades_per_window: int = 200,
+    windows: list[dict[str, Any]], *, min_trades_per_window: int = 200,
     required_bad_windows: int = 2,
 ) -> Dict[str, Any]:
     """Assess retirement evidence from consecutive, disjoint, frozen OOS windows.
@@ -534,6 +534,6 @@ def deployment_status(path: str | os.PathLike[str], *, source: str, symbol: str,
     return out
 
 
-__all__ = ["ENGINE_VERSION", "DEFAULT_POLICY", "evidence_key", "build_evidence_record",
-           "evaluate_evidence", "evaluate_strategy_lifecycle", "save_evidence", "load_evidence", "deployment_status", "verify_evidence_signature",
-           "signing_key_source", "provision_signing_key"]
+__all__ = ["DEFAULT_POLICY", "ENGINE_VERSION", "build_evidence_record", "deployment_status",
+           "evaluate_evidence", "evaluate_strategy_lifecycle", "evidence_key", "load_evidence",
+           "provision_signing_key", "save_evidence", "signing_key_source", "verify_evidence_signature"]
