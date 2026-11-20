@@ -50,11 +50,22 @@ The live collector now connects the WebSocket depth stream to the snapshot/diff 
 - `binance_orderbook.py` provides the public REST snapshot fetcher, bounded in-memory bid/ask map, buffered diff synchronization, sequence-gap rejection, automatic snapshot recovery with bounded retry/backoff, and top-of-book/depth-imbalance metrics. The local book is unreadable until a buffered diff bridges the snapshot sequence.
 - `binance_stream_collector.py` captures Spot and USD-M independently. It records raw `@trade` events (tick-by-tick), `@depth@100ms` updates and USD-M `@forceOrder` events before downstream interpretation. Event time, trade time, receive time, full stream name, native sequence/trade identifiers and session ID are retained.
 - Session manifests and connection transitions are recorded. Graceful stream completion records an ended session; cancellation or transport failure records an interrupted session. A stopped/interrupted session must never be silently treated as uninterrupted market coverage.
-- `binance_pit_vault.py` creates content-addressed session manifests, verifies raw partition hash chains and file digests, and replays snapshots plus depth diffs through both the production book and a separate Decimal-based reference engine. The engines are compared for update sequence, applied/stale diffs, gaps and final validity; mismatches are explicitly labelled.
+- `binance_pit_vault.py` creates content-addressed session manifests using bounded-memory partition scans, verifies raw partition hash chains and file digests, and replays snapshots plus depth diffs through both the production book and a separate Decimal-based reference engine. Session records are merged by receive time from verified JSONL iterators rather than loaded as one large in-memory list. The engines are compared for update sequence, applied/stale diffs, gaps and final validity; mismatches are explicitly labelled.
+- `binance_microstructure_features.py` builds receive-time-causal feature snapshots for configurable decision times and rolling windows. It derives taker buy/sell flow from raw tick trades, long/short liquidation notional, and valid L2 spread/depth imbalance. It streams verified session partitions and excludes events until local receipt, even if an exchange timestamp appears earlier.
 - Point-in-time availability is defined by local `received_at`, not exchange `event_time`. An exchange timestamp does not prove that the strategy had received the event at that time. The vault reports missing/invalid event timestamps and event timestamps later than local receipt.
 - The hash chain and content-addressed manifests are tamper-evident, not administrator-proof immutable storage, signed attestations or a substitute for independently controlled backups. The collector is designed for one writer per market/stream/day partition; do not run multiple collector processes against the same data directory.
 - Historical L2 order-book deltas cannot be reconstructed after a disconnect. Snapshot recovery restores a current valid book, but the missing interval remains a recorded data gap. Historical trade backfill is endpoint- and retention-limited.
 - Liquidation stream events are provider-published events, not a guaranteed complete record of every liquidation.
+
+### Build point-in-time microstructure features
+
+After sealing and verifying a complete session, request decision-time snapshots. The feature builder uses local receive time as availability time and rejects incomplete captures by default:
+
+```powershell
+python -m binance_microstructure_features --data-dir $env:CHARTANALYZER_DATA_DIR --market spot --session-id "<SESSION_ID>" --decision-time "2026-11-20T12:00:00+00:00" --decision-time "2026-11-20T12:05:00+00:00" --windows 5,60,300 --book-depth 10 --output ".\research\pit_features.json"
+```
+
+The output contains per-decision feature hashes and a dataset hash. A trade with an old exchange timestamp but a receive time after the decision is excluded. These features are diagnostic research inputs only; they are not fed into the Futures directional score or treated as evidence of predictive edge.
 
 ### Seal, verify and replay a closed session
 
