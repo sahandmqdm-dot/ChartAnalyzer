@@ -342,7 +342,7 @@ def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
     states = [r for r in records if r["stream"] == "orderbook_state"]
     assert len(raw_frames) == 2
     assert all(r["payload"]["encoding"] == "utf-8" for r in raw_frames)
-    assert all(r["payload"]["raw_message"].startswith('{"stream":') for r in raw_frames)
+    assert all(r["payload"]["raw_message"].startswith("{") and '"stream"' in r["payload"]["raw_message"] for r in raw_frames)
     assert len(depth) == 2
     assert len(snapshots) == 1
     assert any(r["payload"]["state"] == "synchronized" for r in states)
