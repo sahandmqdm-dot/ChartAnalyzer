@@ -16,6 +16,7 @@ from typing import Any
 
 try:
     from websockets.asyncio.client import connect
+    from websockets.exceptions import WebSocketException
 except ImportError as exc:  # pragma: no cover - runtime diagnostic
     raise SystemExit("Missing dependency: install requirements.txt (websockets>=15,<16)") from exc
 
@@ -74,7 +75,7 @@ async def main() -> int:
     for name, uri in MARKETS.items():
         try:
             result = await probe_market(name, uri, args.timeout)
-        except Exception as exc:  # network stacks expose multiple transport exceptions
+        except (OSError, TimeoutError, ValueError, RuntimeError, WebSocketException) as exc:
             result = {"market": name, "status": "FAIL", "error": type(exc).__name__, "detail": str(exc)}
             failures = True
         results["markets"].append(result)
