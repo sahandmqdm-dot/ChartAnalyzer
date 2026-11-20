@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from datetime import datetime
 from typing import Any
 
 
@@ -208,4 +209,92 @@ def evaluate_execution(
     }
 
 
-__all__ = ["ENGINE_VERSION", "evaluate_execution", "validate_fee_schedule"]
+def market_sweep_fills(
+    book: dict[str, Any],
+    *,
+    side: str,
+    requested_quantity: float,
+    book_received_at: str,
+    decision_at: str,
+    max_age_ms: float = 500.0,
+) -> dict[str, Any]:
+    """Build taker fills by sweeping a fresh, sequence-valid L2 snapshot.
+
+    Timestamps are local receive/decision times, not exchange event times.
+    This is a snapshot liquidity estimate, not a queue-aware historical fill.
+    """
+    if not isinstance(book, dict) or book.get("valid") is not True:
+        raise ValueError("a sequence-valid order book is required")
+    if not book.get("market") or not book.get("symbol"):
+        raise ValueError("book market and symbol identity are required")
+    if isinstance(book.get("last_update_id"), bool) or not isinstance(book.get("last_update_id"), int):
+        raise ValueError("book last_update_id must be an integer")
+    side = str(side).lower()
+    if side not in {"buy", "sell"}:
+        raise ValueError("side must be buy or sell")
+    requested = _number(requested_quantity, "requested_quantity", minimum=0.0)
+    if requested <= 0:
+        raise ValueError("requested_quantity must be > 0")
+    age_limit = _number(max_age_ms, "max_age_ms", minimum=0.0)
+    try:
+        received = datetime.fromisoformat(book_received_at.replace("Z", "+00:00"))
+        decision = datetime.fromisoformat(decision_at.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("book and decision times must be ISO-8601") from exc
+    if received.tzinfo is None or decision.tzinfo is None:
+        raise ValueError("book and decision times must include a timezone")
+    age_ms = (decision - received).total_seconds() * 1000.0
+    if age_ms < 0:
+        raise ValueError("book receive time cannot be after the decision time")
+    if age_ms > age_limit:
+        raise ValueError("order book is stale for the configured decision-time limit")
+
+    levels = book.get("asks" if side == "buy" else "bids")
+    if not isinstance(levels, (list, tuple)) or not levels:
+        raise ValueError("required side of the order book is empty")
+    parsed_levels = []
+    for level in levels:
+        if not isinstance(level, (list, tuple)) or len(level) != 2:
+            raise ValueError("malformed order-book level")
+        price = _number(level[0], "book level price", minimum=0.0)
+        quantity = _number(level[1], "book level quantity", minimum=0.0)
+        if price <= 0 or quantity <= 0:
+            raise ValueError("book level price and quantity must be > 0")
+        parsed_levels.append((price, quantity))
+    expected = sorted(parsed_levels, key=lambda row: row[0], reverse=(side == "sell"))
+    if parsed_levels != expected:
+        raise ValueError("book levels must be sorted by executable price")
+
+    fills = []
+    remaining = requested
+    for price, available in parsed_levels:
+        if remaining <= 0:
+            break
+        quantity = min(remaining, available)
+        fills.append({"price": price, "quantity": quantity, "liquidity_role": "taker"})
+        remaining = max(0.0, remaining - quantity)
+    return {
+        "fills": fills,
+        "fill_source": "sequence_validated_l2_snapshot_sweep",
+        "book_provenance": {
+            "market": str(book["market"]),
+            "symbol": str(book["symbol"]).upper(),
+            "last_update_id": book["last_update_id"],
+            "received_at": received.isoformat(),
+            "decision_at": decision.isoformat(),
+            "age_ms": age_ms,
+            "max_age_ms": age_limit,
+        },
+        "requested_quantity": requested,
+        "estimated_filled_quantity": sum(fill["quantity"] for fill in fills),
+        "estimated_unfilled_quantity": remaining,
+        "is_full_depth_fill": remaining <= 1e-12,
+        "limitations": [
+            "Snapshot sweep is a point-in-time displayed-depth estimate.",
+            "It excludes queue position, hidden liquidity, cancellations and intervening events.",
+            "It must not be described as a historical realized fill.",
+        ],
+    }
+
+
+__all__ = ["ENGINE_VERSION", "evaluate_execution", "market_sweep_fills", "validate_fee_schedule"]
