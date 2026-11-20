@@ -1,6 +1,7 @@
 import datetime
 
 import pytest
+
 from cmi_identity_claims import (
     ClaimModality,
     ClaimRecord,
