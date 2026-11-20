@@ -42,6 +42,7 @@ def test_positive_oos_record_can_pass_only_with_all_evidence_requirements():
     decision = evaluate_evidence(record, now=1_700_000_001)
     assert decision["eligible"] is True
     assert decision["status"] == "ELIGIBLE"
+    assert decision["decision_class"] == "PAPER_CANDIDATE"
     assert decision["oos_trades"] == 240
     assert decision["positive_folds"] == 4
 
@@ -118,6 +119,7 @@ def test_live_gate_still_requires_matching_oos_validation_and_existing_ev_checks
     allowed = app.make_gate(summary | {"plan_hit": plan_hit}, plan, 100.0, C,
                             symbol=symbol, source=source)
     assert allowed["deployment_validation"]["eligible"] is True
+    assert allowed["deployment_validation"]["decision_class"] == "PAPER_CANDIDATE"
     assert allowed["state"] == "ALLOWED"
 
     # A different threshold/configuration cannot reuse the previous evidence.
