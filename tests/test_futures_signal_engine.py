@@ -61,7 +61,6 @@ def test_strong_falling_series_produces_short_candidate():
 
 def test_gap_blocks_instead_of_silently_filling():
     data = bars()
-    data[50]["time"] = data[49]["time"] + timedelta(hours=3)
     for index in range(50, len(data)):
         data[index]["time"] += timedelta(hours=2)
     with pytest.raises(ValueError, match="gap"):
@@ -77,7 +76,8 @@ def test_duplicate_or_reversed_timestamps_are_rejected():
 
 def test_stale_latest_candle_is_rejected():
     data = bars()
-    data[-1]["time"] = NOW - timedelta(hours=2)
+    for item in data:
+        item["time"] -= timedelta(hours=2)
     with pytest.raises(ValueError, match="stale"):
         run(data)
 
