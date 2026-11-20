@@ -76,3 +76,13 @@ def test_research_cohort_integrity_passes_when_all_forensic_modules_share_trades
     assert out["status"] == "PASS"
     assert out["expected_trade_count"] == 2
     assert all(out["checks"].values())
+
+
+def test_config_fingerprint_tracks_research_engine_revision(monkeypatch):
+    import research_provenance as provenance
+
+    config = {"threshold": 0.2, "fee": 0.001}
+    first = provenance.config_fingerprint(config)
+    monkeypatch.setattr(provenance, "RESEARCH_ENGINE_REVISION", "next-engine-revision")
+    second = provenance.config_fingerprint(config)
+    assert first != second
