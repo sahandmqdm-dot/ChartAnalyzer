@@ -181,26 +181,38 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
     if bool(p.get("require_positive_oos_ci", True)) and (ci_lower is None or ci_lower <= 0):
         reasons.append("The moving-block bootstrap 95% CI does not have a strictly positive lower bound.")
 
+    gap_count = _finite(record.get("data_gap_count", 0))
+    ci_upper = _finite(ci[1]) if isinstance(ci, (list, tuple)) and len(ci) >= 2 else None
+    raw_p_value = _finite(record.get("raw_p_value"))
     data_invalid = (
-        not record.get("data_integrity_valid", False)
-        or int(record.get("data_gap_count", 0) or 0) > 0
+        record.get("data_integrity_valid") is not True
+        or gap_count is None
+        or gap_count < 0
+        or gap_count > 0
         or record.get("cohort_integrity") != "PASS"
     )
+    # "Enough rows" is not enough: all essential OOS diagnostics must exist
+    # before a performance conclusion is classified as evidence-backed.
     sample_complete = (
         n >= int(p["min_oos_trades"])
         and folds >= int(p["min_validation_folds"])
-        and ci_lower is not None
-        and q_value is not None
+        and ci_lower is not None and ci_upper is not None and ci_lower <= ci_upper
+        and q_value is not None and 0.0 <= q_value <= 1.0
+        and raw_p_value is not None and 0.0 <= raw_p_value <= 1.0
+        and expectancy is not None and pf is not None
+        and positive_ratio is not None and positive_ratio >= 0.0
+        and dd is not None
+        and record.get("cost_stress_1_5x_positive") in (True, False)
         and bool(record.get("strategy_frozen", False))
-        and not bool(record.get("parameter_optimization", True))
+        and record.get("parameter_optimization") is False
         and 0.0 <= age_hours <= float(p["validation_max_age_hours"])
-        and int(record.get("data_gap_count", 0) or 0) == 0
+        and gap_count == 0
     )
     if data_invalid:
         decision_class = "DATA_INVALID"
     elif not sample_complete:
         decision_class = "INSUFFICIENT_EVIDENCE"
-    elif expectancy is not None and (expectancy <= 0.0 or (pf is not None and pf <= 1.0)):
+    elif expectancy is not None and pf is not None and expectancy <= 0.0 and pf <= 1.0 and ci_upper < 0.0:
         decision_class = "NO_EDGE"
     elif not reasons:
         decision_class = "PAPER_CANDIDATE"
