@@ -355,25 +355,25 @@ class ClaimRegistry:
         evidence_by_id = {item.evidence_id: item for item in evidence_rows}
         if len(evidence_by_id) != len(evidence_rows):
             raise IdentityContractError("duplicate evidence_id values")
-        staged = dict(self._claims)
-        for claim in claim_rows:
-            if not isinstance(claim, ClaimRecord):
-                raise IdentityContractError("claims must be ClaimRecord instances")
-            if claim.subject_entity_id not in entity_ids:
-                raise IdentityContractError(f"unknown claim subject: {claim.subject_entity_id}")
-            for evidence_id in claim.evidence_ids:
-                record = evidence_by_id.get(evidence_id)
-                if record is None:
-                    raise IdentityContractError(f"missing claim evidence: {evidence_id}")
-                if record.available_at > claim.available_at:
-                    raise IdentityContractError("claim available_at precedes cited evidence availability")
-            old = staged.get(claim.claim_id)
-            if old is not None and old != claim:
-                raise IdentityContractError(f"claim_id collision: {claim.claim_id}")
-            staged[claim.claim_id] = claim
         with self._lock:
+            staged = dict(self._claims)
+            for claim in claim_rows:
+                if not isinstance(claim, ClaimRecord):
+                    raise IdentityContractError("claims must be ClaimRecord instances")
+                if claim.subject_entity_id not in entity_ids:
+                    raise IdentityContractError(f"unknown claim subject: {claim.subject_entity_id}")
+                for evidence_id in claim.evidence_ids:
+                    record = evidence_by_id.get(evidence_id)
+                    if record is None:
+                        raise IdentityContractError(f"missing claim evidence: {evidence_id}")
+                    if record.available_at > claim.available_at:
+                        raise IdentityContractError("claim available_at precedes cited evidence availability")
+                old = staged.get(claim.claim_id)
+                if old is not None and old != claim:
+                    raise IdentityContractError(f"claim_id collision: {claim.claim_id}")
+                staged[claim.claim_id] = claim
             self._claims = staged
-        return tuple(staged[item.claim_id] for item in claim_rows)
+            return tuple(staged[item.claim_id] for item in claim_rows)
 
     def get(self, claim_id: str) -> ClaimRecord | None:
         with self._lock:
