@@ -143,7 +143,7 @@ def _microstructure_provenance(
     if value is None:
         return None
     if not isinstance(value, dict):
-        raise ValueError("microstructure_provenance must be an object")
+        raise TypeError("microstructure_provenance must be an object")
     required_hashes = ("manifest_hash", "feature_hash", "dataset_hash")
     hashes = {name: _sha(value.get(name), f"microstructure_{name}") for name in required_hashes}
     artifact_sha256 = _sha(value.get("artifact_sha256"), "microstructure_artifact_sha256")
@@ -163,7 +163,9 @@ def _microstructure_provenance(
         raise ValueError("microstructure snapshot must come from a verified active-session copy")
     if value.get("point_in_time_valid") is not True:
         raise ValueError("microstructure snapshot is not point-in-time valid")
-    if not isinstance(value.get("session_id"), str) or not value["session_id"].strip():
+    if not isinstance(value.get("session_id"), str):
+        raise TypeError("microstructure session_id must be a string")
+    if not value["session_id"].strip():
         raise ValueError("microstructure session_id is required")
     decision = _utc(datetime.fromisoformat(str(value.get("decision_time"))), "microstructure_decision_time")
     available = _utc(datetime.fromisoformat(str(value.get("available_at"))), "microstructure_available_at")
@@ -185,12 +187,14 @@ def _microstructure_provenance(
         raise ValueError("microstructure snapshot must be created before forecast issuance")
     for field in ("book_valid", "session_complete", "session_closed"):
         if not isinstance(value.get(field), bool):
-            raise ValueError(f"microstructure {field} must be boolean")
+            raise TypeError(f"microstructure {field} must be boolean")
     counters = {}
     for field in ("book_sequence_gaps", "book_buffer_overflows"):
         item = value.get(field)
-        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
-            raise ValueError(f"microstructure {field} must be a non-negative integer")
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise TypeError(f"microstructure {field} must be an integer")
+        if item < 0:
+            raise ValueError(f"microstructure {field} must be non-negative")
         counters[field] = item
     return {
         "schema": value["schema"],
