@@ -36,7 +36,7 @@ Ruff is configured as advisory in CI, so its failure does not fail the overall w
 - Holdout evaluation is serialized and one-time at the application layer.
 - Dependency scanning found no known vulnerable dependency versions in the current requirements set.
 
-See [SECURITY.md](../SECURITY.md) for the detailed threat model, operational guidance and remaining security limitations.
+See [SECURITY.md](SECURITY.md) for the detailed threat model, operational guidance and remaining security limitations.
 
 ## Important limitations and residual risk
 
