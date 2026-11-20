@@ -1,12 +1,15 @@
+import asyncio
+
 import pytest
 
 from binance_orderbook import (
+    AsyncOrderBookCapture,
     DepthSnapshot,
     LocalOrderBook,
     OrderBookError,
     synchronize_buffered,
 )
-from binance_stream_collector import SequenceGap
+from binance_stream_collector import HashChainJSONLStore, MarketSpec, SequenceGap
 
 
 def snapshot(last_id=100):
@@ -66,3 +69,71 @@ def test_zero_quantity_removes_level_and_imbalance_is_bounded():
     top = book.top()
     assert 99.0 not in dict(top["bids"])
     assert -1.0 <= top["depth_imbalance"] <= 1.0
+
+
+
+def test_async_capture_bootstraps_snapshot_and_applies_live_diffs(tmp_path):
+    async def scenario():
+        store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+        capture = AsyncOrderBookCapture(
+            MarketSpec.spot("BTCUSDT"), store,
+            snapshot_fetch=lambda: snapshot(100),
+        )
+        first = await capture.ingest(
+            {"U": 101, "u": 102, "b": [["100", "4"]], "a": []}
+        )
+        assert first == "buffering"
+        for _ in range(100):
+            if capture._snapshot_task is not None and capture._snapshot_task.done():
+                break
+            await asyncio.sleep(0.001)
+        await capture.ingest(
+            {"U": 103, "u": 103, "b": [["100.5", "3"]], "a": []}
+        )
+        assert capture.book.valid
+        assert capture.book.sequence.last_update_id == 103
+        assert capture.book.top()["bid"] == 100.5
+        await capture.close()
+        store.close()
+
+    asyncio.run(scenario())
+
+
+def test_async_capture_recovers_after_sequence_gap_with_fresh_snapshot(tmp_path):
+    async def scenario():
+        store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+        snapshots = iter([snapshot(100), snapshot(102)])
+        capture = AsyncOrderBookCapture(
+            MarketSpec.spot("BTCUSDT"), store,
+            snapshot_fetch=lambda: next(snapshots),
+            retry_min=0.001,
+            retry_max=0.01,
+        )
+        await capture.ingest(
+            {"U": 103, "u": 104, "b": [], "a": []}
+        )
+        for _ in range(100):
+            if capture._snapshot_task is not None and capture._snapshot_task.done():
+                break
+            await asyncio.sleep(0.001)
+        await capture.ingest(
+            {"U": 105, "u": 106, "b": [], "a": []}
+        )
+        assert not capture.book.valid
+        await asyncio.sleep(0.005)
+        await capture.ingest(
+            {"U": 107, "u": 108, "b": [], "a": []}
+        )
+        for _ in range(100):
+            if capture._snapshot_task is not None and capture._snapshot_task.done():
+                break
+            await asyncio.sleep(0.001)
+        await capture.ingest(
+            {"U": 109, "u": 110, "b": [], "a": []}
+        )
+        assert capture.book.valid
+        assert capture.book.sequence.last_update_id == 110
+        await capture.close()
+        store.close()
+
+    asyncio.run(scenario())
