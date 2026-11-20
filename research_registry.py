@@ -15,6 +15,16 @@ MAX_SPEC_BYTES = 64 * 1024
 MAX_METRICS_BYTES = 256 * 1024
 
 
+class _ClosingSQLiteConnection(sqlite3.Connection):
+    """Commit/rollback through the context manager, then always close the handle."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def _safe_json(value):
     if isinstance(value, dict): return {str(k): _safe_json(v) for k,v in value.items()}
     if isinstance(value, (list,tuple)): return [_safe_json(v) for v in value]
@@ -51,7 +61,7 @@ class ResearchRegistry:
                 os.fchmod(fd, 0o600)
             finally:
                 os.close(fd)
-        con = sqlite3.connect(self.path, timeout=15)
+        con = sqlite3.connect(self.path, timeout=15, factory=_ClosingSQLiteConnection)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys=ON")
         con.execute("PRAGMA journal_mode=WAL")
