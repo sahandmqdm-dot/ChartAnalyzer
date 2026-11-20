@@ -43,7 +43,7 @@ A positive technical score is not, by itself, proof of statistical edge. `NO_TRA
 | `backtest_engine.py` | Bar-level next-open simulator with configured transaction costs, optional ATR exits and synthetic futures exposure. |
 | `walk_forward.py` | Chronological, non-overlapping OOS evaluation of the supplied frozen signal. |
 | `research_provenance.py` | Dataset/config fingerprints, run identity and diagnostic cohort consistency. |
-| `research_statistics.py` | Moving-block bootstrap, block permutation, matched random-entry control and Benjamini-Hochberg correction. |
+| `research_statistics.py` | Moving-block bootstrap, block permutation, matched random-entry control and Benjamini-Hochberg correction. |\n| `advanced_overfit_diagnostics.py` | Deflated Sharpe probability and CSCV Probability of Backtest Overfitting diagnostics; research-only and not deployment authorization. |
 | `research_protocol.py` | Chronological split, purged/embargoed split and feature-availability audit primitives. |
 | `research_rule_engine.py` | Safe declarative Long/Flat research-rule compiler; no arbitrary Python expressions. |
 | `research_registry.py` | Append-only hypothesis/experiment registry and registered-family FDR calculations. |
