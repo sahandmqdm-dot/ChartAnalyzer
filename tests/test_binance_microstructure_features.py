@@ -69,6 +69,18 @@ def _create_session(root, *, terminal_state="ended"):
     )
     store.append(
         "spot", "trades",
+        {"s": "ETHUSDT", "p": "900", "q": "9", "m": False, "t": 99},
+        received_at=_received(2.7), event_time=_received(2.6),
+        stream_name="btcusdt@trade", session_id=SESSION,
+    )
+    store.append(
+        "spot", "liquidations",
+        {"e": "forceOrder", "o": {"s": "ETHUSDT", "S": "BUY", "z": "9", "ap": "900"}},
+        received_at=_received(2.8), event_time=_received(2.7),
+        stream_name="btcusdt@forceOrder", session_id=SESSION,
+    )
+    store.append(
+        "spot", "trades",
         {"p": "101", "q": "1", "m": True, "T": 1795176002000, "t": 2},
         received_at=_received(3), event_time=_received(2),
         stream_name="btcusdt@trade", sequence={"t": 2}, session_id=SESSION,
@@ -175,6 +187,41 @@ def test_l2_bootstrap_buffer_is_bounded_and_reports_overflow(tmp_path):
     assert feature["book_buffer_overflows"] == 1
     assert feature["book"]["valid"] is True
     assert feature["book"]["last_update_id"] == 102
+
+
+def test_l2_event_with_wrong_symbol_never_makes_book_valid(tmp_path):
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    store.append(
+        "spot", "session_manifest",
+        {"state": "started", "streams": ["btcusdt@depth@100ms"], "started_at": BASE},
+        received_at=_received(0), session_id=SESSION,
+    )
+    store.append(
+        "spot", "orderbook_depth",
+        {"s": "ETHUSDT", "U": 101, "u": 101, "b": [], "a": []},
+        received_at=_received(1), stream_name="btcusdt@depth@100ms",
+        session_id=SESSION,
+    )
+    store.append(
+        "spot", "orderbook_snapshots",
+        {
+            "symbol": "BTCUSDT", "lastUpdateId": 100,
+            "bids": [["100", "1"]], "asks": [["101", "1"]],
+        },
+        received_at=_received(2), session_id=SESSION,
+    )
+    store.append(
+        "spot", "session_manifest",
+        {"state": "ended", "ended_at": _received(3), "termination": "operator_stop"},
+        received_at=_received(3), session_id=SESSION,
+    )
+    store.close()
+
+    result = build_pit_microstructure_features(
+        tmp_path, "spot", SESSION, [_received(3)]
+    )
+    assert result["snapshots"][0]["book"]["valid"] is False
+    assert result["snapshots"][0]["book_sequence_gaps"] == 1
 
 
 def test_feature_builder_rejects_incomplete_capture_by_default(tmp_path):
