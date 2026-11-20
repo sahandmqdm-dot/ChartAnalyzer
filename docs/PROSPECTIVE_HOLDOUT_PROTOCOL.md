@@ -117,3 +117,57 @@ This is tamper-evident operational control, not a cryptographic boundary against
 - [ ] Resolve all forecasts only after their target horizons.
 - [ ] Verify ledger integrity, then run the single final evaluation.
 - [ ] Compare against pre-registered baselines and publish uncertainty, failures and missing-data counts.
+
+
+## Local API collector workflow (Windows)
+
+The API integration is available in the local app. The ledger is stored outside the source checkout, by default under `%LOCALAPPDATA%\\ChartAnalyzer\\prospective_holdouts`. Set `CHARTANALYZER_DATA_DIR` before starting the app to choose another persistent data directory.
+
+The first integrated collector supports **Spot** data from Ramzinex or CCXT. It uses only fully closed candles. It records the PMI bootstrap quantiles as log-return forecasts and stores the last closed candle's close as the reference price. When the target candle closes, the next tick resolves the outcome from that exact candle. Missing target candles are left unresolved; the resolver never substitutes a nearby candle.
+
+Example one-time registration for Ramzinex USDT/IRR, 1-hour candles and a 4-bar horizon:
+
+```powershell
+$Base = "http://127.0.0.1:8765"
+$Start = [DateTime]::UtcNow.AddMinutes(2).ToString("o")
+$End = [DateTime]::UtcNow.AddDays(45).ToString("o")
+$Register = @{
+    cohort_id = "usdtirr-1h-h4-202611"
+    source = "ramzinex"
+    symbol = "USDTIRR"
+    tf = "1h"
+    horizon_bars = 4
+    paths = 3000
+    n = 1200
+    collection_start = $Start
+    collection_end = $End
+    min_forecasts = 200
+    min_segment_count = 30
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$Base/api/prospective-holdout/register" -ContentType "application/json" -Body $Register
+```
+
+For a 4-bar horizon on 1-hour candles, the theoretical minimum for 200 non-overlapping forecasts is 796 hours (about 33.2 days). A 45-day window provides some room for missed collector runs. The registration endpoint rejects a collection window that is mathematically too short for its requested sample count.
+
+Run the collector tick every five minutes while the ChartAnalyzer app is running:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File ".\\tools\\Invoke-ProspectiveHoldoutTick.ps1" -CohortId "usdtirr-1h-h4-202611" -Source ramzinex -Symbol USDTIRR -Timeframe 1h -HorizonBars 4 -Paths 3000 -HistoryBars 1200
+```
+
+The script can be added to Windows Task Scheduler with a five-minute repetition interval. Configure the task to run as the same Windows user that owns the app-data directory, and enable “Run task as soon as possible after a scheduled start is missed.” If the PC sleeps or the app is stopped, collection pauses. Missed forecasts are not fabricated or backfilled.
+
+Check status without revealing scores:
+
+```powershell
+Invoke-RestMethod -Uri "$Base/api/prospective-holdout/status?cohort_id=usdtirr-1h-h4-202611"
+```
+
+After the collection window ends, keep running the tick until `unresolved_count` reaches zero. Then consume the one-time report:
+
+```powershell
+$Evaluate = @{ cohort_id = "usdtirr-1h-h4-202611" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$Base/api/prospective-holdout/evaluate" -ContentType "application/json" -Body $Evaluate
+```
+
+**Source-independence caveat:** this first resolver uses the same provider for input and realized outcome. It is genuinely future-only in time, but it is not an independently sourced price feed. The report records that provider identity. A separate outcome provider should only be enabled after exact instrument, contract, quote-currency and candle-boundary equivalence has been verified.
