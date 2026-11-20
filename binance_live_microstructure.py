@@ -21,6 +21,7 @@ from binance_microstructure_features import (
     build_pit_microstructure_features,
 )
 from binance_pit_vault import PITVaultError, build_session_manifest
+from binance_stream_collector import HashChainJSONLStore
 
 
 class LiveSnapshotError(RuntimeError):
@@ -136,6 +137,112 @@ def build_active_session_snapshot(
     raise LiveSnapshotError(
         "could_not_create_consistent_active_snapshot"
     ) from last_error
+
+
+def find_latest_active_session(
+    data_root: str | Path,
+    market: str,
+    symbol: str,
+    *,
+    decision_time: str,
+) -> str:
+    """Find the newest active session for the exact market/symbol, started by cutoff."""
+    if market not in {"spot", "usdm"}:
+        raise ValueError("market must be spot or usdm")
+    expected_symbol = symbol.upper()
+    cutoff = datetime.fromisoformat(decision_time)
+    if cutoff.tzinfo is None:
+        raise ValueError("decision_time must be timezone-aware")
+    root = Path(data_root).expanduser().resolve()
+    manifest_dir = root / market / "session_manifest"
+    if not manifest_dir.is_dir():
+        raise LiveSnapshotError("session_manifest_partition_not_found")
+
+    sessions: dict[str, dict[str, Any]] = {}
+    for path in sorted(manifest_dir.glob("*.jsonl")):
+        valid, _, _ = HashChainJSONLStore.verify_file(path)
+        if not valid:
+            raise LiveSnapshotError("session_manifest_hash_chain_invalid")
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    if not isinstance(record, dict) or record.get("stream") != "session_manifest":
+                        continue
+                    session_id = record.get("session_id")
+                    payload = record.get("payload", {})
+                    if not session_id or not isinstance(payload, dict):
+                        continue
+                    state = sessions.setdefault(str(session_id), {
+                        "started_at": None, "terminal": False, "streams": [],
+                    })
+                    if payload.get("state") == "started":
+                        state["started_at"] = payload.get("started_at")
+                        state["streams"] = payload.get("streams", [])
+                    elif payload.get("state") in {"ended", "interrupted"}:
+                        state["terminal"] = True
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise LiveSnapshotError("session_manifest_partition_unreadable") from exc
+
+    candidates = []
+    for session_id, state in sessions.items():
+        if state["terminal"] or not state["started_at"]:
+            continue
+        streams = state["streams"]
+        if not any(
+            isinstance(item, str)
+            and item.split("@", 1)[0].upper() == expected_symbol
+            for item in streams
+        ):
+            continue
+        started = datetime.fromisoformat(str(state["started_at"]))
+        if started.tzinfo is None or started.astimezone(UTC) > cutoff.astimezone(UTC):
+            continue
+        candidates.append((started.astimezone(UTC), session_id))
+    if not candidates:
+        raise LiveSnapshotError("no_active_session_for_symbol_at_decision_cutoff")
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def persist_snapshot_content_addressed(
+    snapshot: dict[str, Any], data_root: str | Path
+) -> dict[str, str]:
+    """Persist a snapshot under its dataset hash with exclusive creation."""
+    dataset_hash = str(snapshot.get("dataset_hash") or "")
+    if len(dataset_hash) != 64 or any(ch not in "0123456789abcdef" for ch in dataset_hash):
+        raise ValueError("snapshot dataset_hash must be a lowercase SHA-256 digest")
+    root = Path(data_root).expanduser().resolve()
+    directory = root / "vault" / "features"
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / f"{dataset_hash}.json"
+    payload = _canonical(snapshot) + b"\\n"
+    artifact_hash = hashlib.sha256(payload).hexdigest()
+    try:
+        fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        if destination.read_bytes() != payload:
+            raise LiveSnapshotError("content_addressed_feature_artifact_mismatch")
+    else:
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if os.name == "posix":
+                directory_fd = os.open(directory, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+    return {
+        "artifact_path": destination.relative_to(root).as_posix(),
+        "artifact_sha256": artifact_hash,
+    }
 
 
 def write_snapshot(snapshot: dict[str, Any], output: str | Path) -> Path:
