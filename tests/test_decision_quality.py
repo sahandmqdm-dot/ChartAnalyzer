@@ -10,7 +10,7 @@ T0 = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
 def record(i, action, net, *, reason=None, start=None, end=None, resolved=None):
     start = start or T0 + datetime.timedelta(hours=i * 5)
-    end = end or start + timedelta(hours=4)
+    end = end or start + datetime.timedelta(hours=4)
     return {
         "decision_id": f"d{i}",
         "instrument_id": "BTCUSDT",
@@ -61,7 +61,7 @@ def test_rejects_overlapping_horizons_and_duplicate_ids():
     first = record(0, "ACT", 0.01)
     second = record(
         1, "NO_TRADE", -0.01,
-        start=first["decision_at"] + timedelta(hours=2),
+        start=first["decision_at"] + datetime.timedelta(hours=2),
     )
     with pytest.raises(DecisionQualityError, match="overlapping"):
         evaluate_decision_quality([first, second])
@@ -76,7 +76,7 @@ def test_rejects_mixed_cohorts_and_early_resolution():
     second["timeframe"] = "4h"
     with pytest.raises(DecisionQualityError, match="one instrument"):
         evaluate_decision_quality([first, second])
-    bad = record(0, "ACT", 0.01, resolved=T0 + timedelta(hours=1))
+    bad = record(0, "ACT", 0.01, resolved=T0 + datetime.timedelta(hours=1))
     with pytest.raises(DecisionQualityError, match="cannot resolve"):
         evaluate_decision_quality([bad])
 
