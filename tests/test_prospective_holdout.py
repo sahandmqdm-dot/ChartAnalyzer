@@ -64,6 +64,7 @@ def append_forecast(ledger, index=0, **kwargs):
         forecast,
         config_fingerprint=CONFIG,
         input_source="ramzinex-public",
+        reference_price=100.0,
         recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
     )
     return forecast
@@ -108,7 +109,7 @@ def test_forecast_must_match_frozen_config_and_model(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="config fingerprint"):
         ledger.record_forecast(
-            forecast, config_fingerprint="d" * 64, input_source="feed",
+            forecast, config_fingerprint="d" * 64, input_source="feed", reference_price=100.0,
             recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
         )
     with pytest.raises(ValueError, match="model_version"):
@@ -120,7 +121,7 @@ def test_forecast_must_be_persisted_before_target(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="strictly before its target"):
         ledger.record_forecast(
-            forecast, config_fingerprint=CONFIG, input_source="feed",
+            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
             recorded_at=forecast.target_at,
         )
 
@@ -130,7 +131,7 @@ def test_delayed_forecast_persistence_is_rejected(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="within 60 seconds"):
         ledger.record_forecast(
-            forecast, config_fingerprint=CONFIG, input_source="feed",
+            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
             recorded_at=forecast.issued_at + datetime.timedelta(minutes=2),
         )
 
@@ -140,7 +141,7 @@ def test_forecast_target_must_match_declared_horizon(tmp_path):
     forecast = make_forecast(target_at=START + datetime.timedelta(hours=5))
     with pytest.raises(ValueError, match="horizon_bars"):
         ledger.record_forecast(
-            forecast, config_fingerprint=CONFIG, input_source="feed",
+            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
             recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
         )
 
@@ -155,7 +156,7 @@ def test_overlapping_forecast_horizons_are_rejected(tmp_path):
     )
     with pytest.raises(ValueError, match="overlapping"):
         ledger.record_forecast(
-            overlapping, config_fingerprint=CONFIG, input_source="feed",
+            overlapping, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
             recorded_at=overlapping.issued_at + datetime.timedelta(seconds=1),
         )
 
@@ -260,6 +261,30 @@ def test_payload_tampering_is_detected(tmp_path):
     finally:
         connection.close()
     assert ledger.verify_integrity()["status"] == "BLOCKED"
+
+
+def test_pending_forecast_queue_and_next_issue_time(tmp_path):
+    ledger = make_ledger(tmp_path)
+    assert ledger.next_issuance_due() == START
+    forecast = append_forecast(ledger)
+    assert ledger.next_issuance_due() == forecast.target_at
+    pending = ledger.pending_forecasts()
+    assert len(pending) == 1
+    assert pending[0]["forecast_id"] == forecast.forecast_id
+    assert pending[0]["reference_price"] == 100.0
+    resolve(ledger, forecast)
+    assert ledger.pending_forecasts() == []
+
+
+def test_reference_price_must_be_positive_and_finite(tmp_path):
+    ledger = make_ledger(tmp_path)
+    forecast = make_forecast()
+    with pytest.raises(ValueError, match="reference_price"):
+        ledger.record_forecast(
+            forecast, config_fingerprint=CONFIG, input_source="feed",
+            reference_price=0.0,
+            recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
+        )
 
 
 def test_ledger_status_does_not_disclose_scores_before_evaluation(tmp_path):
