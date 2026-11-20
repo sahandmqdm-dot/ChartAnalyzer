@@ -370,3 +370,57 @@ Get-Content .\runtime\binance_collector\collector.stderr.log -Tail 100
 روز UTC بسته‌شده را جداگانه روی هر میزبان Seal کنید و Manifest را به مقصد مستقل از Data Directory منتقل کنید. از دو میزبان برای یک روز، دو Manifest با شناسه منبع متفاوت نگه دارید. پس از انتقال، هر Manifest را در مقصد خودش Verify کنید. صرف اجرای هم‌زمان Local و VPS به معنی Redundancy اثبات‌شده نیست؛ باید Restore و مقایسه هش‌ها عملاً تست شود.
 
 **قانون شروع آزمون:** این مراحل فقط جمع‌آوری آزمایشی و ظرفیت‌سنجی زیرساخت هستند. شروع ۴۲ روز منوط به Freeze نسخه، تأیید منبع داده و مدل، اثبات ثبت پیش‌بینی پیش از Outcome، Backup/Restore مستقل و پذیرش رسمی گزارش Preflight/Soak Test است. تا آن زمان هیچ‌کدام از Collectorها را به‌عنوان شروع Holdout رسمی تلقی نکنید.
+
+
+## D) استقرار آزمایشی ایزوله، بدون دست‌زدن به نسخه اصلی
+
+برای اعتبارسنجی این PR، ابتدا آن را در مسیر staging جدا از برنامه اصلی اجرا کنید. این کار از تغییر ناخواسته سرویس اصلی PMI جلوگیری می‌کند.
+
+### Windows Local: Clone مستقل
+
+در PowerShell:
+
+~~~powershell
+cd F:\Projects
+git clone --branch feat/collector-health-telemetry https://github.com/sahandmqdm-dot/ChartAnalyzer.git ChartAnalyzer-collector-test
+cd .\ChartAnalyzer-collector-test
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts\binance_collector_preflight.py --data-dir .\data\binance_raw --min-free-gib 10
+.\deploy\windows\binance-collector.ps1 -Action Start
+~~~
+
+این مسیر را جایگزین Clone اصلی یا Branch کاری فعلی نکنید. اگر Preflight موفق شد، Collector Local را برای Soak Test روشن نگه دارید.
+
+### Linux VPS: Clone و Unit مستقل
+
+~~~bash
+sudo -u chartanalyzer git clone --branch feat/collector-health-telemetry https://github.com/sahandmqdm-dot/ChartAnalyzer.git /opt/chartanalyzer-collector-test
+sudo -u chartanalyzer python3 -m venv /opt/chartanalyzer-collector-test/.venv
+sudo -u chartanalyzer /opt/chartanalyzer-collector-test/.venv/bin/pip install --upgrade pip
+sudo -u chartanalyzer /opt/chartanalyzer-collector-test/.venv/bin/pip install -r /opt/chartanalyzer-collector-test/requirements.txt
+sudo install -d -o chartanalyzer -g chartanalyzer -m 0700 /var/lib/chartanalyzer/binance_raw_staging
+sudo -u chartanalyzer /opt/chartanalyzer-collector-test/.venv/bin/python /opt/chartanalyzer-collector-test/scripts/binance_collector_preflight.py --data-dir /var/lib/chartanalyzer/binance_raw_staging --min-free-gib 10
+~~~
+
+فقط اگر Preflight برابر PASS شد:
+
+~~~bash
+sudo install -o root -g root -m 0644 /opt/chartanalyzer-collector-test/deploy/systemd/chartanalyzer-binance-raw-collector-staging.service /etc/systemd/system/
+sudo systemd-analyze verify /etc/systemd/system/chartanalyzer-binance-raw-collector-staging.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now chartanalyzer-binance-raw-collector-staging.service
+sudo systemctl status chartanalyzer-binance-raw-collector-staging.service --no-pager
+sudo journalctl -u chartanalyzer-binance-raw-collector-staging.service -f
+~~~
+
+مسیر staging داده خام /var/lib/chartanalyzer/binance_raw_staging است و با داده عملیاتی یا Cohort اصلی تداخل ندارد. توقف تمیز:
+
+~~~bash
+sudo systemctl stop chartanalyzer-binance-raw-collector-staging.service
+sudo journalctl -u chartanalyzer-binance-raw-collector-staging.service -n 100 --no-pager
+~~~
+
+برای به‌روزرسانی staging، ابتدا سرویس را Stop کنید، سپس در Clone آزمایشی fetch و switch/pull با fast-forward انجام دهید، وابستگی‌ها را بازبینی کنید، Preflight را دوباره اجرا کنید و بعد سرویس را Start کنید. از Pull کردن کد جدید روی سرویس در حال جمع‌آوری خودداری کنید.
+
+**هیچ‌کدام از دو Clone staging، هیچ‌یک از دو Collector و هیچ‌یک از این داده‌ها، Holdout رسمی ۴۲ روزه نیستند.** داده‌ها برای آزمون شبکه، پایداری، نرخ ذخیره‌سازی، Drop، Recovery و Restore هستند.
