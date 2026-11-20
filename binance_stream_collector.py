@@ -268,12 +268,22 @@ class BinanceDualMarketCollector:
         specs = (MarketSpec.spot(symbol), MarketSpec.usdm(symbol))
         tasks = [asyncio.create_task(self.run_market(spec, stop), name=f"binance-{spec.market}")
                  for spec in specs]
+        stop_task = asyncio.create_task(stop.wait(), name="collector-stop")
         try:
-            await stop.wait()
+            done, _ = await asyncio.wait([*tasks, stop_task],
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if stop_task not in done:
+                failed = next((task for task in done if task is not stop_task), None)
+                if failed is not None:
+                    error = failed.exception()
+                    if error is not None:
+                        raise error
+                    raise CollectorError("market collection task stopped unexpectedly")
         finally:
+            stop_task.cancel()
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, stop_task, return_exceptions=True)
             self.store.close()
 
 
