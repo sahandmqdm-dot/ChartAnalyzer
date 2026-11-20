@@ -336,9 +336,13 @@ def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
     for path in tmp_path.rglob("*.jsonl"):
         records.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
 
+    raw_frames = [r for r in records if r["stream"] == "raw_frames"]
     depth = [r for r in records if r["stream"] == "orderbook_depth"]
     snapshots = [r for r in records if r["stream"] == "orderbook_snapshots"]
     states = [r for r in records if r["stream"] == "orderbook_state"]
+    assert len(raw_frames) == 2
+    assert all(r["payload"]["encoding"] == "utf-8" for r in raw_frames)
+    assert all(r["payload"]["raw_message"].startswith('{"stream":') for r in raw_frames)
     assert len(depth) == 2
     assert len(snapshots) == 1
     assert any(r["payload"]["state"] == "synchronized" for r in states)
