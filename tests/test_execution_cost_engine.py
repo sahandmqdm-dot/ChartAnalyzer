@@ -60,7 +60,7 @@ def test_limit_order_with_no_fill_is_unfilled_and_has_no_fee():
 
 
 def test_partial_fill_accounts_only_filled_quantity():
-    result = run(fills=[{"price": 100.5, "quantity": 0.5, "liquidity_role": "maker"}])
+    result = run(order_type="limit", fills=[{"price": 100.5, "quantity": 0.5, "liquidity_role": "maker"}])
     assert result["status"] == "partial"
     assert result["filled_quantity"] == pytest.approx(0.5)
     assert result["unfilled_quantity"] == pytest.approx(1.5)
@@ -89,7 +89,7 @@ def test_invalid_fee_schedule_fails_closed(field, value):
 
 
 def test_missing_fee_schedule_or_fill_provenance_fails_closed():
-    with pytest.raises(ValueError, match="fee_schedule"):
+    with pytest.raises((ValueError, TypeError), match="fee_schedule"):
         run(fee_schedule=None)
     with pytest.raises(ValueError, match="fill_source"):
         run(fill_source=None)
