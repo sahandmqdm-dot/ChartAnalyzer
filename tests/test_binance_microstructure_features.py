@@ -97,6 +97,11 @@ def _create_session(root, *, terminal_state="ended"):
         received_at=_received(2.83), session_id=SESSION,
     )
     store.append(
+        "usdm", "orderbook_state",
+        {"state": "buffer_discarded_on_close", "dropped_events": 2},
+        received_at=_received(2.84), session_id=SESSION,
+    )
+    store.append(
         "usdm", "trades",
         {"p": "101", "q": "1", "m": True, "T": 1795176002000, "t": 2},
         received_at=_received(3), event_time=_received(2),
@@ -159,7 +164,7 @@ def test_features_use_receive_time_and_keep_orderbook_state_point_in_time(tmp_pa
     assert first["windows"]["5"]["long_liquidation_notional"] == "50.25"
     assert first["collector_sequence_gaps"] == 1
     assert first["collector_buffer_overflows"] == 1
-    assert first["collector_dropped_events"] == 3
+    assert first["collector_dropped_events"] == 5
     assert first["collector_snapshot_failures"] == 1
 
     assert second["book"]["best_ask"] == "100.5"
