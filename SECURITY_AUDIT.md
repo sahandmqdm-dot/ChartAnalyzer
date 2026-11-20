@@ -1,105 +1,74 @@
-name: CI
+# ChartAnalyzer | Security and Repository Validation Snapshot
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+**Audit date:** 2026-11-20  
+**Validated baseline:** `main` commit `5fe0753f426bd299b02ab5dc6c0a8fefed4f98cb`  
+**CI evidence:** GitHub Actions run `44713418963` for the same source tree plus the SQLite lifecycle regression tests.  
+**Nature of review:** repository-level automated validation and targeted source review. This is not an independent penetration test or a certification.
 
-permissions:
-  contents: read
+## Executive result
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+The required automated test and security jobs passed on the validated source tree. The repository is **not yet a clean, production-certified release**: the advisory Ruff job still reports legacy findings, coverage is 83%, and Windows/live-provider runtime behavior has not been verified in this environment.
 
-jobs:
-  test:
-    name: Python ${{ matrix.python-version }} tests
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pytest-cov
-      - name: Compile Python sources
-        run: python -m compileall -q .
-      - name: Run tests and measure coverage
-        run: |
-          python -m pytest -q tests/ --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-python-${{ matrix.python-version }}
-          path: |
-            coverage.xml
-            htmlcov/
-          if-no-files-found: warn
-          retention-days: 14
+## Automated validation
 
-  security-audit:
-    name: Python dependency security audit
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install audit tool
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pip-audit
-      - name: Audit dependencies
-        run: python -m pip_audit -r requirements.txt
+| Check | Result |
+|---|---|
+| Python 3.12 test suite | **488 passed** |
+| Python 3.13 test suite | **488 passed** |
+| Coverage | **83%** on both Python versions |
+| Python compilation | Passed (`python -m compileall -q .`) |
+| Dependency audit | `pip-audit`: no known vulnerabilities found |
+| Bandit | **0 medium / 0 high** severity findings; 790 low-severity findings in the scan summary |
+| SQLite resource lifecycle | The 23 Python 3.13 `ResourceWarning: unclosed database` warnings seen before the fix are no longer present |
+| Ruff | Advisory job still fails with **103 findings**: 74 I001, 18 F401, 6 F841, 4 C408 and 1 S110 |
 
-  bandit:
-    name: Python security static analysis
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-      - name: Install Bandit
-        run: python -m pip install bandit
-      - name: Scan application code
-        # B104 is intentionally excluded: --lan binds 0.0.0.0 only when explicitly
-        # requested and then requires the configured/generated access token.
-        run: bandit -r . -ll --skip B104 -x tests,.git,.venv,venv
+Ruff is configured as advisory in CI, so its failure does not fail the overall workflow. This must not be described as a clean lint result. The findings are repository-wide technical debt and should be addressed incrementally, starting with unused imports/locals and exception handling, then import formatting.
 
-  static-analysis:
-    name: Static analysis (advisory)
-    runs-on: ubuntu-24.04
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-      - name: Install Ruff
-        run: python -m pip install ruff
-      - name: Run Ruff
-        run: ruff check . --output-format=github
+## Security controls reviewed
+
+- Default application mode is loopback-only; LAN mode is explicit and requires a token.
+- Host/origin checks, constant-time token comparison, bounded request handling and restrictive response headers are present.
+- User-supplied UDF URLs are checked against configured allowlists; upstream redirects are disabled.
+- CSV ingestion and research payload sizes are bounded.
+- SQLite files and sidecars receive restrictive POSIX permissions; symlink paths are rejected.
+- MCP starts without a shell, uses a reduced child environment and does not inherit application provider secrets or the LAN token.
+- MCP integration is read-only and does not expose order placement.
+- Holdout evaluation is serialized and one-time at the application layer.
+- Dependency scanning found no known vulnerable dependency versions in the current requirements set.
+
+See [SECURITY.md](../SECURITY.md) for the detailed threat model, operational guidance and remaining security limitations.
+
+## Important limitations and residual risk
+
+1. **No TLS in the built-in server.** LAN mode uses plain HTTP. Do not expose it directly to the public Internet; use a trusted network and an HTTPS reverse proxy with authentication and network controls.
+2. **Shared LAN token.** There are no per-user roles or server-side session revocation. Loopback clients are trusted by design.
+3. **No independent DAST or penetration test.** Bandit and pip-audit are automated checks, not proof that the application is vulnerability-free.
+4. **No Windows runtime certification in this audit.** CI runs on Ubuntu. A local Windows 11 smoke test is still required.
+5. **No live exchange/provider certification.** Network reachability, provider rate limits, symbol coverage, data entitlements and current upstream payload behavior must be tested from the deployment environment.
+6. **No profitability claim.** Backtests are bar-level approximations. They do not fully model order-book depth, queue position, partial fills, market impact, exchange liquidation or all historical funding mechanics.
+7. **Coverage gap.** 83% line coverage leaves 17% unexecuted by the current suite; high-risk orchestration, failure and platform-specific paths need more targeted tests.
+8. **Static-analysis debt.** The 103 Ruff findings remain open. The advisory configuration means they are visible but non-blocking.
+
+## Project completeness
+
+The current mainline is ChartAnalyzer V7.2.0 plus the merged CMI-01/CMI-02 evidence, source, entity and claim contracts. The later CMI stages are roadmap work, not completed functionality:
+
+- CMI-03: Fundamental and Macro Intelligence
+- CMI-04: News/research ingestion and source-linked claim extraction
+- CMI-05: Human sentiment and narrative lifecycle
+- CMI-06: Knowledge graph and contradiction engine
+- CMI-07: Event impact and cross-asset hypotheses
+- CMI-08: Scenario synthesis and forecast evaluation
+
+The separate `feature/news-service` branch is not part of main and must not be treated as an integrated or validated production capability. Its news ingestion should be reconsidered as part of CMI-04, using the canonical evidence/source contracts and prompt-injection safeguards.
+
+## Required follow-up before a production release
+
+1. Eliminate the Ruff baseline and make linting of changed files blocking.
+2. Increase coverage of security-sensitive and data-integrity paths, with particular attention to exception paths and Windows behavior.
+3. Run the full test and smoke-test sequence on Windows 11 with the intended Python version.
+4. Validate each live data adapter against its provider, including stale data, rate limits, malformed payloads and symbol/market identity.
+5. Complete CMI-03 through CMI-08 with point-in-time, provenance and out-of-sample acceptance tests.
+6. Collect a genuinely independent, sealed future holdout before making any predictive-performance claim.
+
+**Conclusion:** the current code passes the automated test, dependency and medium/high Bandit gates on the recorded CI baseline. It is suitable for continued controlled development and research validation, but the findings and limitations above must be closed or explicitly accepted before production deployment.
