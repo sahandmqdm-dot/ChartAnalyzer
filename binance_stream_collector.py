@@ -310,6 +310,14 @@ class BinanceDualMarketCollector:
                             received_at = utc_now()
                             stream = "unknown"
                             try:
+                                # Preserve the exact provider frame before JSON parsing or
+                                # downstream validation. The typed event below is a derived copy.
+                                self.store.append(
+                                    spec.market, "raw_frames", {"raw_message": message},
+                                    received_at=received_at,
+                                    stream_name="combined_websocket_frame",
+                                    session_id=session_id,
+                                )
                                 envelope = json.loads(message)
                                 stream = str(envelope.get("stream", "unknown"))
                                 payload = envelope.get("data", envelope)
