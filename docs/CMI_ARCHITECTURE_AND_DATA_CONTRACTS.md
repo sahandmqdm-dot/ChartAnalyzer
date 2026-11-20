@@ -114,7 +114,7 @@ The initial implementation should use strict Pydantic models (or equivalent vali
 ### 5.1 SourceReference
 
 Required:
-- `source_id`: stable internal identifier
+- `source_id`: stable internal identifier for one immutable source version; changed payloads/metadata require a new version identifier
 - `provider`: canonical provider key
 - `source_type`: exchange, regulator, issuer, news, research, social, on_chain, macro_series, other
 - `source_uri`: canonical URL or provider-native identifier
@@ -131,13 +131,13 @@ Required:
 Required:
 - `evidence_id`: deterministic ID derived from canonical identity and source version
 - `evidence_type`: observation, filing_fact, reported_fact, analyst_opinion, extracted_claim, model_inference, hypothesis
-- `entity_ids`: one or more resolved entity identifiers
+- `entity_ids`: one or more resolved entity identifiers (required; unscoped evidence is rejected)
 - `instrument_id`: nullable canonical instrument reference
 - `event_id`: nullable event reference
 - `claim`: concise normalized statement or typed value
 - `value`, `unit`, `currency`: typed nullable fields; no implicit unit conversion
 - `valid_time_start`, `valid_time_end`: when the fact applies, if known
-- `published_at`, `first_seen_at`, `available_at`, `retrieved_at`
+- `published_at`, `first_seen_at`, `available_at`; source-level `retrieved_at` is inherited through `source_reference_id` and must not be earlier than that retrieval
 - `source_reference_id`
 - `extraction_method`, `extractor_version`: nullable for direct structured observations
 - `confidence`: nullable and method-specific; not interchangeable with forecast probability
@@ -224,7 +224,7 @@ The system must not collapse these distinct timestamps:
 - `published_at`: when the source says it published the information
 - `first_seen_at`: first platform observation
 - `available_at`: earliest time the evidence is permitted to influence a forecast
-- `retrieved_at`: time of the specific fetch
+- `retrieved_at`: time of the specific fetch, recorded on `SourceReference`; evidence cannot become available before its source retrieval
 - `valid_time`: period in which the fact applies
 
 For historical simulation, `available_at` is the governing cutoff. If it cannot be established, the record is excluded from point-in-time evaluation or explicitly marked non-usable. A current web page containing historical information is not proof that the information was available historically.
