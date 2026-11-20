@@ -228,3 +228,28 @@ Collector به‌طور هم‌زمان BTCUSDT Spot و USD-M Futures را می�
 مسیر داده شامل پارتیشن‌های روزانه JSONL و Hash Chain است. پس از توقف تمیز، فایل‌ها flush و fsync می‌شوند. سیاست پیش‌فرض fsync هر 100 رویداد است و از طریق `CHARTANALYZER_BINANCE_FSYNC_EVERY_EVENTS` قابل تغییر است؛ مقدار 1 یعنی fsync برای هر رکورد و دوام قوی‌تر با احتمال افت throughput. حتی با مقدار 1 نیز باید رفتار واقعی فایل‌سیستم، کنترلر دیسک و قطع برق آزمایش شود؛ بنابراین صفر-اتلاف بودن را بدون آزمون عملی ادعا نمی‌کنیم. برای شروع آزمون رسمی باید نرخ واقعی داده، ظرفیت دیسک، تأخیر fsync، شمارنده رویدادهای ازدست‌رفته و بازیابی پس از قطع ناگهانی جداگانه اندازه‌گیری شوند.
 
 اعتبار زنجیره هر پارتیشن را می‌توان با تابع `HashChainJSONLStore.verify_file` در Python بررسی کرد. قبل از استفاده پژوهشی، تمام فایل‌ها را Verify کنید و Manifest روزانه شامل تعداد رویداد، اولین/آخرین timestamp، آخرین hash، تعداد gapها و تعداد خطاهای ذخیره‌سازی را خارج از مسیر داده اصلی آرشیو کنید.
+
+
+## مهر و آرشیو مستقل Manifest روزانه Binance
+
+برای هر روز UTC که کاملاً بسته شده است، یک Manifest محتوامحور بسازید. مقصد آرشیو باید خارج از مسیر داده خام باشد و ترجیحاً روی دیسک/ماشین یا فضای ذخیره‌سازی مستقل قرار گیرد:
+
+~~~bash
+sudo install -d -o chartanalyzer -g chartanalyzer -m 0700 /mnt/independent-archive/chartanalyzer-binance
+sudo -u chartanalyzer .venv/bin/python binance_daily_audit.py seal \
+  --data-dir /var/lib/chartanalyzer/binance_raw \
+  --day 2026-11-19 \
+  --archive-dir /mnt/independent-archive/chartanalyzer-binance
+~~~
+
+اسکریپت فقط روزهای UTC گذشته را می‌پذیرد، زنجیره هش تمام پارتیشن‌های آن روز را بررسی می‌کند و اگر Session بدون رکورد terminal وجود داشته باشد، از Seal کردن خودداری می‌کند. Manifest شامل SHA-256 کامل هر پارتیشن، اندازه، تعداد رکورد، اولین/آخرین زمان دریافت، آخرین Hash Chain، شمارنده Streamها و وضعیت پایان Sessionهاست. فایل Manifest با نام مبتنی بر هش و بدون امکان overwrite ایجاد می‌شود.
+
+برای Verify مجدد، مسیر دقیق Manifest آرشیوشده را بدهید:
+
+~~~bash
+sudo -u chartanalyzer .venv/bin/python binance_daily_audit.py verify \
+  --data-dir /var/lib/chartanalyzer/binance_raw \
+  --manifest /mnt/independent-archive/chartanalyzer-binance/2026-11-19-<manifest-hash>.json
+~~~
+
+**محدودیت مهم:** این ابزار Seal روزانه و یکپارچگی پارتیشن‌ها را کنترل می‌کند؛ هنوز شمارنده جامع queue overflow/dropped events، هشدار زنده دیسک، یا آزمون Restore از آرشیو مستقل را فراهم نمی‌کند. این موارد باید قبل از Freeze نهایی و شروع 42 روز با آزمون عملی تکمیل شوند. Manifest روزانه جایگزین کپی مستقل خود داده‌های خام نیست.
