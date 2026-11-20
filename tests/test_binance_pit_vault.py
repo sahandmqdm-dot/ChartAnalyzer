@@ -120,9 +120,8 @@ def test_session_record_iterator_rejects_non_monotonic_partition_time(tmp_path):
         received_at="2026-11-20T12:00:04+00:00", session_id=SESSION,
     )
     store.close()
-    manifest = build_session_manifest(tmp_path, "spot", SESSION)
     with pytest.raises(PITVaultError, match="non_monotonic_received_at"):
-        list(iter_session_records(tmp_path, manifest, SESSION))
+        build_session_manifest(tmp_path, "spot", SESSION)
 
 
 def test_replay_reconstructs_book_from_snapshot_and_buffered_diffs(tmp_path):
