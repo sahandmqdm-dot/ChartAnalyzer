@@ -83,3 +83,8 @@ Use at your own risk. This is research software, not financial advice.
 ## V6.5.0
 
 Adds OHLCV and indicator integrity audits, explicit metric semantics/units, fail-closed trade-plan gating for critical integrity failures, and MFI zero-flow edge-case handling. See `RELEASE_NOTES_V6_5_FA.md`.
+
+
+## Cloud-ready market-data storage
+
+The Binance collector is deployment-portable: configure CHARTANALYZER_DATA_DIR for a local disk or a persistent cloud volume. Optional S3-compatible archival mirrors only closed UTC-day partitions after hash-chain verification. Local raw files are retained, Spot and USD-M stay isolated, and cloud transfer never blocks live capture. See docs/CLOUD_READY_DATA_ARCHITECTURE.md. The optional uploader requires boto3.
