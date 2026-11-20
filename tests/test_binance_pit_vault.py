@@ -7,6 +7,7 @@ import pytest
 
 from binance_pit_vault import (
     build_session_manifest,
+    iter_session_records,
     PITVaultError,
     persist_session_manifest,
     replay_orderbook_session,
@@ -87,6 +88,41 @@ def test_manifest_is_deterministic_and_verifies_source_partitions(tmp_path):
     assert result["valid"] is True
     assert result["manifest_hash"] == first["manifest_hash"]
     assert result["source_files"] == 3
+
+
+def test_session_record_iterator_merges_partitions_in_receive_time_order(tmp_path):
+    create_session(tmp_path)
+    manifest = build_session_manifest(tmp_path, "spot", SESSION)
+    records = list(iter_session_records(tmp_path, manifest, SESSION))
+    received = [record["received_at"] for record in records]
+    assert received == sorted(received)
+    assert len(records) == manifest["total_session_records"]
+
+
+def test_session_record_iterator_rejects_non_monotonic_partition_time(tmp_path):
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    store.append(
+        "spot", "session_manifest",
+        {"state": "started", "streams": ["btcusdt@trade"], "started_at": START},
+        received_at=START, session_id=SESSION,
+    )
+    store.append(
+        "spot", "trades", {"p": "100", "q": "1", "m": False},
+        received_at="2026-11-20T12:00:03+00:00", session_id=SESSION,
+    )
+    store.append(
+        "spot", "trades", {"p": "101", "q": "1", "m": True},
+        received_at="2026-11-20T12:00:02+00:00", session_id=SESSION,
+    )
+    store.append(
+        "spot", "session_manifest",
+        {"state": "ended", "ended_at": "2026-11-20T12:00:04+00:00"},
+        received_at="2026-11-20T12:00:04+00:00", session_id=SESSION,
+    )
+    store.close()
+    manifest = build_session_manifest(tmp_path, "spot", SESSION)
+    with pytest.raises(PITVaultError, match="non_monotonic_received_at"):
+        list(iter_session_records(tmp_path, manifest, SESSION))
 
 
 def test_replay_reconstructs_book_from_snapshot_and_buffered_diffs(tmp_path):
