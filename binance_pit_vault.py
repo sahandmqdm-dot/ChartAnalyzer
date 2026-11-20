@@ -391,7 +391,7 @@ def _reference_replay_records(
         side: dict[Decimal, Decimal], updates: Any
     ) -> None:
         if not isinstance(updates, list):
-            raise ValueError("orderbook_levels_must_be_a_list")
+            raise TypeError("orderbook_levels_must_be_a_list")
         for level in updates:
             if not isinstance(level, (list, tuple)) or len(level) != 2:
                 raise ValueError("invalid_orderbook_level")
@@ -537,8 +537,8 @@ __all__ = [
     "PITVaultError",
     "build_session_manifest",
     "persist_session_manifest",
-    "replay_orderbook_session",
     "reference_replay_orderbook_session",
+    "replay_orderbook_session",
     "verify_session_manifest",
 ]
 
