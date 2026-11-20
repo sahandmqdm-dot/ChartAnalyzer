@@ -2485,7 +2485,7 @@ def api_margin(market_type: str = "futures", side: str = "long",
             warning_distance_pct=float(mc.get("warning_distance_pct", 5.0)),
             critical_distance_pct=float(mc.get("critical_distance_pct", 2.0)),
         )
-        result["version"] = "7.2.0"
+        result["version"] = APP_VERSION
         return result
     except Exception as e:
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))

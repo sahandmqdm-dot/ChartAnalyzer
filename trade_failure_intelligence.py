@@ -300,7 +300,7 @@ def analyze_trade_failures(
         }
 
     return {
-        "version": "7.2.0", "status": "descriptive_and_counterfactual", "trades_analyzed": valid_trade_count,
+        "version": APP_VERSION, "status": "descriptive_and_counterfactual", "trades_analyzed": valid_trade_count,
         "trades_invalid": len(rows) - valid_trade_count,
         "by_exit_reason": dict(exit_counts), "failure_tag_counts": dict(tags_count),
         "early_time_exit_scenarios": horizon_summary, "trades": rows,
