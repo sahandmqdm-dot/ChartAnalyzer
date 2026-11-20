@@ -5,6 +5,7 @@ from binance_live_microstructure import (
     build_active_session_snapshot,
     find_latest_active_session,
     persist_snapshot_content_addressed,
+    verify_snapshot_source_prefixes,
     write_snapshot,
 )
 from binance_stream_collector import HashChainJSONLStore
@@ -101,3 +102,56 @@ def test_snapshot_artifact_is_content_addressed_and_never_overwritten(tmp_path):
     artifact = tmp_path / "raw" / first["artifact_path"]
     assert artifact.is_file()
     assert len(first["artifact_sha256"]) == 64
+
+
+
+def test_snapshot_source_prefix_remains_verifiable_after_later_appends(tmp_path):
+    _active_session(tmp_path)
+    snapshot = build_active_session_snapshot(
+        tmp_path, "spot", SESSION, _stamp(3), window_seconds=(5,)
+    )
+    before = verify_snapshot_source_prefixes(tmp_path, snapshot)
+    assert before["valid"] is True
+
+    later = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    later_session = "later-session"
+    later.append(
+        "spot", "session_manifest",
+        {"state": "started", "streams": ["btcusdt@trade"], "started_at": _stamp(10)},
+        received_at=_stamp(10), session_id=later_session,
+    )
+    later.append(
+        "spot", "raw_frames",
+        {"encoding": "utf-8", "raw_message": '{"stream":"btcusdt@trade","data":{"t":3}}'},
+        received_at=_stamp(11), session_id=later_session,
+    )
+    later.append(
+        "spot", "trades",
+        {"s": "BTCUSDT", "p": "90020", "q": "0.4", "m": False, "T": 1577880011000, "t": 3},
+        received_at=_stamp(11), event_time=_stamp(10.5),
+        stream_name="btcusdt@trade", sequence={"t": 3}, session_id=later_session,
+    )
+    later.close()
+
+    after = verify_snapshot_source_prefixes(tmp_path, snapshot)
+    assert after["valid"] is True
+    assert after["partitions_verified"] == before["partitions_verified"]
+
+
+def test_snapshot_source_prefix_verification_detects_prior_record_tampering(tmp_path):
+    _active_session(tmp_path)
+    snapshot = build_active_session_snapshot(
+        tmp_path, "spot", SESSION, _stamp(3), window_seconds=(5,)
+    )
+    trade_source = next(
+        item for item in snapshot["source_snapshot"]["source_files"]
+        if item["path"].endswith("/trades/2020-01-01.jsonl")
+    )
+    path = tmp_path / trade_source["path"]
+    path.write_bytes(path.read_bytes().replace(b"90000", b"90001", 1))
+    try:
+        verify_snapshot_source_prefixes(tmp_path, snapshot)
+    except Exception as exc:
+        assert "prefix" in str(exc) or "chain" in str(exc)
+    else:
+        raise AssertionError("tampered source prefix was accepted")
