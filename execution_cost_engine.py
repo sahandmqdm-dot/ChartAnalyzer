@@ -91,14 +91,21 @@ def evaluate_execution(
         raise ValueError("valid positive reference_mid and best_bid <= best_ask are required")
     impact = None if impact_bps is None else _number(impact_bps, "impact_bps", minimum=0.0)
     funding = None if funding_rate is None else _number(funding_rate, "funding_rate")
-    events = int(_number(funding_events, "funding_events", minimum=0.0))
+    events_value = _number(funding_events, "funding_events", minimum=0.0)
+    if not events_value.is_integer():
+        raise ValueError("funding_events must be an integer")
+    events = int(events_value)
     probability = None if fill_probability is None else _number(fill_probability, "fill_probability", minimum=0.0)
     if probability is not None and probability > 1:
         raise ValueError("fill_probability must be <= 1")
+    if probability is not None and order_type != "limit":
+        raise ValueError("fill_probability applies only to limit orders")
     if probability is not None and (not fill_probability_source or not fill_probability_calibrated):
         raise ValueError("fill probability requires calibrated model provenance")
     if rejection_reason and fills:
         raise ValueError("rejected order cannot contain fills")
+    if rejection_reason and not str(rejection_reason).strip():
+        raise ValueError("rejection_reason must be non-empty")
     latency = None if latency_ms is None else _number(latency_ms, "latency_ms", minimum=0.0)
     schedule = validate_fee_schedule(fee_schedule)
     if not isinstance(fills, list):
@@ -117,6 +124,8 @@ def evaluate_execution(
             raise ValueError("fill price and quantity must be > 0")
         if role not in {"maker", "taker"}:
             raise ValueError("each fill must explicitly identify maker or taker liquidity")
+        if order_type == "market" and role != "taker":
+            raise ValueError("market-order fills must be taker liquidity")
         parsed.append({"price": price, "quantity": quantity, "liquidity_role": role})
 
     filled_qty = sum(row["quantity"] for row in parsed)
