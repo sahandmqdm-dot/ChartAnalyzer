@@ -7,6 +7,7 @@ from evidence_contracts import (
     EvidenceRecord,
     EvidenceType,
     SourceReference,
+    SourceRegistry,
     SourceType,
     TrustTier,
     canonical_sha256,
@@ -160,3 +161,37 @@ def test_serialization_is_json_safe_and_stable():
 def test_evidence_rejects_forged_supplied_id():
     with pytest.raises(EvidenceContractError, match="does not match"):
         evidence(evidence_id="f" * 64)
+
+
+
+def test_source_registry_is_idempotent_for_identical_versions():
+    item = source()
+    registry = SourceRegistry()
+    assert registry.register(item) == item
+    assert registry.register(item) == item
+    assert registry.get(item.source_id) == item
+    assert registry.all() == (item,)
+
+
+def test_source_registry_rejects_source_id_collision():
+    registry = SourceRegistry([source()])
+    changed = source(content_hash="b" * 64)
+    with pytest.raises(EvidenceContractError, match="collision"):
+        registry.register(changed)
+    assert registry.all() == (source(),)
+
+
+def test_source_registry_batch_registration_is_atomic():
+    first = source()
+    conflicting = source(content_hash="c" * 64)
+    registry = SourceRegistry()
+    with pytest.raises(EvidenceContractError, match="collision"):
+        registry.register_many([first, conflicting])
+    assert registry.all() == ()
+
+
+def test_source_registry_validates_evidence_links():
+    item = source()
+    registry = SourceRegistry([item])
+    record = evidence()
+    assert registry.validate_evidence([record]) == (record,)
