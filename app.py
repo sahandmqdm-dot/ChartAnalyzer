@@ -1524,7 +1524,13 @@ def journal_once(w, seen):
                       s["q10"], s["q50"], s["q90"], s["edge"]["aggregate"]["t_eff"], s["verdict"],
                       score=s["score_now"], gate=s["gate"]["state"], plan=s.get("plan"),
                       extra={"drift_used": s["drift_used"], "ev": (s["gate"].get("ev") or {}).get("ev"),
-                             "p_up_raw": p_raw, "adaptive_calibration": learn})
+                             "p_up_raw": p_raw, "adaptive_calibration": learn,
+                             "decision_action": "ACT" if s["gate"].get("state") == "ALLOWED" else "NO_TRADE",
+                             "decision_reason_code": (s["gate"].get("reasons") or ["GATE_ALLOWED"])[0],
+                             "fee_roundtrip": float(s["gate"].get("fee_rt", 0.0)),
+                             "spread_slippage_roundtrip": float(s["gate"].get("spread_slippage_rt", 0.0)),
+                             "market_type": str(C.get("backtest", {}).get("market_type", "spot")),
+                             "counterfactual_basis": "fixed_horizon_long_net_of_frozen_fee_and_slippage"})
     seen[hk] = bar
 
 
@@ -1560,6 +1566,18 @@ def journal_loop():
         except Exception as e:
             print("[journal-resolve]", redact(f"{type(e).__name__}: {e}")[:160])
         time.sleep(max(30, int(C.get("journal_poll_sec", 120))))
+
+
+
+
+
+@app.get("/api/journal/decision-quality")
+def api_journal_decision_quality(symbol: str = "ramzinex:USDTIRR", tf: str = "1h", horizon: float = 0.0):
+    """Descriptive ACT/NO_TRADE evaluation from resolved, fully annotated journal rows."""
+    try:
+        return AC.evaluate_decision_journal(symbol, tf, horizon or None)
+    except Exception as e:
+        raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
 
 @app.get("/api/journal")
