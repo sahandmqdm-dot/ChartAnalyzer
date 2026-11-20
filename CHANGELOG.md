@@ -6,7 +6,6 @@
 - Added research-only Binance USD-M LONG/SHORT scenarios and dashboard integration.
 - Added read-only funding, mark/index, open-interest, order-book snapshot and bounded aggregate-trade context.
 - Explicitly label directional levels as WATCH ONLY; no order placement or Futures deployment authorization.
-- Clarified that the `v7.0.2` text formerly visible in CI was the pinned upload-artifact GitHub Action version, not ChartAnalyzer's product version.
 
 
 ## 7.2.0 - 2026-11-16

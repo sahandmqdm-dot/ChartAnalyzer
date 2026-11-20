@@ -1,5 +1,7 @@
 # ChartAnalyzer V7.3.0
 
+> **Current product version: 7.3.0.** The canonical runtime version is defined in `version.py`; see [Versioning Policy](docs/VERSIONING.md) for verification and release rules.
+
 **Institutional-grade quant intelligence & future-prediction foundation**
 
 Causal multi-timeframe analysis, statistical edge evaluation, multi-horizon distributional forecasts, realistic cost-aware trade gating, and reproducible backtesting.
