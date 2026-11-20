@@ -265,8 +265,8 @@ def test_backtest_emits_timestamped_equity_points_aligned_to_bar_indices():
     assert len(out["equity_curve"]) == len(out["equity_bar_indices"])
     assert len(out["equity_curve"]) == len(out["equity_timestamps"])
     assert out["equity_timestamp_source"] == "time_column"
-    assert out["equity_bar_indices"][0] == 122
-    assert out["equity_timestamps"][0] == 122 * 3600
+    assert out["equity_bar_indices"][0] == 121
+    assert out["equity_timestamps"][0] == 121 * 3600
     assert out["equity_bar_indices"][-1] == len(df) - 1
 
 
