@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 from collections import Counter
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +119,7 @@ def build_daily_manifest(data_root: str | Path, day: str, *, now: datetime | Non
         "schema": "chartanalyzer_binance_daily_audit_v1",
         "utc_day": target_day.isoformat(),
         "markets": sorted(markets),
-        "created_at": current.astimezone(UTC).isoformat(),
+        "sealed_after_utc_day": datetime.combine(target_day + timedelta(days=1), time.min, tzinfo=UTC).isoformat(),
         "total_records": total,
         "session_count": len(sessions),
         "complete_sessions": sum(item["terminal"] == "ended" for item in sessions.values()),
