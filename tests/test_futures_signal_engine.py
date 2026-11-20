@@ -1,6 +1,5 @@
-from datetime import UTC, datetime, timedelta
-
 import pytest
+from datetime import UTC, datetime, timedelta
 
 from futures_signal_engine import analyze_futures_scenarios
 
@@ -108,7 +107,7 @@ def test_stale_derivatives_are_reported_and_never_authorize():
     {"stop_atr_multiple": 0},
 ])
 def test_invalid_configuration_is_rejected(kwargs):
-    args = dict(instrument_id="BTCUSDT", timeframe_seconds=3600, as_of=NOW)
+    args = {"instrument_id": "BTCUSDT", "timeframe_seconds": 3600, "as_of": NOW}
     args.update(kwargs)
     with pytest.raises(ValueError):
         analyze_futures_scenarios(bars(), **args)
