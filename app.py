@@ -2448,6 +2448,9 @@ def _prospective_identity(payload):
         ("app", __file__),
         ("pmi", getattr(PMI, "__file__", "")),
         ("forecast_validation", os.path.join(BASE_DIR, "forecast_validation.py")),
+        ("research_provenance", os.path.join(BASE_DIR, "research_provenance.py")),
+        ("market_data_hub", os.path.join(BASE_DIR, "market_data_hub.py")),
+        ("iran_crypto_market", os.path.join(BASE_DIR, "iran_crypto_market.py")),
         ("prospective_ledger", os.path.join(BASE_DIR, "prospective_holdout.py")),
         ("prospective_baselines", os.path.join(BASE_DIR, "prospective_baselines.py")),
     ):
@@ -2458,8 +2461,10 @@ def _prospective_identity(payload):
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
         code_hashes[label] = digest.hexdigest()
+    import research_provenance
     identity = {
         "release_sha": os.getenv("CHARTANALYZER_RELEASE_SHA", "unversioned"),
+        "research_engine_revision": research_provenance.RESEARCH_ENGINE_REVISION,
         "app_version": "7.2.0",
         "model_id": model_id,
         "model_version": model_version,
