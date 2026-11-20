@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import urllib.parse
 import urllib.request
@@ -402,13 +403,15 @@ class BinanceDualMarketCollector:
             if stop_task.done() and not stop_task.cancelled():
                 # Close active sockets so their iterators finish and sessions receive
                 # a normal operator-stop terminal record instead of a cancellation.
-                for websocket in list(self._active_websockets.values()):
+                for market, websocket in list(self._active_websockets.items()):
                     close = getattr(websocket, "close", None)
                     if close is not None:
                         try:
                             await close()
-                        except Exception:  # noqa: BLE001  # best-effort transport shutdown
-                            pass
+                        except Exception as exc:  # noqa: BLE001  # best-effort transport shutdown
+                            logging.getLogger(__name__).warning(
+                                "WebSocket close failed for %s: %s", market, type(exc).__name__
+                            )
             else:
                 for task in tasks:
                     task.cancel()
