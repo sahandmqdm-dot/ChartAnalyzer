@@ -179,7 +179,11 @@ class EntityResolver:
                 old = staged_entities.get(entity.entity_id)
                 if old is not None and old != entity:
                     raise IdentityContractError(f"entity_id collision: {entity.entity_id}")
-                if entity.instrument_id and self._market_registry is not None:
+                if entity.instrument_id:
+                    if self._market_registry is None:
+                        raise IdentityContractError(
+                            "MarketRegistry is required when entity.instrument_id is set"
+                        )
                     try:
                         self._market_registry.get(entity.instrument_id)
                     except KeyError as exc:
@@ -355,6 +359,10 @@ class ClaimRegistry:
         entities: Iterable[EntityRecord], evidence: Iterable[EvidenceRecord],
     ) -> tuple[ClaimRecord, ...]:
         claim_rows, entity_rows, evidence_rows = tuple(claims), tuple(entities), tuple(evidence)
+        if any(not isinstance(item, EntityRecord) for item in entity_rows):
+            raise IdentityContractError("entities must contain EntityRecord instances only")
+        if any(not isinstance(item, EvidenceRecord) for item in evidence_rows):
+            raise IdentityContractError("evidence must contain EvidenceRecord instances only")
         entities_by_id = {item.entity_id: item for item in entity_rows}
         if len(entities_by_id) != len(entity_rows):
             raise IdentityContractError("duplicate entity_id values")
