@@ -297,4 +297,58 @@ def market_sweep_fills(
     }
 
 
-__all__ = ["ENGINE_VERSION", "evaluate_execution", "market_sweep_fills", "validate_fee_schedule"]
+def record_execution_cost_experiment(
+    registry: Any,
+    *,
+    experiment_id: str,
+    hypothesis_id: str,
+    dataset_id: str,
+    config_hash: str,
+    source: str,
+    symbol: str,
+    timeframe: str,
+    execution_result: dict[str, Any],
+    run_id: str | None = None,
+    sample_start: float | None = None,
+    sample_end: float | None = None,
+) -> dict[str, Any]:
+    """Persist cost evidence through the existing append-only ResearchRegistry."""
+    if not isinstance(execution_result, dict) or execution_result.get("engine") != ENGINE_VERSION:
+        raise ValueError("execution_result must come from this execution cost engine")
+    breakdown = execution_result.get("cost_breakdown")
+    provenance = execution_result.get("provenance")
+    if not isinstance(breakdown, dict) or not isinstance(provenance, dict):
+        raise ValueError("execution result is missing cost breakdown or provenance")
+    complete = breakdown.get("complete") is True
+    metrics = {
+        "execution_cost_engine": ENGINE_VERSION,
+        "execution_status": execution_result.get("status"),
+        "cost_model_complete": complete,
+        "cost_breakdown": breakdown,
+        "execution_context": execution_result.get("execution_context", {}),
+        "fee_schedule_provenance": execution_result.get("provenance", {}),
+        "fills": execution_result.get("fills", []),
+        "requested_quantity": execution_result.get("requested_quantity"),
+        "filled_quantity": execution_result.get("filled_quantity"),
+        "unfilled_quantity": execution_result.get("unfilled_quantity"),
+    }
+    recorded = registry.record(
+        experiment_id=experiment_id,
+        hypothesis_id=hypothesis_id,
+        dataset_id=dataset_id,
+        config_hash=config_hash,
+        source=source,
+        symbol=symbol,
+        timeframe=timeframe,
+        metrics=metrics,
+        p_value=None,
+        status="COMPLETED" if complete else "INCOMPLETE_COST_MODEL",
+        run_id=run_id,
+        sample_start=sample_start,
+        sample_end=sample_end,
+    )
+    return {**recorded, "cost_model_complete": complete,
+            "registry_status": "COMPLETED" if complete else "INCOMPLETE_COST_MODEL"}
+
+
+__all__ = ["ENGINE_VERSION", "evaluate_execution", "market_sweep_fills", "record_execution_cost_experiment", "validate_fee_schedule"]
