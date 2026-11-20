@@ -2434,6 +2434,8 @@ def _prospective_identity(payload):
         raise ValueError("paths must be between 500 and 10000")
     if isinstance(payload.get("n"), bool) or not 120 <= count <= 5000:
         raise ValueError("n must be between 120 and 5000")
+    if horizon > count - 30:
+        raise ValueError("history window must contain at least 30 horizon-matched returns for baseline evaluation")
     exchange = str(payload.get("exchange") or "binance").strip().lower() if source == "ccxt" else ""
     if source == "ccxt" and not EX_RE.fullmatch(exchange):
         raise ValueError("invalid CCXT exchange id")
@@ -2447,6 +2449,7 @@ def _prospective_identity(payload):
         ("pmi", getattr(PMI, "__file__", "")),
         ("forecast_validation", os.path.join(BASE_DIR, "forecast_validation.py")),
         ("prospective_ledger", os.path.join(BASE_DIR, "prospective_holdout.py")),
+        ("prospective_baselines", os.path.join(BASE_DIR, "prospective_baselines.py")),
     ):
         if not path or not os.path.isfile(path):
             raise ValueError("cannot fingerprint required model component: " + label)
@@ -2471,6 +2474,12 @@ def _prospective_identity(payload):
         "bootstrap_paths": paths,
         "bootstrap_seed": 19,
         "bootstrap_block_bars": 4,
+        "baseline_registry": ["zero_return_point", "historical_unconditional", "ewma_gaussian"],
+        "baseline_ewma_lambda": 0.94,
+        "baseline_history_window": 500,
+        "paired_bootstrap_block_length": 5,
+        "paired_bootstrap_repetitions": 2000,
+        "paired_bootstrap_seed": 19,
         "input_policy": "closed_candles_only",
         "target_kind": "log_return",
     }
@@ -2558,6 +2567,7 @@ def api_prospective_holdout_tick(payload: dict):
         from datetime import datetime, timedelta
 
         from forecast_validation import create_forecast_record
+        from prospective_baselines import build_baseline_quantiles
         from research_provenance import dataset_fingerprint
         cohort_id = str(payload.get("cohort_id") or "").strip()
         ledger = _prospective_ledger(cohort_id)
@@ -2635,6 +2645,8 @@ def api_prospective_holdout_tick(payload: dict):
             target_at = data_cutoff_at + timedelta(seconds=bar_seconds * identity["horizon_bars"])
             fingerprint = dataset_fingerprint(
                 frame, source=source, symbol=identity["symbol"], timeframe=identity["timeframe"])
+            baseline_quantiles = build_baseline_quantiles(
+                frame["close"].to_numpy(dtype=float), identity["horizon_bars"])
             forecast = create_forecast_record(
                 instrument_id=identity["symbol"], market_type=identity["market_type"],
                 timeframe=identity["timeframe"], horizon_bars=identity["horizon_bars"],
@@ -2648,7 +2660,8 @@ def api_prospective_holdout_tick(payload: dict):
             input_source = source if source == "ramzinex" else "ccxt:" + str(identity["exchange"])
             ledger.record_forecast(
                 forecast, config_fingerprint=config_hash, input_source=input_source,
-                reference_price=float(frame["close"].iloc[-1]), recorded_at=recorded_at,
+                reference_price=float(frame["close"].iloc[-1]),
+                baseline_quantiles=baseline_quantiles, recorded_at=recorded_at,
             )
             issued = {"forecast_id": forecast.forecast_id, "issued_at": forecast.issued_at.isoformat(),
                       "data_cutoff_at": forecast.data_cutoff_at.isoformat(),
