@@ -1,5 +1,6 @@
 # ruff: noqa: I001  # Flat-layout first-party import classification differs across Ruff versions.
 import datetime
+import sqlite3
 import numpy as np
 import pandas as pd
 import pytest
