@@ -9,6 +9,7 @@ Safety properties: SQLite only through parameterised queries, DB file chmod 600,
 """
 import json, math, os, sqlite3, threading, time
 import numpy as np
+from decision_quality import DecisionQualityError, evaluate_decision_quality
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_journal.db")
 TF_SEC = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "12h": 43200, "1d": 86400}
@@ -302,3 +303,103 @@ def evaluate(key, tf, horizon=None):
     else:
         out["verdict"] = "no live edge demonstrated"
     return out
+
+
+
+def evaluate_decision_journal(key, tf, horizon=None):
+    """Evaluate resolved journal decisions using fixed-horizon, net-of-cost long returns.
+
+    Only records with frozen action/reason/cost metadata are eligible. Overlapping
+    horizons are deterministically thinned (earliest decision wins) before the
+    single-unit diagnostic, and exclusions are reported. This is not a stop/target
+    execution backtest or a deployment gate.
+    """
+    query = "SELECT * FROM predictions WHERE key=? AND tf=? AND status='resolved'"
+    args = [str(key), str(tf)]
+    if horizon is not None:
+        query += " AND ABS(horizon_h-?)<1e-6"
+        args.append(float(horizon))
+    query += " ORDER BY created, id"
+    with _LOCK, _db() as con:
+        rows = con.execute(query, args).fetchall()
+
+    candidates = []
+    excluded = {"missing_decision_metadata": 0, "invalid_cost_metadata": 0}
+    for row in rows:
+        try:
+            extra = json.loads(row["extra"] or "{}")
+            if not isinstance(extra, dict):
+                raise ValueError("extra metadata must be an object")
+            action = str(extra["decision_action"]).upper()
+            reason = str(extra["decision_reason_code"]).strip()
+            fee = float(extra["fee_roundtrip"])
+            slippage = float(extra["spread_slippage_roundtrip"])
+            market_type = str(extra["market_type"])
+            if action not in {"ACT", "NO_TRADE"} or not reason or not market_type:
+                raise KeyError("decision fields")
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            excluded["missing_decision_metadata"] += 1
+            continue
+        if not all(math.isfinite(x) and x >= 0 for x in (fee, slippage)):
+            excluded["invalid_cost_metadata"] += 1
+            continue
+        try:
+            target_open, bar_seconds, horizon_bars = _target(row)
+            decision_at = datetime.fromtimestamp(float(row["created"]), UTC)
+            horizon_end = datetime.fromtimestamp(float(target_open + bar_seconds), UTC)
+            resolved_at = datetime.fromtimestamp(float(row["resolved_at"]), UTC)
+            gross_return = float(row["outcome"]) / float(row["last"]) - 1.0
+            net_return = gross_return - fee - slippage
+            if not all(math.isfinite(x) for x in (gross_return, net_return)):
+                raise ValueError("non-finite return")
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+            excluded["invalid_cost_metadata"] += 1
+            continue
+        candidates.append({
+            "decision_id": str(row["id"]),
+            "instrument_id": str(key),
+            "market_type": market_type,
+            "timeframe": str(tf),
+            "horizon_bars": int(horizon_bars),
+            "decision_at": decision_at,
+            "horizon_end": horizon_end,
+            "resolved_at": resolved_at,
+            "action": action,
+            "reason_code": reason,
+            "counterfactual_net_return_if_traded": net_return,
+        })
+
+    # Keep the earliest non-overlapping opportunities; do not pretend overlapping
+    # forecasts are independent observations or double-count unit-notional capital.
+    selected = []
+    last_end = None
+    for record in candidates:
+        if last_end is not None and record["decision_at"] < last_end:
+            continue
+        selected.append(record)
+        last_end = record["horizon_end"]
+
+    report = {
+        "schema": "chartanalyzer_decision_journal_bridge_v1",
+        "status": "INSUFFICIENT_DATA" if not selected else "DESCRIPTIVE_ONLY",
+        "source": "resolved_prediction_journal",
+        "resolved_rows_seen": len(rows),
+        "metadata_exclusions": excluded,
+        "overlap_exclusions": len(candidates) - len(selected),
+        "limitations": [
+            "fixed-horizon directional long counterfactual; not stop/target execution PnL",
+            "costs are frozen round-trip fee and spread/slippage metadata; market impact and funding are not modeled here",
+            "earliest non-overlapping opportunity sampling reduces the journal to a single-unit diagnostic",
+            "descriptive only; not causal evidence, portfolio performance, or deployment authorization",
+        ],
+    }
+    if not selected:
+        report["reason"] = "no resolved decisions with complete frozen action, reason, and cost metadata"
+        return report
+    try:
+        report["metrics"] = evaluate_decision_quality(selected)
+        report["status"] = "DESCRIPTIVE_ONLY"
+    except DecisionQualityError as exc:
+        report["status"] = "INVALID_COHORT"
+        report["reason"] = str(exc)
+    return report
