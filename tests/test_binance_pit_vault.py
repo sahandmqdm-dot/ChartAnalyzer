@@ -201,3 +201,34 @@ def test_manifest_detects_source_file_tampering(tmp_path):
     depth_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
     with pytest.raises(PITVaultError, match="source_file_digest_mismatch"):
         verify_session_manifest(tmp_path, manifest)
+
+
+
+def test_sealed_session_manifest_survives_later_session_appends_to_same_daily_files(tmp_path):
+    create_session(tmp_path)
+    sealed = build_session_manifest(tmp_path, "spot", SESSION)
+
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    later_session = "capture-session-002"
+    store.append(
+        "spot", "session_manifest",
+        {"state": "started", "streams": ["btcusdt@depth@100ms"], "started_at": "2026-11-20T12:02:00+00:00"},
+        received_at="2026-11-20T12:02:00+00:00", session_id=later_session,
+    )
+    store.append(
+        "spot", "orderbook_depth",
+        {"U": 103, "u": 104, "b": [], "a": []},
+        received_at="2026-11-20T12:02:00.100000+00:00", session_id=later_session,
+    )
+    store.append(
+        "spot", "session_manifest",
+        {"state": "ended", "ended_at": "2026-11-20T12:03:00+00:00"},
+        received_at="2026-11-20T12:03:00+00:00", session_id=later_session,
+    )
+    store.close()
+
+    verified = verify_session_manifest(tmp_path, sealed)
+    assert verified["valid"] is True
+    assert verified["session_id"] == SESSION
+    records = list(iter_session_records(tmp_path, sealed, SESSION))
+    assert len(records) == sealed["total_session_records"]
