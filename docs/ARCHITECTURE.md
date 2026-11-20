@@ -46,7 +46,8 @@ A positive technical score is not, by itself, proof of statistical edge. `NO_TRA
 | `research_registry.py` | Append-only hypothesis/experiment registry and registered-family FDR calculations. |
 | `research_robustness.py` | Parameter-neighborhood, cross-symbol and regime stability summaries. |
 | `entry_edge_research.py`, `exit_policy_research.py` | OOS trade-level entry and exit diagnostics; not automatic optimizers. |
-| `holdout_vault.py` | Local single-use holdout lifecycle control. Not a cryptographic boundary against filesystem administrators. |
+| `holdout_vault.py` | Historical dataset holdout lifecycle guard; not a creator of future independent samples. |
+| `prospective_holdout.py` | Append-only future forecast/outcome ledger, frozen cohort, non-overlapping horizons, hash-chain verification and one-time final evaluation. |
 | `strategy_validation.py` | Fail-closed OOS evidence gate for a precise market/configuration identity. |
 | `iran_crypto_market.py`, `iran_crypto_mcp.py` | Optional read-only Iranian exchange data integration through MCP. Not used to silently augment historical research samples. |
 | `agent_core.py` | Decision support, trade gate and local prediction journal. |
@@ -62,7 +63,7 @@ A positive technical score is not, by itself, proof of statistical edge. `NO_TRA
 6. Keep the final holdout separate from ordinary research endpoints and permit only one exact-configuration evaluation.
 7. Evaluate the latest matching evidence using the fail-closed strategy gate.
 
-The detailed protocol and API contracts are maintained in `docs/QUANT_RESEARCH_ENGINE.md`.
+The detailed historical research protocol and API contracts are maintained in `docs/QUANT_RESEARCH_ENGINE.md`. The prospective future-sample protocol is specified in `docs/PROSPECTIVE_HOLDOUT_PROTOCOL.md`.
 
 ## Execution model and limitations
 
@@ -71,7 +72,7 @@ The detailed protocol and API contracts are maintained in `docs/QUANT_RESEARCH_E
 - Futures exposure is synthetic. The historical backtest does not model exchange liquidation, margin calls or historical funding schedules; configured constant per-bar funding is only a simplified assumption.
 - The buy-and-hold benchmark is synthetic and uses the configured cost model, not an exchange-native index.
 - The entry-timing permutation and matched random-entry controls are diagnostics, not full stop/target/order-book execution simulations.
-- Holdout sealing is a local logical control. A person with filesystem access can alter local state.
+- Historical holdout sealing is a local logical control. The prospective ledger is append-only and tamper-evident, but a person with filesystem access can still replace its database and recompute its hash chain.
 - LAN mode uses HTTP; do not expose it directly to the public internet. Use a trusted network, firewall and HTTPS reverse proxy where remote access is required.
 - Optional MCP integration is read-only by design and remains disabled unless configured.
 
