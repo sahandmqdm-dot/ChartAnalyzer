@@ -12,10 +12,10 @@ import heapq
 import json
 import os
 import tempfile
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from collections.abc import Iterable, Iterator
 from typing import Any
 
 from binance_orderbook import (
