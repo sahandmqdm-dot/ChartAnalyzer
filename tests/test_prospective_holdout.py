@@ -156,7 +156,7 @@ def test_overlapping_forecast_horizons_are_rejected(tmp_path):
     )
     with pytest.raises(ValueError, match="overlapping"):
         ledger.record_forecast(
-            overlapping, config_fingerprint=CONFIG, input_source="feed",
+            overlapping, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
             recorded_at=overlapping.issued_at + datetime.timedelta(seconds=1),
         )
 
