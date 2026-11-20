@@ -22,7 +22,7 @@ def test_resolved_prediction_journal_bridges_frozen_decision_metadata(tmp_path, 
     with AC._db() as con:
         con.execute(
             "UPDATE predictions SET status='resolved', outcome=?, resolved_at=?",
-            (102.0, time.time()),
+            (102.0, bar + 7201),
         )
 
     report = AC.evaluate_decision_journal("ramzinex:BTCIRR", "1h", 1)
