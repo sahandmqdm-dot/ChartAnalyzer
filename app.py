@@ -2459,6 +2459,17 @@ def api_prospective_holdout_register(payload: dict):
         now = _prospective_now()
         if start <= now + timedelta(seconds=30):
             raise ValueError("collection_start must be at least 30 seconds in the future")
+        min_forecasts = int(payload.get("min_forecasts", 200))
+        min_segment_count = int(payload.get("min_segment_count", 30))
+        theoretical_hours = (min_forecasts - 1) * identity["horizon_bars"] * TF_MIN[identity["timeframe"]] / 60.0
+        available_hours = (end - start).total_seconds() / 3600.0
+        if available_hours < theoretical_hours:
+            raise ValueError(
+                f"collection window is too short: at least {theoretical_hours:.1f} hours are required "
+                "for the pre-registered forecast count under the non-overlap policy"
+            )
+        if min_segment_count > min_forecasts:
+            raise ValueError("min_segment_count cannot exceed min_forecasts")
         ledger = _prospective_ledger(cohort_id)
         status = ledger.register_cohort(
             cohort_id=cohort_id,
@@ -2471,12 +2482,17 @@ def api_prospective_holdout_register(payload: dict):
             config_fingerprint=config_hash,
             collection_start=start,
             collection_end=end,
-            min_forecasts=int(payload.get("min_forecasts", 200)),
-            min_segment_count=int(payload.get("min_segment_count", 30)),
+            min_forecasts=min_forecasts,
+            min_segment_count=min_segment_count,
             now=now,
         )
         return {"cohort": status, "config_fingerprint": config_hash,
                 "model_identity": identity,
+                "collection_plan": {
+                    "theoretical_minimum_hours": round(theoretical_hours, 1),
+                    "recommended_hours_with_25_percent_buffer": round(theoretical_hours * 1.25, 1),
+                    "note": "Non-overlapping forecast horizons reduce effective sample dependence. Missed collector ticks can leave the cohort below its pre-registered minimum."
+                },
                 "note": "Freeze this exact request configuration. Every later tick must use the same settings."}
     except Exception as e:
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
