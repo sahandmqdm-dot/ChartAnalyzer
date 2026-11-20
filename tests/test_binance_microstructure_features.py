@@ -1,3 +1,5 @@
+# ruff: noqa: I001
+# Ruff's import sorter misorders this mixed-case project symbol block.
 import pytest
 
 from binance_microstructure_features import (
