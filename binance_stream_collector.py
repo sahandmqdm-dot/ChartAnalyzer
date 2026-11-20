@@ -250,6 +250,7 @@ class BinanceDualMarketCollector:
         streams = "/".join(spec.streams)
         uri = f"{spec.ws_url}?{urllib.parse.urlencode({'streams': streams})}"
         while not stop.is_set():
+            session_id = None
             try:
                 async with self._connect(uri) as websocket:
                     session_id = uuid.uuid4().hex
@@ -311,7 +312,7 @@ class BinanceDualMarketCollector:
                                   {"state": "interrupted", "ended_at": utc_now(),
                                    "termination": "transport_error",
                                    "error": type(exc).__name__},
-                                  session_id=locals().get("session_id"))
+                                  session_id=session_id)
                 self.store.append(spec.market, "connection",
                                   {"state": "disconnected", "error": type(exc).__name__,
                                    "retry_in_seconds": delay},
