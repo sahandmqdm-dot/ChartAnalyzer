@@ -9,8 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import asdict, dataclass
 from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
