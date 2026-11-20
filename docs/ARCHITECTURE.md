@@ -35,12 +35,15 @@ A positive technical score is not, by itself, proof of statistical edge. `NO_TRA
 | `data_integrity.py` | OHLCV integrity, timestamp spacing, gaps and stale-candle warnings. Does not repair or fill candles. |
 | `trend_engine.py` | Market-structure and trend diagnostics. |
 | `market_regime_intelligence.py` | Causal regime and transition diagnostics; research output does not automatically tune signals. |
+| `market_data_hub.py` | Read-only normalized historical market data for Binance Spot and USD-M plus existing providers. |
+| `binance_stream_collector.py` | Local-first raw Binance Spot/USD-M WebSocket capture, durable hash-chained event partitions and depth sequence guard; not yet a full reconstructed book. |
+| `binance_orderbook.py` | Snapshot-backed Spot/USD-M L2 state, buffered diff synchronization, sequence-gap rejection and top/depth diagnostics; live collector orchestration remains separate. |
 | `statistical_edge.py` | Forward-return association and sample/effective-sample diagnostics. |
 | `forecast_engine.py` | Distributional forecast diagnostics; probabilities require calibration before operational interpretation. |
 | `backtest_engine.py` | Bar-level next-open simulator with configured transaction costs, optional ATR exits and synthetic futures exposure. |
 | `walk_forward.py` | Chronological, non-overlapping OOS evaluation of the supplied frozen signal. |
 | `research_provenance.py` | Dataset/config fingerprints, run identity and diagnostic cohort consistency. |
-| `research_statistics.py` | Moving-block bootstrap, block permutation, matched random-entry control and Benjamini-Hochberg correction. |
+| `research_statistics.py` | Moving-block bootstrap, block permutation, matched random-entry control and Benjamini-Hochberg correction. |\n| `advanced_overfit_diagnostics.py` | Deflated Sharpe probability and CSCV Probability of Backtest Overfitting diagnostics; research-only and not deployment authorization. |
 | `research_protocol.py` | Chronological split, purged/embargoed split and feature-availability audit primitives. |
 | `research_rule_engine.py` | Safe declarative Long/Flat research-rule compiler; no arbitrary Python expressions. |
 | `research_registry.py` | Append-only hypothesis/experiment registry and registered-family FDR calculations. |
