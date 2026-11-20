@@ -277,3 +277,10 @@ def test_backtest_rejects_duplicate_or_non_monotonic_equity_timestamps():
     with pytest.raises(ValueError, match="unique"):
         run_backtest(df, np.zeros(len(df)), threshold=0.5, start=120)
 
+
+def test_backtest_serializes_datetime_equity_axis_as_iso_strings():
+    df = market()
+    df["time"] = pd.to_datetime(np.arange(len(df), dtype=np.int64), unit="h", utc=True)
+    out = run_backtest(df, np.zeros(len(df)), threshold=0.5, start=120)
+    assert isinstance(out["equity_timestamps"][0], str)
+    assert out["equity_timestamps"][0].startswith("1970-01-06T01:00:00")
