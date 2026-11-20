@@ -19,7 +19,8 @@ def entity(entity_id="crypto:BTC", **kw):
 
 
 def alias(entity_id, value, namespace="ticker", provider=None, **kw):
-    return EntityAlias(entity_id, namespace, value, T0, provider=provider, **kw)
+    recorded_at = kw.pop("recorded_at", T0)
+    return EntityAlias(entity_id, namespace, value, recorded_at, provider=provider, **kw)
 
 
 def evidence(available_at=T0):
