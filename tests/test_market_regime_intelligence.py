@@ -65,3 +65,11 @@ def test_summary_is_explicitly_research_only():
     report = summarize_regime_state(analyze_market_regimes(_candles()))
     assert report["status"] == "RESEARCH_ONLY"
     assert "not a trade signal" in report["guardrail"]
+
+
+def test_rejects_duplicate_or_out_of_order_timestamps():
+    candles = _candles(120)
+    candles["time"] = np.arange(len(candles), dtype=float) * 3600
+    candles.loc[80, "time"] = candles.loc[79, "time"]
+    with pytest.raises(ValueError, match="strictly increasing"):
+        analyze_market_regimes(candles)
