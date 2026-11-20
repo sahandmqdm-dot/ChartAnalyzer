@@ -253,6 +253,8 @@ class ProspectiveHoldoutLedger:
             raise ValueError("forecast dataset_fingerprint must be a SHA-256 digest")
         if current < forecast.issued_at or current >= forecast.target_at:
             raise ValueError("forecast must be recorded at/after issuance and strictly before its target")
+        if (current - forecast.issued_at).total_seconds() > 60:
+            raise ValueError("forecast must be persisted within 60 seconds of issuance")
         expected_target = forecast.issued_at.timestamp() + forecast.horizon_bars * _timeframe_seconds(forecast.timeframe)
         if abs(forecast.target_at.timestamp() - expected_target) > 1.0:
             raise ValueError("target_at must equal issued_at plus horizon_bars for the declared timeframe")
