@@ -2669,7 +2669,7 @@ def _prospective_binance_microstructure_provenance(identity, data_cutoff_at):
         build_active_session_snapshot,
         find_latest_active_session,
         persist_snapshot_content_addressed,
-        verify_snapshot_source_prefixes,
+        verify_snapshot_artifact,
     )
 
     data_root = os.getenv(
@@ -2693,7 +2693,7 @@ def _prospective_binance_microstructure_provenance(identity, data_cutoff_at):
     )
     feature = dataset["snapshots"][0]
     artifact = persist_snapshot_content_addressed(dataset, data_root)
-    verify_snapshot_source_prefixes(data_root, dataset)
+    verify_snapshot_artifact(data_root, artifact["artifact_path"], artifact["artifact_sha256"])
     return {
         "schema": feature["schema"],
         "snapshot_mode": dataset["snapshot_mode"],
