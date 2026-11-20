@@ -78,6 +78,7 @@ def test_event_metadata_preserves_exchange_time_stream_and_native_sequence():
     )
     assert metadata["stream_name"] == "btcusdt@depth@100ms"
     assert metadata["event_time"] == "2026-11-20T12:00:00+00:00"
+    assert metadata["trade_time"] is None
     assert metadata["sequence"] == {"U": 120, "u": 125}
 
 
@@ -86,7 +87,8 @@ def test_trade_metadata_uses_trade_time_when_event_time_is_absent():
         "btcusdt@trade", {"T": 1795176000000, "t": 9876, "a": 4321}
     )
     assert metadata["event_time"] == "2026-11-20T12:00:00+00:00"
-    assert metadata["sequence"] == {"T": 1795176000000, "t": 9876, "a": 4321}
+    assert metadata["trade_time"] == "2026-11-20T12:00:00+00:00"
+    assert metadata["sequence"] == {"t": 9876, "a": 4321}
 
 
 def test_hash_chain_persists_provenance_fields(tmp_path):
@@ -95,6 +97,7 @@ def test_hash_chain_persists_provenance_fields(tmp_path):
         "usdm", "orderbook_depth", {"U": 100, "u": 102},
         received_at="2026-11-20T12:00:01+00:00",
         event_time="2026-11-20T12:00:00+00:00",
+        trade_time=None,
         stream_name="btcusdt@depth@100ms",
         sequence={"U": 100, "u": 102},
         session_id="session-1",
@@ -103,6 +106,7 @@ def test_hash_chain_persists_provenance_fields(tmp_path):
     valid, count, head = store.verify_file(path)
     assert valid and count == 1 and head == record["event_hash"]
     assert record["event_time"] == "2026-11-20T12:00:00+00:00"
+    assert record["trade_time"] is None
     assert record["stream_name"] == "btcusdt@depth@100ms"
     assert record["sequence"] == {"U": 100, "u": 102}
     assert record["session_id"] == "session-1"
