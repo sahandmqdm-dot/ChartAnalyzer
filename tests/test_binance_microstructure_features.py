@@ -1,8 +1,8 @@
 import pytest
 
 from binance_microstructure_features import (
-    PITFeatureError,
     build_pit_microstructure_features,
+    PITFeatureError,
 )
 from binance_stream_collector import HashChainJSONLStore
 
