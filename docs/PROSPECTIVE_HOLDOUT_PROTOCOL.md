@@ -36,7 +36,7 @@ A cohort is registered before `collection_start` and fixes:
 - Minimum forecast count (default operational target: 200).
 - Minimum per-segment calibration sample count (default: 30), frozen at registration.
 
-The configuration fingerprint supplied by the caller must cover the immutable release commit, model artifact or model version, feature/indicator pipeline, preprocessing, calibration parameters, strategy thresholds, market-data policy, and cost assumptions. A configuration change requires a new ledger and a new future collection window.
+The app computes the configuration fingerprint server-side. It covers the release identifier, `RESEARCH_ENGINE_REVISION`, PMI/validation/ledger/baseline code hashes, market-data hub and Iran-market adapter code hashes, instrument, source, timeframe, horizon, history window, bootstrap settings and baseline comparison settings. No client-supplied fingerprint is trusted. Any code or configuration change that alters this identity requires a new ledger and a new future collection window.
 
 ## Forecast issuance contract
 
