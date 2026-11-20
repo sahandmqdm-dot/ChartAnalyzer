@@ -137,3 +137,36 @@ def test_async_capture_recovers_after_sequence_gap_with_fresh_snapshot(tmp_path)
         store.close()
 
     asyncio.run(scenario())
+
+
+
+def test_async_capture_counts_buffer_overflow_and_exactly_dropped_diffs(tmp_path):
+    import threading
+
+    async def scenario():
+        store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+        release_snapshot = threading.Event()
+
+        def blocked_snapshot():
+            release_snapshot.wait(timeout=2)
+            return snapshot(100)
+
+        capture = AsyncOrderBookCapture(
+            MarketSpec.spot("BTCUSDT"),
+            store,
+            snapshot_fetch=blocked_snapshot,
+            max_buffered_events=1,
+        )
+        await capture.ingest({"U": 101, "u": 101, "b": [], "a": []})
+        await capture.ingest({"U": 102, "u": 102, "b": [], "a": []})
+        metrics = capture.metrics()
+        assert metrics["buffer_overflow_count"] == 1
+        assert metrics["dropped_buffered_events"] == 2
+        assert metrics["max_buffer_observed"] == 2
+        assert metrics["buffered_events_current"] == 0
+        assert metrics["snapshot_attempt_count"] == 1
+        release_snapshot.set()
+        await capture.close()
+        store.close()
+
+    asyncio.run(scenario())
