@@ -124,8 +124,8 @@ def test_missing_impact_and_funding_inputs_are_flagged_incomplete():
 
 def test_fill_probability_requires_calibration_and_source():
     with pytest.raises(ValueError, match="calibrated model provenance"):
-        run(fill_probability=0.7)
-    result = run(fill_probability=0.7, fill_probability_source="validated queue model",
+        run(order_type="limit", fill_probability=0.7)
+    result = run(order_type="limit", fill_probability=0.7, fill_probability_source="validated queue model",
                  fill_probability_calibrated=True)
     assert result["execution_context"]["fill_probability"] == pytest.approx(0.7)
 
@@ -201,3 +201,8 @@ def test_l2_market_sweep_rejects_invalid_sequence_book_and_unsorted_levels():
     book["asks"] = [(102.0, 1.0), (101.0, 1.0)]
     with pytest.raises(ValueError, match="sorted"):
         market_sweep_fills(book, **kwargs)
+
+
+def test_market_order_cannot_claim_maker_liquidity():
+    with pytest.raises(ValueError, match="must be taker"):
+        run(fills=[{"price": 100, "quantity": 1, "liquidity_role": "maker"}])
