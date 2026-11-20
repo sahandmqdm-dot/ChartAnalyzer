@@ -14,11 +14,11 @@ import logging
 import os
 import shutil
 import time
-import urllib.parse
 from collections import deque
+from collections.abc import Callable
+import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
