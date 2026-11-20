@@ -299,6 +299,8 @@ class BinanceDualMarketCollector:
                     )
                     self._active_websockets[spec.market] = websocket
                     try:
+                        if stop.is_set():
+                            await websocket.close()
                         async for message in websocket:
                             if stop.is_set():
                                 break
