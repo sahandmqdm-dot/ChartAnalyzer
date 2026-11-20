@@ -465,7 +465,7 @@ class BinanceDualMarketCollector:
                                       received_at=interrupted_at, session_id=session_id)
                 raise
             except Exception as exc:  # noqa: BLE001  # network libraries expose several transport exception types
-                if isinstance(exc, OSError):
+                if isinstance(exc, (OSError, CollectorError)):
                     persistence_failure_count += 1
                 reconnect_count += 1
                 logging.getLogger(__name__).exception(
