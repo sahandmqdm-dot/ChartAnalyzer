@@ -23,7 +23,13 @@ $StdoutLog = Join-Path $RuntimeDir "collector.stdout.log"
 $StderrLog = Join-Path $RuntimeDir "collector.stderr.log"
 $CollectorScript = Join-Path $ProjectRoot "binance_stream_collector.py"
 function Get-CollectorProcess {
-    if (-not (Test-Path $PidFile)) { return $null }
+    if (-not (Test-Path $PidFile)) {
+        $unmanaged = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -like "*binance_stream_collector.py*" -and $_.CommandLine -like "*$ProjectRoot*"
+        } | Select-Object -First 1
+        if ($unmanaged) { throw "An unmanaged ChartAnalyzer collector process already exists (PID=$($unmanaged.ProcessId)). Stop/inspect it before using this lifecycle script." }
+        return $null
+    }
     try { $meta = Get-Content $PidFile -Raw | ConvertFrom-Json } catch { throw "PID metadata is unreadable: $PidFile. Inspect it manually; refusing to start or signal another process." }
     $proc = Get-Process -Id ([int]$meta.pid) -ErrorAction SilentlyContinue
     if (-not $proc) { return $null }
