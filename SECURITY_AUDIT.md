@@ -1,8 +1,8 @@
 # ChartAnalyzer | Security and Repository Validation Snapshot
 
 **Audit date:** 2026-11-20  
-**Validated baseline:** `main` commit `5fe0753f426bd299b02ab5dc6c0a8fefed4f98cb`  
-**CI evidence:** GitHub Actions run `44713418963` for the same source tree plus the SQLite lifecycle regression tests.  
+**Validated baseline:** validated PR head `1dad684ab7d195c098366f82d73f50ec1fe79f1e` (proposed for main)  
+**CI evidence:** GitHub Actions run `44713908209` for the validated PR head.  
 **Nature of review:** repository-level automated validation and targeted source review. This is not an independent penetration test or a certification.
 
 ## Executive result
@@ -13,12 +13,12 @@ The required automated test and security jobs passed on the validated source tre
 
 | Check | Result |
 |---|---|
-| Python 3.12 test suite | **488 passed** |
+| Python 3.12 test suite | **489 passed** |
 | Python 3.13 test suite | **488 passed** |
 | Coverage | **83%** on both Python versions |
 | Python compilation | Passed (`python -m compileall -q .`) |
 | Dependency audit | `pip-audit`: no known vulnerabilities found |
-| Bandit | **0 medium / 0 high** severity findings; 790 low-severity findings in the scan summary |
+| Bandit | **0 medium / 0 high** severity findings; 827 low-severity findings in the scan summary |
 | SQLite resource lifecycle | The 23 Python 3.13 `ResourceWarning: unclosed database` warnings seen before the fix are no longer present |
 | Ruff | Advisory job still fails with **103 findings**: 74 I001, 18 F401, 6 F841, 4 C408 and 1 S110 |
 
