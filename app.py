@@ -1439,20 +1439,22 @@ def forecast(df, tf, hours, paths, C, symbol="", source="ramzinex"):
 def make_gate(summary, plan, last, C, symbol="", source="ramzinex"):
     d = _make_gate(summary, plan, last, C, symbol)
     tf = summary.get("tf")
-    if (C.get("gate") or {}).get("require_oos_validation", True):
-        from research_provenance import config_fingerprint
-        from strategy_validation import deployment_status
-        config_hash = config_fingerprint(_research_execution_config(tf, symbol, None, C))
-        validation = deployment_status(
-            VALIDATION_EVIDENCE_PATH, source=source, symbol=symbol, timeframe=tf,
-            config_hash=config_hash, policy=C.get("gate") or {},
-        )
-        d["deployment_validation"] = validation
-        if not validation.get("eligible", False):
-            reason = "OOS strategy validation gate: " + " ".join(validation.get("reasons") or ["evidence unavailable"])
-            d["state"] = "NO_TRADE"
-            d["confidence_cap"] = "low"
-            d["reasons"] = list(d.get("reasons") or []) + [reason]
+    # Production authorization is always fail-closed. The legacy
+    # require_oos_validation config flag is intentionally ignored: config files
+    # must not be able to bypass the mandatory OOS deployment evidence gate.
+    from research_provenance import config_fingerprint
+    from strategy_validation import deployment_status
+    config_hash = config_fingerprint(_research_execution_config(tf, symbol, None, C))
+    validation = deployment_status(
+        VALIDATION_EVIDENCE_PATH, source=source, symbol=symbol, timeframe=tf,
+        config_hash=config_hash, policy=C.get("gate") or {},
+    )
+    d["deployment_validation"] = validation
+    if not validation.get("eligible", False):
+        reason = "OOS strategy validation gate: " + " ".join(validation.get("reasons") or ["evidence unavailable or signature invalid"])
+        d["state"] = "NO_TRADE"
+        d["confidence_cap"] = "low"
+        d["reasons"] = list(d.get("reasons") or []) + [reason]
     if tf in TF_MIN and is_restricted(time.time(), C, tf):
         r = C["restricted_hours"]
         d = dict(d, state="NO_TRADE", confidence_cap="low",
