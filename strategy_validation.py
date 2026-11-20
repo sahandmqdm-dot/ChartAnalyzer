@@ -18,7 +18,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from research_provenance import config_fingerprint
 
 _LOCK = threading.RLock()
 ENGINE_VERSION = "StrategyValidationGate V1.1"
