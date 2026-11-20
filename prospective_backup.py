@@ -49,13 +49,14 @@ def backup_ledgers(source_dir: str | Path, backup_dir: str | Path, retention_day
         temporary = Path(temporary_name)
         try:
             source_uri = f"file:{source.as_posix()}?mode=ro"
-            with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as src:
-                with closing(sqlite3.connect(temporary, timeout=30)) as dst:
-                    src.backup(dst, pages=256, sleep=0.05)
-                    check = dst.execute("PRAGMA integrity_check").fetchone()
-                    if not check or check[0] != "ok":
-                        raise sqlite3.DatabaseError(f"backup integrity_check failed for {source.name}: {check}")
-                    dst.commit()
+            with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as src, closing(
+                sqlite3.connect(temporary, timeout=30)
+            ) as dst:
+                src.backup(dst, pages=256, sleep=0.05)
+                check = dst.execute("PRAGMA integrity_check").fetchone()
+                if not check or check[0] != "ok":
+                    raise sqlite3.DatabaseError(f"backup integrity_check failed for {source.name}: {check}")
+                dst.commit()
             if os.name == "posix":
                 os.chmod(temporary, 0o600)
             os.replace(temporary, destination)
