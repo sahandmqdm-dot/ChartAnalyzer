@@ -9,7 +9,7 @@ import math
 from collections import Counter, defaultdict
 from typing import Any, Dict, Iterable, Optional
 
-import numpy as np
+import numpy as np\n\nfrom version import APP_VERSION
 
 
 def _f(value: Any) -> Optional[float]:
@@ -117,7 +117,7 @@ def analyze_trade_failures(
         lows = np.asarray(df["low"], dtype=float)
         closes = np.asarray(df["close"], dtype=float)
     except Exception as exc:
-        return {"version": "7.2.0", "status": "unavailable", "reason": f"OHLC unavailable: {exc}"}
+        return {"version": APP_VERSION, "status": "unavailable", "reason": f"OHLC unavailable: {exc}"}
     n = min(len(opens), len(highs), len(lows), len(closes))
     if n < 2 or not (np.isfinite(opens[:n]).all() and np.isfinite(highs[:n]).all()
                      and np.isfinite(lows[:n]).all() and np.isfinite(closes[:n]).all()):
