@@ -43,7 +43,7 @@ def test_hash_chain_detects_payload_tampering(tmp_path):
     path = tmp_path / "usdm" / "orderbook_depth" / "2026-11-20.jsonl"
     record = json.loads(path.read_text(encoding="utf-8"))
     record["payload"]["u"] = 99
-    path.write_text(json.dumps(record) + "\\n", encoding="utf-8")
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
     valid, count, error = store.verify_file(path)
     assert not valid
     assert count == 0
