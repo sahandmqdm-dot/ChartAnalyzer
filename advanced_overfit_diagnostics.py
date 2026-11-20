@@ -7,6 +7,7 @@ from __future__ import annotations
 from itertools import combinations
 from math import e, isfinite, log, sqrt
 from statistics import NormalDist
+
 import numpy as np
 
 _EULER_MASCHERONI = 0.5772156649015329
