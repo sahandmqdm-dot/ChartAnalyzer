@@ -1,4 +1,4 @@
-# ChartAnalyzer V7.2.0
+# ChartAnalyzer V7.3.0
 
 **Institutional-grade quant intelligence & future-prediction foundation**
 
@@ -19,6 +19,14 @@ python app.py                    # http://127.0.0.1:8765
 ```
 
 Config: `config.json` (see comments inside). Optional CCXT for extra exchanges.
+
+## V7.3.0: Futures Market Intelligence
+
+- Research-only LONG and SHORT scenario engine for Binance USD-M perpetual contracts.
+- Read-only funding, mark/index basis and open-interest context.
+- Order-book REST snapshots and bounded aggregate-trade flow displayed as microstructure context.
+- Dashboard API `GET /api/futures/scenarios`; all levels are WATCH ONLY, not executable orders.
+- Canonical application version exposed through `GET /api/version` and `version.py`.
 
 ## V7.2.0: Quant Research Engine
 
