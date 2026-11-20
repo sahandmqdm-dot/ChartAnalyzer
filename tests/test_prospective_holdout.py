@@ -2,7 +2,6 @@ import datetime
 import sqlite3
 
 import pytest
-
 from forecast_validation import create_forecast_record
 from prospective_holdout import ProspectiveHoldoutLedger
 
