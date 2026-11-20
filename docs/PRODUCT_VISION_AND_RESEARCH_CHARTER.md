@@ -118,7 +118,7 @@ A green CI pipeline proves code checks passed; it does not prove market edge, ca
 6. Holdout snapshot/freeze/access audit and crash-safe atomic claims.
 7. DSR/PBO/ESS evidence integration only after independent tests and power studies.
 8. Shared multi-asset data contracts for Crypto Spot/Futures and US equities/ETFs.
-9. Portfolio-level risk and abstention-quality evaluation.
+9. Portfolio-level risk and prospective abstention-quality evaluation.
 10. Prospective paper research across instruments and timeframes.
 
 The product advances only when its evidence quality advances with its feature set.
