@@ -5,10 +5,10 @@ Every supplied fill carries an explicit liquidity role and provenance.
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import math
-from datetime import datetime
 from typing import Any
 
 
@@ -239,7 +239,7 @@ def market_sweep_fills(
         raise ValueError("requested_quantity must be > 0")
     age_limit = _number(max_age_ms, "max_age_ms", minimum=0.0)
     try:
-        received = datetime.fromisoformat(book_received_at)
+        received = datetime.datetime.fromisoformat(book_received_at)
         decision = datetime.fromisoformat(decision_at)
     except (AttributeError, TypeError, ValueError) as exc:
         raise ValueError("book and decision times must be ISO-8601") from exc
