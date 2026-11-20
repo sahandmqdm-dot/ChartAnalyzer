@@ -1588,6 +1588,100 @@ def api_journal(symbol: str = "ramzinex:USDTIRR", tf: str = "1h", horizon: float
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
 
+@app.get("/api/futures/scenarios")
+def api_futures_scenarios(symbol: str = "BTCUSDT", tf: str = "1h", limit: int = 240):
+    """Read-only Binance USD-M context plus research-only LONG/SHORT watch scenarios."""
+    from datetime import UTC, datetime, timedelta
+    from market_data_hub import BinanceUSDMPublicAdapter, ProviderConfig
+    from futures_signal_engine import analyze_futures_scenarios
+
+    symbol = str(symbol).strip().upper()
+    intervals = {"5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
+                 "2h": 7200, "4h": 14400, "8h": 28800, "12h": 43200, "1d": 86400}
+    if not re.fullmatch(r"[A-Z0-9]{2,30}", symbol):
+        raise HTTPException(400, "Futures symbol must be alphanumeric, e.g. BTCUSDT.")
+    if tf not in intervals:
+        raise HTTPException(400, "Unsupported futures timeframe.")
+    if isinstance(limit, bool) or not 80 <= int(limit) <= 1000:
+        raise HTTPException(400, "Futures candle limit must be between 80 and 1000.")
+    adapter = BinanceUSDMPublicAdapter(ProviderConfig(timeout_seconds=12, max_retries=1))
+    try:
+        now = datetime.now(UTC)
+        batch = adapter.fetch_ohlcv(symbol, tf, int(limit))
+        closed = [bar for bar in batch.bars if bar.close_time < now]
+        if len(closed) < 60:
+            raise ValueError("Fewer than 60 completed Futures candles are available.")
+        premium = adapter.fetch_premium_index(symbol)
+        oi = adapter.fetch_open_interest_history(symbol, period="5m", limit=60)
+        oi_rows = oi.get("records") or []
+        oi_change = None
+        oi_observed = oi_rows[-1]["observed_at"] if oi_rows else None
+        if len(oi_rows) >= 2:
+            latest_oi = oi_rows[-1]
+            cutoff = latest_oi["observed_at"] - timedelta(minutes=50)
+            baseline_rows = [row for row in oi_rows[:-1]
+                             if row["observed_at"] <= cutoff and row["unit"] == latest_oi["unit"]]
+            if baseline_rows and float(baseline_rows[-1]["open_interest"]) > 0:
+                baseline = baseline_rows[-1]
+                oi_change = (float(latest_oi["open_interest"]) /
+                             float(baseline["open_interest"]) - 1.0) * 100.0
+        result = analyze_futures_scenarios(
+            [{"close_time": bar.close_time, "open": bar.open, "high": bar.high,
+              "low": bar.low, "close": bar.close, "volume": bar.volume} for bar in closed],
+            instrument_id=symbol, timeframe_seconds=intervals[tf], as_of=now,
+            funding_rate=premium["funding_rate"], funding_observed_at=premium["observed_at"],
+            open_interest_change_pct=oi_change, open_interest_observed_at=oi_observed,
+        )
+        book = adapter.fetch_order_book(symbol, limit=100)
+        trades = adapter.fetch_aggregate_trades(symbol, limit=1000)
+        result["data_provenance"] = {
+            "provider": batch.provenance.provider,
+            "market_type": batch.provenance.market_type,
+            "ohlcv_endpoint": batch.provenance.endpoint,
+            "retrieved_at": batch.provenance.retrieved_at.isoformat(),
+            "raw_candles": batch.provenance.raw_record_count,
+            "closed_candles_used": len(closed),
+            "latest_closed_candle": closed[-1].close_time.isoformat(),
+            "warnings": list(batch.warnings),
+        }
+        result["derivatives_context"].update({
+            "mark_price": premium["mark_price"],
+            "index_price": premium["index_price"],
+            "mark_index_basis_pct": premium["mark_index_basis_pct"],
+            "next_funding_at": premium["next_funding_at"].isoformat(),
+            "funding_rate_semantics": premium["funding_rate_semantics"],
+            "open_interest_latest": oi_rows[-1]["open_interest"] if oi_rows else None,
+            "open_interest_unit": oi_rows[-1]["unit"] if oi_rows else None,
+            "open_interest_baseline_change_pct": oi_change,
+        })
+        result["microstructure_context"] = {
+            "order_book": {
+                "observed_at": book["retrieved_at"].isoformat(),
+                "best_bid": book["best_bid"], "best_ask": book["best_ask"],
+                "spread_bps": book["spread_bps"],
+                "top20_quantity_imbalance": book["top20_quantity_imbalance"],
+                "last_update_id": book["last_update_id"],
+                "semantics": book["sequence_semantics"],
+            },
+            "aggregate_trades": {
+                "observed_at": trades["retrieved_at"].isoformat(),
+                "sample_count": trades["record_count"],
+                "taker_buy_base_quantity": trades["taker_buy_base_quantity"],
+                "taker_sell_base_quantity": trades["taker_sell_base_quantity"],
+                "sampled_net_taker_flow_base_quantity": trades["sampled_net_taker_flow_base_quantity"],
+                "semantics": trades["sample_semantics"],
+            },
+            "used_in_directional_score": False,
+            "note": "Order-book and aggregate-trade snapshots are displayed as context only; they are not yet validated score inputs.",
+        }
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("[futures-intelligence]", redact(f"{type(exc).__name__}: {exc}")[:300])
+        raise HTTPException(502, "Binance USD-M data unavailable or invalid; inspect local application logs.")
+
+
 @app.get("/api/iran-crypto/status")
 def api_iran_crypto_status():
     return iran_crypto_market().status()
@@ -2962,6 +3056,11 @@ details summary{cursor:pointer;margin-top:4px}
 <label>TF <select id=ic_tf><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option></select></label>
 <button onclick="iranStatus()">Connection</button><button onclick="iranCompare()">Compare exchanges</button><button onclick="iranOrderbook()">Order book</button><button onclick="iranCandles()">Candles</button></div>
 <div id=iranout class=scenario-note>Disabled by default. Enable iran_crypto_mcp in config.json, then install uv/uvx. This source is separate from the backtest feed.</div></div>
+<div class=box id=futuresbox><h3>Futures Intelligence · Binance USD-M Perpetual · Read-only</h3>
+<div><label>Contract <input id=fi_symbol value=BTCUSDT size=12></label>
+<label>Timeframe <select id=fi_tf><option>15m</option><option selected>1h</option><option>4h</option><option>12h</option><option>1d</option></select></label>
+<button onclick="runFuturesIntelligence()">Analyze Futures</button></div>
+<div id=futuresout class=scenario-note>Futures scenario engine is research-only. It displays LONG/SHORT watch levels, never an executable order. A separate Futures OOS gate is not yet available.</div></div>
 <div id=tb><button id=bt onclick="setMode('trend')">Trend line</button> <button id=bh onclick="setMode('hline')">Horizontal line</button> <button onclick="undo()">Undo</button> <button onclick="clearDr()">Clear</button> <button onclick="resetView()">Reset view</button> <button onclick="toggleFC()">Cone on/off</button> <button onclick="toggleTR()">Trend overlay</button><span id=info></span></div>
 <canvas id=cv style="width:100%;height:380px;display:block;margin-top:6px;background:#0b0f14;cursor:grab;touch-action:none"></canvas>
 <div id=gate></div><div id=v></div><div id=trend class=box></div><div id=tmtf class=box></div><div id=ctx class=box></div><div id=fc class=box></div><div id=mtf class=box></div><div id=grp></div>
@@ -3421,7 +3520,41 @@ async function explain(){
  out.innerHTML=j.parts.map(p=>'<h4>'+esc(p.title)+'</h4><pre dir=auto>'+esc(p.text)+'</pre>').join('');}
 
 async function iranStatus(){const el=$('iranout');el.textContent='checking MCP connection...';
- const {ok,j}=await api('/api/iran-crypto/status');el.textContent=(j.state||'ERROR')+' · '+(j.message||'');}
+ const {ok,j}=await api('/api/iran-crypto/status');
+ if(!ok){el.textContent=j.detail||'MCP status request failed';return;}
+ if(j.state==='DISABLED'){el.textContent='DISABLED · برای فعال‌سازی، PowerShell را در پوشه پروژه باز کن و اجرا کن: .\\INSTALL_IRAN_MCP_WINDOWS.ps1 سپس برنامه را Restart کن.';return;}
+ el.textContent=(j.state||'ERROR')+' · '+(j.message||'');}
+async function runFuturesIntelligence(){
+ const el=$('futuresout');el.textContent='Fetching Binance USD-M candles, funding, OI, order book and aggregate trades...';
+ const symbol=$('fi_symbol').value.trim().toUpperCase(),tf=$('fi_tf').value;
+ const {ok,j}=await api('/api/futures/scenarios','symbol='+encodeURIComponent(symbol)+'&tf='+encodeURIComponent(tf)+'&limit=240');
+ if(!ok){el.textContent=j.detail||'Futures analysis failed';return;}
+ const n=v=>v==null?'n/a':Number(v).toLocaleString(undefined,{maximumFractionDigits:6});
+ const p=v=>v==null?'n/a':Number(v).toFixed(3)+'%';
+ const sc=j.scenarios||{},d=j.derivatives_context||{},m=j.microstructure_context||{},b=m.order_book||{},t=m.aggregate_trades||{};
+ const scenario=(x)=>'<div class=box><b>'+esc(x.side)+' · WATCH ONLY</b><br>Entry reference: '+n(x.entry_reference)+
+  ' | Stop: '+n(x.stop_loss_reference)+' | Target: '+n(x.target_reference)+
+  ' | R:R before costs '+n(x.risk_reward_before_costs)+'<br>'+esc(x.invalidation)+'</div>';
+ let h='<div class=box><b>'+esc(j.candidate)+'</b> | directional score '+n(j.directional_score)+
+  ' | decision <b class=s>NO TRADE</b> | deployment authorization: NO<br>'+
+  esc(j.instrument_id)+' · '+esc(j.timeframe_seconds)+'s · last '+n(j.last_price)+
+  ' | EMA20 '+n(j.indicators.ema20)+' / EMA50 '+n(j.indicators.ema50)+
+  ' | RSI14 '+n(j.indicators.rsi14)+' | ATR14 '+n(j.indicators.atr14)+'</div>';
+ h+=scenario(sc.long)+scenario(sc.short);
+ h+='<div class=box><b>Derivatives</b><br>Funding '+n(d.funding)+' | Mark '+n(d.mark_price)+' | Index '+n(d.index_price)+
+  ' | Mark/index basis '+p(d.mark_index_basis_pct)+' | OI change '+p(d.open_interest_baseline_change_pct)+
+  '<br>Next funding: '+esc(d.next_funding_at||'n/a')+'</div>';
+ h+='<div class=box><b>Microstructure snapshots (context only)</b><br>Bid/ask '+n(b.best_bid)+' / '+n(b.best_ask)+
+  ' | spread '+n(b.spread_bps)+' bps | top-20 book imbalance '+n(b.top20_quantity_imbalance)+
+  '<br>Aggregate trades '+n(t.sample_count)+' | sampled net taker flow '+n(t.sampled_net_taker_flow_base_quantity)+
+  '<div class=scenario-note>'+esc(m.note||'')+' '+esc(t.semantics||'')+'</div></div>';
+ h+='<div class=w><b>Why no executable trade?</b><ul>'+(j.blockers||[]).map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>';
+ h+='<div class=scenario-note>Data: '+esc(j.data_provenance.provider)+' / '+esc(j.data_provenance.market_type)+
+  ' | closed candles '+j.data_provenance.closed_candles_used+' | retrieved '+esc(j.data_provenance.retrieved_at)+
+  '<br>Warnings: '+esc((j.data_provenance.warnings||[]).join('; ')||'none')+
+  '<br>Funding/OI and microstructure are live read-only snapshots, not a historical backtest feed. Aggregate trades are a bounded recent sample, not complete tick-by-tick history.</div>';
+ el.innerHTML=h;
+}
 function iranParams(){return 'coin='+encodeURIComponent($('ic_coin').value.trim().toUpperCase())+'&quote='+encodeURIComponent($('ic_quote').value)+'&exchange='+encodeURIComponent($('ic_exchange').value);}
 async function iranFetch(path){const el=$('iranout');el.textContent='requesting public exchange data...';
  const {ok,j}=await api(path,iranParams()+(path.includes('candles')?'&timeframe='+encodeURIComponent($('ic_tf').value)+'&limit=100':path.includes('orderbook')?'&levels=10':''));
