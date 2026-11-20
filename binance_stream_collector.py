@@ -82,7 +82,8 @@ class HashChainJSONLStore:
 
     def append(self, market: str, stream: str, payload: dict[str, Any],
                *, received_at: str | None = None, event_time: str | None = None,
-               stream_name: str | None = None, sequence: dict[str, int] | None = None,
+               trade_time: str | None = None, stream_name: str | None = None,
+               sequence: dict[str, int] | None = None,
                session_id: str | None = None) -> dict[str, Any]:
         received = received_at or utc_now()
         day = received[:10]
@@ -98,6 +99,7 @@ class HashChainJSONLStore:
             "stream": stream,
             "received_at": received,
             "event_time": event_time,
+            "trade_time": trade_time,
             "stream_name": stream_name,
             "sequence": sequence,
             "session_id": session_id,
@@ -195,23 +197,26 @@ class OrderBookSequence:
 
 def extract_event_metadata(stream: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Preserve provider event time and native identifiers without guessing timestamps."""
-    timestamp_ms = payload.get("E")
-    if timestamp_ms is None:
-        timestamp_ms = payload.get("T")
-    event_time = None
-    if timestamp_ms is not None:
+    def to_iso(value: Any) -> str | None:
+        if value is None:
+            return None
         try:
-            event_time = datetime.fromtimestamp(int(timestamp_ms) / 1000, UTC).isoformat()
+            return datetime.fromtimestamp(int(value) / 1000, UTC).isoformat()
         except (TypeError, ValueError, OverflowError, OSError):
-            event_time = None
+            return None
+
+    event_time = to_iso(payload.get("E"))
+    trade_time = to_iso(payload.get("T"))
+    if event_time is None:
+        event_time = trade_time
 
     sequence = {}
-    for key in ("U", "u", "T", "t", "a", "f", "l"):
+    for key in ("U", "u", "t", "a", "f", "l"):
         value = payload.get(key)
         if isinstance(value, int) and not isinstance(value, bool):
             sequence[key] = value
-    return {"event_time": event_time, "stream_name": stream or "unknown",
-            "sequence": sequence or None}
+    return {"event_time": event_time, "trade_time": trade_time,
+            "stream_name": stream or "unknown", "sequence": sequence or None}
 
 
 class BinanceDualMarketCollector:
@@ -281,6 +286,7 @@ class BinanceDualMarketCollector:
                             self.store.append(spec.market, kind, payload,
                                               received_at=received_at,
                                               event_time=metadata["event_time"],
+                                              trade_time=metadata["trade_time"],
                                               stream_name=metadata["stream_name"],
                                               sequence=metadata["sequence"],
                                               session_id=session_id)
@@ -306,6 +312,11 @@ class BinanceDualMarketCollector:
                         pass
                     delay = min(self.reconnect_max, delay * 2)
             except asyncio.CancelledError:
+                if session_id is not None:
+                    self.store.append(spec.market, "session_manifest",
+                                      {"state": "interrupted", "ended_at": utc_now(),
+                                       "termination": "cancelled"},
+                                      session_id=session_id)
                 raise
             except Exception as exc:  # network libraries expose several transport exception types
                 self.store.append(spec.market, "session_manifest",
