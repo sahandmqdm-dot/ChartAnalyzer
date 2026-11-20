@@ -227,7 +227,10 @@ def verify_evidence_signature(record: Dict[str, Any], key: Optional[bytes] = Non
         return False
     if signature.get("algorithm") != SIGNATURE_ALGORITHM:
         return False
-    expected = _signature(record, key)
+    try:
+        expected = _signature(record, key)
+    except (TypeError, ValueError, OverflowError):
+        return False
     return hmac.compare_digest(str(signature.get("value", "")), expected)
 
 
