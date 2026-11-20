@@ -226,7 +226,9 @@ class BinanceDualMarketCollector:
                  reconnect_min: float = 1.0, reconnect_max: float = 60.0,
                  connect_timeout: float = 15.0,
                  store: HashChainJSONLStore | None = None,
-                 connector: Callable[..., Any] | None = None) -> None:
+                 connector: Callable[..., Any] | None = None,
+                 snapshot_fetch: Callable[[MarketSpec], Any] | None = None,
+                 max_buffered_depth_events: int = 10000) -> None:
         if reconnect_min <= 0 or reconnect_max < reconnect_min:
             raise ValueError("invalid reconnect backoff")
         self.store = store or HashChainJSONLStore(root)
@@ -235,6 +237,8 @@ class BinanceDualMarketCollector:
         self.reconnect_max = reconnect_max
         self.connect_timeout = connect_timeout
         self.connector = connector
+        self.snapshot_fetch = snapshot_fetch
+        self.max_buffered_depth_events = max_buffered_depth_events
 
     def _connect(self, uri: str):
         factory = self.connector or connect
@@ -270,31 +274,44 @@ class BinanceDualMarketCollector:
                                       {"state": "connected", "endpoint": spec.ws_url},
                                       session_id=session_id)
                     delay = self.reconnect_min
-                    async for message in websocket:
-                        if stop.is_set():
-                            break
-                        received_at = utc_now()
-                        try:
-                            envelope = json.loads(message)
-                            stream = str(envelope.get("stream", "unknown"))
-                            payload = envelope.get("data", envelope)
-                            if not isinstance(payload, dict):
-                                raise TypeError("websocket data must be an object")
-                            # Persist the provider payload first; downstream parsing is separate.
-                            kind = _stream_kind(stream)
-                            metadata = extract_event_metadata(stream, payload)
-                            self.store.append(spec.market, kind, payload,
-                                              received_at=received_at,
-                                              event_time=metadata["event_time"],
-                                              trade_time=metadata["trade_time"],
-                                              stream_name=metadata["stream_name"],
-                                              sequence=metadata["sequence"],
-                                              session_id=session_id)
-                            stream_counts[kind] = stream_counts.get(kind, 0) + 1
-                        except (ValueError, TypeError) as exc:
-                            self.store.append(spec.market, "collector_errors",
-                                              {"error": type(exc).__name__, "message": str(exc)},
-                                              received_at=received_at)
+                    from binance_orderbook import AsyncOrderBookCapture
+
+                    capture = AsyncOrderBookCapture(
+                        spec, self.store,
+                        snapshot_fetch=(lambda: self.snapshot_fetch(spec))
+                        if self.snapshot_fetch is not None else None,
+                        max_buffered_events=self.max_buffered_depth_events,
+                    )
+                    try:
+                        async for message in websocket:
+                            if stop.is_set():
+                                break
+                            received_at = utc_now()
+                            try:
+                                envelope = json.loads(message)
+                                stream = str(envelope.get("stream", "unknown"))
+                                payload = envelope.get("data", envelope)
+                                if not isinstance(payload, dict):
+                                    raise TypeError("websocket data must be an object")
+                                # Persist the provider payload first; downstream parsing is separate.
+                                kind = _stream_kind(stream)
+                                metadata = extract_event_metadata(stream, payload)
+                                self.store.append(spec.market, kind, payload,
+                                                  received_at=received_at,
+                                                  event_time=metadata["event_time"],
+                                                  trade_time=metadata["trade_time"],
+                                                  stream_name=metadata["stream_name"],
+                                                  sequence=metadata["sequence"],
+                                                  session_id=session_id)
+                                stream_counts[kind] = stream_counts.get(kind, 0) + 1
+                                if kind == "orderbook_depth":
+                                    await capture.ingest(payload)
+                            except (ValueError, TypeError) as exc:
+                                self.store.append(spec.market, "collector_errors",
+                                                  {"error": type(exc).__name__, "message": str(exc)},
+                                                  received_at=received_at)
+                    finally:
+                        await capture.close()
                 if not stop.is_set():
                     ended_at = utc_now()
                     self.store.append(spec.market, "session_manifest",
