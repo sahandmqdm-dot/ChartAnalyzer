@@ -240,6 +240,37 @@ def verify_snapshot_source_prefixes(
     }
 
 
+def verify_snapshot_artifact(
+    data_root: str | Path,
+    artifact_path: str | Path,
+    expected_sha256: str,
+) -> dict[str, Any]:
+    """Verify the persisted artifact bytes, feature hashes and raw source prefixes."""
+    root = Path(data_root).expanduser().resolve()
+    relative = Path(artifact_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise LiveSnapshotError("feature_artifact_path_invalid")
+    path = (root / relative).resolve()
+    if root not in path.parents or not path.is_file():
+        raise LiveSnapshotError("feature_artifact_missing_or_escaped")
+    payload = path.read_bytes()
+    actual_sha256 = hashlib.sha256(payload).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise LiveSnapshotError("feature_artifact_sha256_mismatch")
+    try:
+        snapshot = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise LiveSnapshotError("feature_artifact_unreadable") from exc
+    if path.stem != snapshot.get("dataset_hash"):
+        raise LiveSnapshotError("feature_artifact_content_address_mismatch")
+    prefix_audit = verify_snapshot_source_prefixes(root, snapshot)
+    return {
+        **prefix_audit,
+        "artifact_path": relative.as_posix(),
+        "artifact_sha256": actual_sha256,
+    }
+
+
 def find_latest_active_session(
     data_root: str | Path,
     market: str,
