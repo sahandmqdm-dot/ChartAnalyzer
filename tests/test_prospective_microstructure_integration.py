@@ -1,4 +1,4 @@
-import hashlib
+# ruff: noqa: I001  # Flat-layout import ordering differs across Ruff versions.\nimport hashlib
 import json
 from datetime import UTC, datetime, timedelta
 
