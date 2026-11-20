@@ -1,11 +1,13 @@
 """Local-first, read-only Binance Spot + USD-M Futures event capture.
 
-Raw WebSocket messages are durably appended before parsing. This module does not
-place orders and deliberately marks order books invalid after any sequence gap.
+Exact WebSocket frames are append-only persisted before JSON parsing. Typed events
+are derived records; raw frame retention allows independent re-parsing. This module
+does not place orders and invalidates order books after any sequence gap.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -312,8 +314,13 @@ class BinanceDualMarketCollector:
                             try:
                                 # Preserve the exact provider frame before JSON parsing or
                                 # downstream validation. The typed event below is a derived copy.
+                                raw_frame = (
+                                    {"encoding": "utf-8", "raw_message": message}
+                                    if isinstance(message, str)
+                                    else {"encoding": "base64", "raw_message": base64.b64encode(message).decode("ascii")}
+                                )
                                 self.store.append(
-                                    spec.market, "raw_frames", {"raw_message": message},
+                                    spec.market, "raw_frames", raw_frame,
                                     received_at=received_at,
                                     stream_name="combined_websocket_frame",
                                     session_id=session_id,
