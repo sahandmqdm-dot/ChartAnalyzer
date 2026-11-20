@@ -192,7 +192,10 @@ class EntityResolver:
                     raise IdentityContractError("aliases must be EntityAlias instances")
                 if alias.entity_id not in staged_entities:
                     raise IdentityContractError(f"alias references unknown entity: {alias.entity_id}")
-                if alias not in staged_aliases:
+                collision = next((item for item in staged_aliases if item.key == alias.key), None)
+                if collision is not None and collision != alias:
+                    raise IdentityContractError("alias key collision with different validity metadata")
+                if collision is None:
                     staged_aliases.append(alias)
             self._entities, self._aliases = staged_entities, staged_aliases
             return tuple(staged_entities[e.entity_id] for e in entity_rows)
