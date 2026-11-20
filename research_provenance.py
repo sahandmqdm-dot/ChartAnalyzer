@@ -15,7 +15,7 @@ from typing import Any, Dict, Iterable
 
 import numpy as np
 
-APP_VERSION = "7.2.0"
+from version import APP_VERSION
 # Bump whenever signal generation, execution semantics or research interpretation changes.
 RESEARCH_ENGINE_REVISION = "2026.11.20.1"
 
