@@ -38,3 +38,27 @@ CVD, liquidation streams, mark/index premium, funding accrual over the holding
 horizon, contract-specific maintenance tiers, or executable bid/ask prices.
 It does not claim calibrated probabilities, positive expectancy, OOS validity,
 or profitability. Stop/target references do not model intrabar ordering.
+
+## Dashboard data integration
+
+The local dashboard endpoint `GET /api/futures/scenarios?symbol=BTCUSDT&tf=1h&limit=240`
+uses public Binance USD-M endpoints and returns:
+
+- completed USD-M OHLCV candles with provider provenance;
+- current indicative funding, mark price, index price and next funding time
+  from the premium-index endpoint;
+- recent five-minute open-interest history and a same-provider/unit baseline
+  change when a sufficiently old baseline is available;
+- one REST order-book snapshot with best bid/ask, spread and top-20 quantity
+  imbalance;
+- a bounded recent aggregate-trade sample with taker-buy/sell quantities.
+
+The order-book REST result is a single snapshot, not a synchronized depth-diff
+stream. The aggregate-trade result is a bounded sample, not complete tick-by-tick
+history. Both are displayed as context and are deliberately excluded from the
+directional score until their timestamp alignment, sampling bias and predictive
+value have been validated. No live orders are placed.
+
+In the dashboard, the two ATR scenarios are explicitly labeled WATCH ONLY.
+The heuristic candidate is not a calibrated probability. The decision remains
+NO TRADE and deployment authorization remains false.
