@@ -43,7 +43,7 @@ def test_hash_chain_store_appends_and_verifies(tmp_path):
 
 def test_hash_chain_verifier_rejects_non_object_jsonl_records(tmp_path):
     path = tmp_path / "malformed.jsonl"
-    path.write_text("[]\\n", encoding="utf-8")
+    path.write_text("[]\n", encoding="utf-8")
     valid, count, error = HashChainJSONLStore.verify_file(path)
     assert valid is False
     assert count == 0
