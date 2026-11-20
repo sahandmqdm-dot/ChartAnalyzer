@@ -190,7 +190,8 @@ class ProspectiveHoldoutLedger:
         self, *, cohort_id: str, instrument_id: str, market_type: str,
         timeframe: str, horizon_bars: int, model_id: str, model_version: str,
         config_fingerprint: str, collection_start: datetime, collection_end: datetime,
-        min_forecasts: int = 200, now: datetime | None = None,
+        min_forecasts: int = 200, min_segment_count: int = 30,
+        now: datetime | None = None,
     ) -> dict[str, Any]:
         """Freeze the exact model/config before a future collection window begins."""
         current = _utc(now or datetime.now(UTC), "now")
@@ -203,6 +204,8 @@ class ProspectiveHoldoutLedger:
             raise ValueError("horizon_bars must be a positive integer")
         if isinstance(min_forecasts, bool) or not isinstance(min_forecasts, int) or min_forecasts < 30:
             raise ValueError("min_forecasts must be an integer >= 30")
+        if isinstance(min_segment_count, bool) or not isinstance(min_segment_count, int) or min_segment_count < 5:
+            raise ValueError("min_segment_count must be an integer >= 5")
         fields = {
             "cohort_id": cohort_id, "instrument_id": instrument_id,
             "market_type": market_type, "timeframe": timeframe,
@@ -215,7 +218,8 @@ class ProspectiveHoldoutLedger:
             **fields, "horizon_bars": horizon_bars,
             "config_fingerprint": _sha(config_fingerprint, "config_fingerprint"),
             "collection_start": _iso(start), "collection_end": _iso(end),
-            "min_forecasts": min_forecasts, "registered_at": _iso(current),
+            "min_forecasts": min_forecasts, "min_segment_count": min_segment_count,
+            "registered_at": _iso(current),
             "policy": "prospective_only_non_overlapping_single_cohort",
         }
         connection = self._connect()
@@ -372,7 +376,7 @@ class ProspectiveHoldoutLedger:
         finally:
             connection.close()
 
-    def evaluate_once(self, *, now: datetime | None = None, min_segment_count: int = 30) -> dict[str, Any]:
+    def evaluate_once(self, *, now: datetime | None = None) -> dict[str, Any]:
         """Reveal and permanently store one evaluation after the cohort fully resolves."""
         current = _utc(now or datetime.now(UTC), "now")
         connection = self._connect()
@@ -407,7 +411,7 @@ class ProspectiveHoldoutLedger:
                     actual_log_return=float(outcome["actual_log_return"]),
                     resolved_at=_parse(outcome["resolved_at"]),
                 ))
-            report = evaluate_forecasts(resolved, min_segment_count=min_segment_count)
+            report = evaluate_forecasts(resolved, min_segment_count=int(cohort["min_segment_count"]))
             report = {
                 **report,
                 "prospective_holdout": {
