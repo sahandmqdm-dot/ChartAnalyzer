@@ -126,7 +126,7 @@ def build_session_manifest(
     for record in records:
         received_raw = record.get("received_at")
         try:
-            received_dt = datetime.fromisoformat(str(received_raw).replace("Z", "+00:00"))
+            received_dt = datetime.fromisoformat(str(received_raw))
             if received_dt.tzinfo is None:
                 raise ValueError("naive received_at")
             received_times.append(received_dt)
@@ -138,9 +138,9 @@ def build_session_manifest(
             missing_event_time += 1
             continue
         try:
-            event_dt = datetime.fromisoformat(str(event_raw).replace("Z", "+00:00"))
+            event_dt = datetime.fromisoformat(str(event_raw))
             received_dt = datetime.fromisoformat(
-                str(record["received_at"]).replace("Z", "+00:00")
+                str(record["received_at"])
             )
             if event_dt.tzinfo is None or received_dt.tzinfo is None:
                 raise ValueError("naive timestamp")
