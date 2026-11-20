@@ -1895,7 +1895,7 @@ def api_walk_forward(source: str = "ramzinex", symbol: str = "USDTIRR", tf: str 
             requested_n=count, audit=audit,
             scope="sequential_out_of_sample",
         )
-        from strategy_validation import build_evidence_record, evaluate_evidence, save_evidence
+        from strategy_validation import build_evidence_record, save_evidence
         record = build_evidence_record(
             result, source=source, symbol=symbol, timeframe=tf,
             config_hash=result["provenance"]["config_fingerprint"],
