@@ -8,6 +8,7 @@ import logging
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -48,8 +49,8 @@ def backup_ledgers(source_dir: str | Path, backup_dir: str | Path, retention_day
         temporary = Path(temporary_name)
         try:
             source_uri = f"file:{source.as_posix()}?mode=ro"
-            with sqlite3.connect(source_uri, uri=True, timeout=30) as src:
-                with sqlite3.connect(temporary, timeout=30) as dst:
+            with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as src:
+                with closing(sqlite3.connect(temporary, timeout=30)) as dst:
                     src.backup(dst, pages=256, sleep=0.05)
                     check = dst.execute("PRAGMA integrity_check").fetchone()
                     if not check or check[0] != "ok":
