@@ -8,7 +8,7 @@ Causal multi-timeframe analysis, statistical edge evaluation, multi-horizon dist
 
 ## Product vision
 
-ChartAnalyzer's long-term scope is an evidence-driven multi-asset market intelligence and portfolio decision platform covering Crypto Spot/Futures and US equities/ETFs, with probabilistic future scenarios, uncertainty, decision-quality measurement and portfolio risk. Research and paper simulation are in scope; live order placement is not. See [Product Vision & Research Charter](docs/PRODUCT_VISION_AND_RESEARCH_CHARTER.md).
+ChartAnalyzer's long-term scope is an evidence-driven multi-asset market intelligence and portfolio decision platform covering Crypto Spot/Futures and US equities/ETFs, with probabilistic future scenarios, uncertainty, decision-quality measurement and portfolio risk. Research and paper simulation are in scope; live order placement is not. See [Product Vision & Research Charter](docs/PRODUCT_VISION_AND_RESEARCH_CHARTER.md). Decision outcomes, cost assumptions and strategy lifecycle rules are defined in [Strategy Evidence Policy](docs/STRATEGY_EVIDENCE_POLICY.md).
 
 ## Quick start
 
