@@ -124,6 +124,16 @@ def test_forecast_must_be_persisted_before_target(tmp_path):
         )
 
 
+def test_delayed_forecast_persistence_is_rejected(tmp_path):
+    ledger = make_ledger(tmp_path)
+    forecast = make_forecast()
+    with pytest.raises(ValueError, match="within 60 seconds"):
+        ledger.record_forecast(
+            forecast, config_fingerprint=CONFIG, input_source="feed",
+            recorded_at=forecast.issued_at + datetime.timedelta(minutes=2),
+        )
+
+
 def test_forecast_target_must_match_declared_horizon(tmp_path):
     ledger = make_ledger(tmp_path)
     forecast = make_forecast(target_at=START + datetime.timedelta(hours=5))
