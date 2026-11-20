@@ -9,14 +9,14 @@ import asyncio
 import hashlib
 import json
 import os
-import time
 import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 try:
     from websockets.asyncio.client import connect
@@ -41,13 +41,13 @@ class MarketSpec:
     streams: tuple[str, ...]
 
     @classmethod
-    def spot(cls, symbol: str = "btcusdt") -> "MarketSpec":
+    def spot(cls, symbol: str = "btcusdt") -> MarketSpec:
         symbol = _symbol(symbol)
         return cls("spot", symbol, "wss://stream.binance.com:9443/stream",
                    "https://api.binance.com", (f"{symbol}@depth@100ms", f"{symbol}@trade"))
 
     @classmethod
-    def usdm(cls, symbol: str = "btcusdt") -> "MarketSpec":
+    def usdm(cls, symbol: str = "btcusdt") -> MarketSpec:
         symbol = _symbol(symbol)
         return cls("usdm", symbol, "wss://fstream.binance.com/stream",
                    "https://fapi.binance.com",
@@ -279,7 +279,7 @@ class BinanceDualMarketCollector:
                             stream = str(envelope.get("stream", "unknown"))
                             payload = envelope.get("data", envelope)
                             if not isinstance(payload, dict):
-                                raise ValueError("websocket data must be an object")
+                                raise TypeError("websocket data must be an object")
                             # Persist the provider payload first; downstream parsing is separate.
                             kind = _stream_kind(stream)
                             metadata = extract_event_metadata(stream, payload)
@@ -318,7 +318,7 @@ class BinanceDualMarketCollector:
                                        "termination": "cancelled"},
                                       session_id=session_id)
                 raise
-            except Exception as exc:  # network libraries expose several transport exception types
+            except Exception as exc:  # noqa: BLE001  # network libraries expose several transport exception types
                 self.store.append(spec.market, "session_manifest",
                                   {"state": "interrupted", "ended_at": utc_now(),
                                    "termination": "transport_error",
