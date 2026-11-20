@@ -218,6 +218,14 @@ class BinanceDualMarketCollector:
                             self.store.append(spec.market, "collector_errors",
                                               {"error": type(exc).__name__, "message": str(exc)},
                                               received_at=received_at)
+                if not stop.is_set():
+                    self.store.append(spec.market, "connection",
+                                      {"state": "stream_ended", "retry_in_seconds": delay})
+                    try:
+                        await asyncio.wait_for(stop.wait(), timeout=delay)
+                    except TimeoutError:
+                        pass
+                    delay = min(self.reconnect_max, delay * 2)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # network libraries expose several transport exception types
