@@ -295,8 +295,9 @@ def test_holdout_seal_rejects_unregistered_or_overlapping_prior_sample(tmp_path,
     monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {
         "valid": True, "gap_count": 0, "state": "PASS", "warnings": [], "errors": []})
     monkeypatch.setattr(ResearchRegistry, "latest_sample_end", lambda *args, **kwargs: None)
-    with pytest.raises(app.HTTPException, match="prior research sample"):
+    with pytest.raises(app.HTTPException) as exc:
         app.api_seal_holdout({"source": "csv", "symbol": "BTCUSDT", "timeframe": "1h"})
+    assert "prior research sample" in exc.value.detail
 
 
 def test_holdout_seal_rejects_caller_supplied_fingerprint_mismatch(tmp_path, monkeypatch):
@@ -318,7 +319,8 @@ def test_holdout_seal_rejects_caller_supplied_fingerprint_mismatch(tmp_path, mon
     monkeypatch.setattr(provenance, "dataset_fingerprint", lambda *args, **kwargs: "actual-dataset")
     monkeypatch.setattr(provenance, "config_fingerprint", lambda *args, **kwargs: "actual-config")
     monkeypatch.setattr(ResearchRegistry, "latest_sample_end", lambda *args, **kwargs: 1_699_999_999.0)
-    with pytest.raises(app.HTTPException, match="dataset fingerprint"):
+    with pytest.raises(app.HTTPException) as exc:
         app.api_seal_holdout({"source": "csv", "symbol": "BTCUSDT", "timeframe": "1h",
                               "dataset_id": "forged-dataset", "config_hash": "actual-config"})
+    assert "dataset fingerprint" in exc.value.detail
     assert not (tmp_path / "holdout.json").exists()
