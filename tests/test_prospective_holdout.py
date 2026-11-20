@@ -263,6 +263,30 @@ def test_payload_tampering_is_detected(tmp_path):
     assert ledger.verify_integrity()["status"] == "BLOCKED"
 
 
+def test_pending_forecast_queue_and_next_issue_time(tmp_path):
+    ledger = make_ledger(tmp_path)
+    assert ledger.next_issuance_due() == START
+    forecast = append_forecast(ledger)
+    assert ledger.next_issuance_due() == forecast.target_at
+    pending = ledger.pending_forecasts()
+    assert len(pending) == 1
+    assert pending[0]["forecast_id"] == forecast.forecast_id
+    assert pending[0]["reference_price"] == 100.0
+    resolve(ledger, forecast)
+    assert ledger.pending_forecasts() == []
+
+
+def test_reference_price_must_be_positive_and_finite(tmp_path):
+    ledger = make_ledger(tmp_path)
+    forecast = make_forecast()
+    with pytest.raises(ValueError, match="reference_price"):
+        ledger.record_forecast(
+            forecast, config_fingerprint=CONFIG, input_source="feed",
+            reference_price=0.0,
+            recorded_at=forecast.issued_at + datetime.timedelta(seconds=1),
+        )
+
+
 def test_ledger_status_does_not_disclose_scores_before_evaluation(tmp_path):
     ledger = make_ledger(tmp_path)
     forecast = append_forecast(ledger)
