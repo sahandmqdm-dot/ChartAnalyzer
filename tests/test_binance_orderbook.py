@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -168,5 +169,10 @@ def test_async_capture_counts_buffer_overflow_and_exactly_dropped_diffs(tmp_path
         release_snapshot.set()
         await capture.close()
         store.close()
+        state_path = tmp_path / "spot" / "orderbook_state" / "2026-11-20.jsonl"
+        states = [json.loads(line) for line in state_path.read_text(encoding="utf-8").splitlines()]
+        overflow = next(item for item in states if item["payload"]["state"] == "buffer_overflow")
+        assert overflow["payload"]["dropped_events"] == 2
+        assert overflow["payload"]["cumulative_dropped_events"] == 2
 
     asyncio.run(scenario())
