@@ -57,7 +57,7 @@ def test_daily_manifest_is_content_addressed_and_verifies_external_archive(tmp_p
     assert seal_daily_manifest(data, archive, DAY) == path
 
 
-def test_daily_manifest_refuses_active_sessions(tmp_path):
+def test_daily_manifest_records_sessions_open_at_day_boundary(tmp_path):
     store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
     store.append(
         "spot", "session_manifest",
@@ -65,8 +65,38 @@ def test_daily_manifest_refuses_active_sessions(tmp_path):
         received_at=f"{DAY}T10:00:00+00:00", session_id="active-session",
     )
     store.close()
-    with pytest.raises(DailyAuditError, match="unsealed_sessions"):
-        build_daily_manifest(tmp_path, DAY, now=NOW)
+    manifest = build_daily_manifest(tmp_path, DAY, now=NOW)
+    assert manifest["session_count"] == 1
+    assert manifest["sessions_started_in_day"] == 1
+    assert manifest["sessions_open_at_day_boundary"] == 1
+    assert manifest["session_states"]["active-session"]["terminal_in_day"] is None
+
+
+def test_daily_manifest_allows_session_terminal_on_following_utc_day(tmp_path):
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    session_id = "cross-midnight-session"
+    store.append(
+        "spot", "session_manifest",
+        {"state": "started", "streams": ["btcusdt@trade"], "started_at": f"{DAY}T23:59:00+00:00"},
+        received_at=f"{DAY}T23:59:00+00:00", session_id=session_id,
+    )
+    store.append(
+        "spot", "trades",
+        {"s": "BTCUSDT", "p": "90000", "q": "0.1", "m": False},
+        received_at=f"{DAY}T23:59:30+00:00", session_id=session_id,
+    )
+    store.append(
+        "spot", "session_manifest",
+        {"state": "ended", "ended_at": "2026-11-20T00:01:00+00:00", "termination": "stream_ended"},
+        received_at="2026-11-20T00:01:00+00:00", session_id=session_id,
+    )
+    store.close()
+    manifest = build_daily_manifest(
+        tmp_path, DAY, now=datetime(2026, 11, 21, 12, 0, tzinfo=UTC)
+    )
+    assert manifest["sessions_open_at_day_boundary"] == 1
+    assert manifest["complete_sessions"] == 0
+    assert manifest["session_states"][session_id]["terminal_in_day"] is None
 
 
 def test_daily_manifest_refuses_current_or_future_day(tmp_path):
