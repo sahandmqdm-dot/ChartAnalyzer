@@ -280,6 +280,7 @@ class BinanceDualMarketCollector:
             session_id = None
             session_started = None
             stream_counts: dict[str, int] = {}
+            raw_frame_count = 0
             try:
                 async with self._connect(uri) as websocket:
                     session_id = uuid.uuid4().hex
@@ -325,6 +326,7 @@ class BinanceDualMarketCollector:
                                     stream_name="combined_websocket_frame",
                                     session_id=session_id,
                                 )
+                                raw_frame_count += 1
                                 envelope = json.loads(message)
                                 stream = str(envelope.get("stream", "unknown"))
                                 payload = envelope.get("data", envelope)
@@ -357,6 +359,7 @@ class BinanceDualMarketCollector:
                 self.store.append(spec.market, "session_manifest",
                                   {"state": "ended", "started_at": session_started,
                                    "ended_at": ended_at, "event_count": sum(stream_counts.values()),
+                                   "raw_frame_count": raw_frame_count,
                                    "stream_counts": stream_counts,
                                    "termination": termination},
                                   received_at=ended_at, session_id=session_id)
@@ -377,6 +380,7 @@ class BinanceDualMarketCollector:
                                       {"state": "interrupted", "started_at": session_started,
                                        "ended_at": interrupted_at,
                                        "event_count": sum(stream_counts.values()),
+                                       "raw_frame_count": raw_frame_count,
                                        "stream_counts": stream_counts,
                                        "termination": "cancelled"},
                                       received_at=interrupted_at, session_id=session_id)
@@ -387,6 +391,7 @@ class BinanceDualMarketCollector:
                                   {"state": "interrupted", "started_at": session_started,
                                    "ended_at": interrupted_at,
                                    "event_count": sum(stream_counts.values()),
+                                   "raw_frame_count": raw_frame_count,
                                    "stream_counts": stream_counts,
                                    "termination": "transport_error",
                                    "error": type(exc).__name__},
