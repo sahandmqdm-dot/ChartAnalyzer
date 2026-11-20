@@ -103,3 +103,29 @@ def test_sell_side_costs_use_bid_touch_and_preserve_side_direction():
     ])
     assert result["cost_breakdown"]["spread"] == pytest.approx(0.5)
     assert result["cost_breakdown"]["slippage_beyond_touch"] == pytest.approx(1.5)
+
+
+def test_rejected_order_is_distinct_from_unfilled_order():
+    result = run(order_type="limit", fills=[], fill_source=None,
+                 rejection_reason="venue rejected minimum notional")
+    assert result["status"] == "rejected"
+    assert result["fill_count"] == 0
+
+
+def test_missing_impact_and_funding_inputs_are_flagged_incomplete():
+    result = run(funding_events=2)
+    assert result["cost_breakdown"]["complete"] is False
+    assert result["cost_breakdown"]["missing_inputs"] == ["impact_bps", "funding_rate"]
+
+
+def test_fill_probability_requires_calibration_and_source():
+    with pytest.raises(ValueError, match="calibrated model provenance"):
+        run(fill_probability=0.7)
+    result = run(fill_probability=0.7, fill_probability_source="validated queue model",
+                 fill_probability_calibrated=True)
+    assert result["execution_context"]["fill_probability"] == pytest.approx(0.7)
+
+
+def test_rejected_order_cannot_claim_fills():
+    with pytest.raises(ValueError, match="cannot contain fills"):
+        run(rejection_reason="venue rejection")
