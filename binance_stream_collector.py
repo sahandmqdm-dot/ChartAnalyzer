@@ -187,9 +187,15 @@ class BinanceDualMarketCollector:
         factory = self.connector or connect
         if factory is None:
             raise CollectorError("Install websockets>=15.0 to run the live collector")
-        return factory(uri, open_timeout=self.connect_timeout, ping_interval=20,
-                       ping_timeout=20, close_timeout=10, max_queue=4096,
-                       proxy=self.proxy if self.proxy else None)
+        options = {
+            "open_timeout": self.connect_timeout, "ping_interval": 20,
+            "ping_timeout": 20, "close_timeout": 10, "max_queue": 4096,
+        }
+        # Omit proxy when unset so websockets can honor system proxy environment;
+        # explicit proxy overrides that discovery when the operator configures one.
+        if self.proxy:
+            options["proxy"] = self.proxy
+        return factory(uri, **options)
 
     async def run_market(self, spec: MarketSpec, stop: asyncio.Event) -> None:
         delay = self.reconnect_min
