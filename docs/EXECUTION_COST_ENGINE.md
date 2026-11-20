@@ -40,12 +40,18 @@ OHLCV backtest engine until a validated event-driven replay adapter exists.
 
 The existing bar backtest remains a bar-level next-open simulator with
 configured fee/spread/slippage/impact inputs. This engine does not claim to
-replace it or reconstruct historical order-book execution. A future adapter
-must consume verified point-in-time book/trade replay, model queue position and
-partial fills, and pass independent tests before any result is promoted.
+replace it or reconstruct historical order-book execution. The market_sweep_fills helper can estimate a marketable order against a fresh,
+sequence-valid L2 snapshot and explicitly returns partial depth when the book
+is insufficient. This is a displayed-depth snapshot estimate, not historical
+realized execution. It does not model queue position or intervening events.
+Limit-order fill probability remains an externally supplied calibrated estimate;
+no limit fill is generated from price touch or probability alone. A future
+historical adapter must consume verified point-in-time book/trade replay, model
+queue position and partial fills, and pass independent tests before promotion.
 
 ## Tests
 
 tests/test_execution_cost_engine.py covers maker/taker accounting,
-partial/unfilled orders, adverse slippage, funding, provenance and fail-closed
+partial/unfilled/rejected orders, adverse slippage, funding, calibrated fill
+probability provenance, stale-book rejection, L2 depth sweeps and fail-closed
 validation. All outputs are research-only and do not submit live orders.
