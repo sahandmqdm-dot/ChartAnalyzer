@@ -2340,6 +2340,284 @@ def api_pmi(source: str = "ramzinex", symbol: str = "USDTIRR", tf: str = "1h", n
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
 
+
+# ------------------------------------------------ prospective future holdout
+def _prospective_now():
+    from datetime import UTC, datetime
+    return datetime.now(UTC)
+
+
+def _prospective_parse_datetime(value, name):
+    from datetime import UTC, datetime
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(name + " must be an ISO-8601 timestamp with timezone")
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(name + " must include a UTC offset")
+    return parsed.astimezone(UTC)
+
+
+def _prospective_cohort_path(cohort_id):
+    value = str(cohort_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", value):
+        raise ValueError("cohort_id must be 1-64 safe letters, digits, dot, underscore or hyphen")
+    return os.path.join(PROSPECTIVE_DATA_DIR, value + ".sqlite3")
+
+
+def _prospective_identity(payload):
+    import hashlib
+    source = str(payload.get("source") or "ramzinex").strip().lower()
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    tf = str(payload.get("tf") or "1h").strip()
+    if source not in ("ramzinex", "ccxt"):
+        raise ValueError("prospective collection currently supports only live Ramzinex and CCXT spot data")
+    if not SYM_RE.fullmatch(symbol):
+        raise ValueError("invalid symbol")
+    if tf not in TF_MIN:
+        raise ValueError("unsupported timeframe")
+    try:
+        horizon = int(payload.get("horizon_bars", 4))
+        paths = int(payload.get("paths", 3000))
+        count = int(payload.get("n", 1200))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("horizon_bars, paths and n must be integers") from exc
+    if isinstance(payload.get("horizon_bars"), bool) or not 1 <= horizon <= 300:
+        raise ValueError("horizon_bars must be between 1 and 300")
+    if isinstance(payload.get("paths"), bool) or not 500 <= paths <= 10000:
+        raise ValueError("paths must be between 500 and 10000")
+    if isinstance(payload.get("n"), bool) or not 120 <= count <= 5000:
+        raise ValueError("n must be between 120 and 5000")
+    exchange = str(payload.get("exchange") or "binance").strip().lower() if source == "ccxt" else ""
+    if source == "ccxt" and not EX_RE.fullmatch(exchange):
+        raise ValueError("invalid CCXT exchange id")
+    market_type = str((conf().get("backtest") or {}).get("market_type", "spot")).lower()
+    if market_type != "spot":
+        raise ValueError("prospective PMI collection is currently spot-only; futures requires a separate price-basis contract")
+    model_id, model_version = "chartanalyzer-pmi-bootstrap", "5.0.0"
+    code_hashes = {}
+    for label, path in (
+        ("app", __file__),
+        ("pmi", getattr(PMI, "__file__", "")),
+        ("forecast_validation", os.path.join(BASE_DIR, "forecast_validation.py")),
+        ("prospective_ledger", os.path.join(BASE_DIR, "prospective_holdout.py")),
+    ):
+        if not path or not os.path.isfile(path):
+            raise ValueError("cannot fingerprint required model component: " + label)
+        digest = hashlib.sha256()
+        with open(path, "rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        code_hashes[label] = digest.hexdigest()
+    identity = {
+        "release_sha": os.getenv("CHARTANALYZER_RELEASE_SHA", "unversioned"),
+        "app_version": "7.2.0",
+        "model_id": model_id,
+        "model_version": model_version,
+        "code_sha256": code_hashes,
+        "source": source,
+        "exchange": exchange or None,
+        "symbol": symbol,
+        "market_type": market_type,
+        "timeframe": tf,
+        "horizon_bars": horizon,
+        "history_bars": count,
+        "bootstrap_paths": paths,
+        "bootstrap_seed": 19,
+        "bootstrap_block_bars": 4,
+        "input_policy": "closed_candles_only",
+        "target_kind": "log_return",
+    }
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest(), identity
+
+
+def _prospective_ledger(cohort_id):
+    from prospective_holdout import ProspectiveHoldoutLedger
+    return ProspectiveHoldoutLedger(_prospective_cohort_path(cohort_id))
+
+
+def _prospective_source_parts(input_source):
+    value = str(input_source)
+    if value.startswith("ccxt:"):
+        return "ccxt", value.split(":", 1)[1]
+    if value == "ramzinex":
+        return "ramzinex", "binance"
+    raise ValueError("unknown prospective input source")
+
+
+@app.post("/api/prospective-holdout/register")
+def api_prospective_holdout_register(payload: dict):
+    try:
+        from datetime import timedelta
+        config_hash, identity = _prospective_identity(payload)
+        cohort_id = str(payload.get("cohort_id") or "").strip()
+        start = _prospective_parse_datetime(payload.get("collection_start"), "collection_start")
+        end = _prospective_parse_datetime(payload.get("collection_end"), "collection_end")
+        now = _prospective_now()
+        if start <= now + timedelta(seconds=30):
+            raise ValueError("collection_start must be at least 30 seconds in the future")
+        ledger = _prospective_ledger(cohort_id)
+        status = ledger.register_cohort(
+            cohort_id=cohort_id,
+            instrument_id=identity["symbol"],
+            market_type=identity["market_type"],
+            timeframe=identity["timeframe"],
+            horizon_bars=identity["horizon_bars"],
+            model_id=identity["model_id"],
+            model_version=identity["model_version"],
+            config_fingerprint=config_hash,
+            collection_start=start,
+            collection_end=end,
+            min_forecasts=int(payload.get("min_forecasts", 200)),
+            min_segment_count=int(payload.get("min_segment_count", 30)),
+            now=now,
+        )
+        return {"cohort": status, "config_fingerprint": config_hash,
+                "model_identity": identity,
+                "note": "Freeze this exact request configuration. Every later tick must use the same settings."}
+    except Exception as e:
+        raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
+
+
+@app.get("/api/prospective-holdout/status")
+def api_prospective_holdout_status(cohort_id: str):
+    try:
+        ledger = _prospective_ledger(cohort_id)
+        return {"cohort": ledger.status(), "integrity": ledger.verify_integrity()}
+    except Exception as e:
+        raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
+
+
+@app.post("/api/prospective-holdout/tick")
+def api_prospective_holdout_tick(payload: dict):
+    """Resolve matured outcomes, then issue at most one new non-overlapping forecast."""
+    try:
+        from datetime import timedelta
+        from research_provenance import dataset_fingerprint
+        from forecast_validation import create_forecast_record
+        cohort_id = str(payload.get("cohort_id") or "").strip()
+        ledger = _prospective_ledger(cohort_id)
+        cohort = ledger.cohort_details()
+        if not cohort:
+            raise ValueError("prospective cohort is not registered")
+        config_hash, identity = _prospective_identity(payload)
+        if config_hash != cohort.get("config_fingerprint"):
+            raise ValueError("request settings differ from the frozen cohort configuration")
+        now = _prospective_now()
+        resolved_count = 0
+        unresolved_data = []
+        for item in ledger.pending_forecasts():
+            target = _prospective_parse_datetime(item["target_at"], "target_at")
+            if target > now:
+                continue
+            source, exchange = _prospective_source_parts(item["input_source"])
+            timeframe = item["timeframe"]
+            bar_seconds = TF_MIN[timeframe] * 60
+            try:
+                frame = load_cached(source, item["instrument_id"], timeframe,
+                                    max(120, min(5000, int(identity["history_bars"]))),
+                                    exchange, "", "")
+                _audit_research_frame(frame, source, timeframe)
+                target_open = target.timestamp() - bar_seconds
+                matched = frame.loc[np.isclose(frame["time"].to_numpy(dtype=float), target_open, atol=1.0)]
+                if len(matched) != 1:
+                    unresolved_data.append({"forecast_id": item["forecast_id"], "reason": "exact target candle unavailable"})
+                    continue
+                target_bar = matched.iloc[0]
+                target_close = float(target_bar["close"])
+                reference = float(item["reference_price"])
+                if not math.isfinite(target_close) or target_close <= 0 or not math.isfinite(reference) or reference <= 0:
+                    unresolved_data.append({"forecast_id": item["forecast_id"], "reason": "invalid reference or outcome price"})
+                    continue
+                outcome_frame = matched[["time", "open", "high", "low", "close", "volume"]].copy().reset_index(drop=True)
+                outcome_fingerprint = dataset_fingerprint(
+                    outcome_frame, source=source, symbol=item["instrument_id"], timeframe=timeframe)
+                resolved_at = _prospective_now()
+                ledger.resolve_forecast(
+                    item["forecast_id"],
+                    actual_log_return=math.log(target_close / reference),
+                    outcome_source=item["input_source"],
+                    outcome_dataset_fingerprint=outcome_fingerprint,
+                    outcome_available_at=resolved_at,
+                    resolved_at=resolved_at,
+                )
+                resolved_count += 1
+            except Exception as exc:
+                unresolved_data.append({"forecast_id": item["forecast_id"], "reason": redact(type(exc).__name__ + ": " + str(exc))})
+        issued = None
+        start = _prospective_parse_datetime(cohort["collection_start"], "collection_start")
+        end = _prospective_parse_datetime(cohort["collection_end"], "collection_end")
+        next_due = ledger.next_issuance_due()
+        if start <= now <= end and next_due is not None and now >= next_due:
+            source = identity["source"]
+            exchange = identity["exchange"] or "binance"
+            frame = load_cached(source, identity["symbol"], identity["timeframe"],
+                                identity["history_bars"], exchange, "", "")
+            _audit_research_frame(frame, source, identity["timeframe"])
+            result = PMI.analyze(
+                frame, timeframe=identity["timeframe"],
+                horizons=(identity["horizon_bars"],),
+                paths=identity["bootstrap_paths"], seed=identity["bootstrap_seed"],
+            )
+            scenario = result["scenario_forecasts"][str(identity["horizon_bars"])]["return_quantiles"]
+            q_values = [float(scenario[k]) for k in ("p10", "p50", "p90")]
+            if any(not math.isfinite(value) or value <= -1.0 for value in q_values):
+                raise ValueError("PMI returned invalid simple-return quantiles")
+            q10, q50, q90 = (math.log1p(value) for value in q_values)
+            bar_seconds = TF_MIN[identity["timeframe"]] * 60
+            data_cutoff = float(frame["time"].iloc[-1]) + bar_seconds
+            issued_at = _prospective_now()
+            data_cutoff_at = datetime.fromtimestamp(data_cutoff, tz=issued_at.tzinfo)
+            target_at = data_cutoff_at + timedelta(seconds=bar_seconds * identity["horizon_bars"])
+            fingerprint = dataset_fingerprint(
+                frame, source=source, symbol=identity["symbol"], timeframe=identity["timeframe"])
+            forecast = create_forecast_record(
+                instrument_id=identity["symbol"], market_type=identity["market_type"],
+                timeframe=identity["timeframe"], horizon_bars=identity["horizon_bars"],
+                issued_at=issued_at, target_at=target_at, data_cutoff_at=data_cutoff_at,
+                model_id=identity["model_id"], model_version=str(result.get("version", identity["model_version"])),
+                dataset_fingerprint=fingerprint,
+                regime=str((result.get("regime") or {}).get("label", "unknown")),
+                q10=q10, q50=q50, q90=q90, probability_up=None,
+            )
+            recorded_at = _prospective_now()
+            input_source = source if source == "ramzinex" else "ccxt:" + str(identity["exchange"])
+            ledger.record_forecast(
+                forecast, config_fingerprint=config_hash, input_source=input_source,
+                reference_price=float(frame["close"].iloc[-1]), recorded_at=recorded_at,
+            )
+            issued = {"forecast_id": forecast.forecast_id, "issued_at": forecast.issued_at.isoformat(),
+                      "data_cutoff_at": forecast.data_cutoff_at.isoformat(),
+                      "target_at": forecast.target_at.isoformat()}
+        return {
+            "cohort": ledger.status(),
+            "resolved_this_tick": resolved_count,
+            "unresolved_due": unresolved_data,
+            "issued_forecast": issued,
+            "next_issuance_due": None if ledger.next_issuance_due() is None else ledger.next_issuance_due().isoformat(),
+            "report_available": False,
+        }
+    except Exception as e:
+        raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
+
+
+@app.post("/api/prospective-holdout/evaluate")
+def api_prospective_holdout_evaluate(payload: dict):
+    try:
+        ledger = _prospective_ledger(str(payload.get("cohort_id") or ""))
+        report = ledger.evaluate_once()
+        integrity = ledger.verify_integrity()
+        if integrity.get("status") != "PASS":
+            raise ValueError("prospective holdout integrity verification failed after evaluation")
+        return {"report": report, "integrity": integrity,
+                "warning": "Final holdout was consumed once. Do not tune or retrain against this sample."}
+    except Exception as e:
+        raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
+
+
 @app.get("/api/data-integrity")
 def api_data_integrity(source: str = "ramzinex", symbol: str = "USDTIRR", tf: str = "1h", n: int = 800,
                       exchange: str = "coinex", udf_url: str = "", csv_path: str = ""):
