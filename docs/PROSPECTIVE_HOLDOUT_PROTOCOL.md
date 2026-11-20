@@ -140,6 +140,23 @@ No future data has been collected and no prospective performance result exists y
 
 The API integration is available in the local app. The ledger is stored outside the source checkout, by default under `%LOCALAPPDATA%\\ChartAnalyzer\\prospective_holdouts`. Set `CHARTANALYZER_DATA_DIR` before starting the app to choose another persistent data directory.
 
+For the optional Binance Spot microstructure evidence mode, use the exact matching instrument and enable the frozen option at both registration and every tick. The collector and ChartAnalyzer app must share the same `CHARTANALYZER_DATA_DIR` on the same host:
+
+```powershell
+$env:CHARTANALYZER_DATA_DIR = "F:\\ChartAnalyzerData\\binance_raw"
+python -m binance_stream_collector --symbol BTCUSDT
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File ".\\tools\\Register-ProspectiveHoldout.ps1" `
+  -CohortId "btcusdt-spot-1h-h4-pit-202611" -Source ccxt -Exchange binance `
+  -Symbol BTCUSDT -Timeframe 1h -HorizonBars 4 -UseBinanceMicrostructure
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File ".\\tools\\Invoke-ProspectiveHoldoutTick.ps1" `
+  -CohortId "btcusdt-spot-1h-h4-pit-202611" -Source ccxt -Exchange binance `
+  -Symbol BTCUSDT -Timeframe 1h -HorizonBars 4 -UseBinanceMicrostructure
+```
+
+The `-UseBinanceMicrostructure` switch must be present on every tick because it is part of the frozen cohort fingerprint. If the active Binance session is unavailable, began after the candle cutoff, has raw/typed frame-count mismatch, or fails hash verification, no forecast is recorded for that tick. The feature artifact is archived under `vault/features/<dataset_hash>.json` within the shared data directory.
+
 The first integrated collector supports **Spot** data from Ramzinex or CCXT. It uses only fully closed candles. It records the PMI bootstrap quantiles as log-return forecasts and stores the last closed candle's close as the reference price. When the target candle closes, the next tick resolves the outcome from that exact candle. Missing target candles are left unresolved; the resolver never substitutes a nearby candle.
 
 Example one-time registration for Ramzinex USDT/IRR, 1-hour candles and a 4-bar horizon:
