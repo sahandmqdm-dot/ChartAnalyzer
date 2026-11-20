@@ -35,7 +35,7 @@ def _canonical_hash(value: dict[str, Any]) -> str:
 def validate_fee_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     """Validate venue/account rates and retain their provenance."""
     if not isinstance(schedule, dict):
-        raise ValueError("fee_schedule is required")
+        raise TypeError("fee_schedule must be an object")
     required = ("venue", "account_tier", "market", "maker_rate", "taker_rate",
                 "source", "effective_at")
     missing = [key for key in required if schedule.get(key) in (None, "")]
@@ -110,21 +110,21 @@ def evaluate_execution(
     latency = None if latency_ms is None else _number(latency_ms, "latency_ms", minimum=0.0)
     schedule = validate_fee_schedule(fee_schedule)
     if not isinstance(fills, list):
-        raise ValueError("fills must be a list")
+        raise TypeError("fills must be a list")
     if fills and not fill_source:
         raise ValueError("fill_source is required when fills are supplied")
 
     parsed = []
     for index, fill in enumerate(fills):
         if not isinstance(fill, dict):
-            raise ValueError(f"fill {index} must be an object")
+            raise TypeError(f"fill {index} must be an object")
         price = _number(fill.get("price"), f"fills[{index}].price", minimum=0.0)
         quantity = _number(fill.get("quantity"), f"fills[{index}].quantity", minimum=0.0)
         role = str(fill.get("liquidity_role", "")).lower()
         if price <= 0 or quantity <= 0:
             raise ValueError("fill price and quantity must be > 0")
         if role not in {"maker", "taker"}:
-            raise ValueError("each fill must explicitly identify maker or taker liquidity")
+            raise ValueError("each fill must explicitly identify maker or taker liquidity_role")
         if order_type == "market" and role != "taker":
             raise ValueError("market-order fills must be taker liquidity")
         parsed.append({"price": price, "quantity": quantity, "liquidity_role": role})
@@ -223,7 +223,9 @@ def market_sweep_fills(
     Timestamps are local receive/decision times, not exchange event times.
     This is a snapshot liquidity estimate, not a queue-aware historical fill.
     """
-    if not isinstance(book, dict) or book.get("valid") is not True:
+    if not isinstance(book, dict):
+        raise TypeError("book must be an object")
+    if book.get("valid") is not True:
         raise ValueError("a sequence-valid order book is required")
     if not book.get("market") or not book.get("symbol"):
         raise ValueError("book market and symbol identity are required")
@@ -237,8 +239,8 @@ def market_sweep_fills(
         raise ValueError("requested_quantity must be > 0")
     age_limit = _number(max_age_ms, "max_age_ms", minimum=0.0)
     try:
-        received = datetime.fromisoformat(book_received_at.replace("Z", "+00:00"))
-        decision = datetime.fromisoformat(decision_at.replace("Z", "+00:00"))
+        received = datetime.fromisoformat(book_received_at)
+        decision = datetime.fromisoformat(decision_at)
     except (AttributeError, TypeError, ValueError) as exc:
         raise ValueError("book and decision times must be ISO-8601") from exc
     if received.tzinfo is None or decision.tzinfo is None:
@@ -313,12 +315,14 @@ def record_execution_cost_experiment(
     sample_end: float | None = None,
 ) -> dict[str, Any]:
     """Persist cost evidence through the existing append-only ResearchRegistry."""
-    if not isinstance(execution_result, dict) or execution_result.get("engine") != ENGINE_VERSION:
+    if not isinstance(execution_result, dict):
+        raise TypeError("execution_result must be an object")
+    if execution_result.get("engine") != ENGINE_VERSION:
         raise ValueError("execution_result must come from this execution cost engine")
     breakdown = execution_result.get("cost_breakdown")
     provenance = execution_result.get("provenance")
     if not isinstance(breakdown, dict) or not isinstance(provenance, dict):
-        raise ValueError("execution result is missing cost breakdown or provenance")
+        raise TypeError("execution result is missing object cost breakdown or provenance")
     complete = breakdown.get("complete") is True
     metrics = {
         "execution_cost_engine": ENGINE_VERSION,
