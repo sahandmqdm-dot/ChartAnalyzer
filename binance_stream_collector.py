@@ -87,7 +87,7 @@ class HashChainJSONLStore:
                session_id: str | None = None) -> dict[str, Any]:
         received_value = received_at or utc_now()
         try:
-            received_dt = datetime.fromisoformat(received_value.replace("Z", "+00:00"))
+            received_dt = datetime.fromisoformat(received_value)
         except (TypeError, ValueError) as exc:
             raise ValueError("received_at must be an ISO-8601 timestamp") from exc
         if received_dt.tzinfo is None:
