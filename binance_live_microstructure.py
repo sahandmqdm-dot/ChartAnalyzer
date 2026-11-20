@@ -74,6 +74,20 @@ def build_active_session_snapshot(
                 copied_manifest = build_session_manifest(snapshot_root, market, session_id)
                 if copied_manifest["session_closed"]:
                     raise LiveSnapshotError("snapshot_unexpectedly_contains_terminal_session")
+                event_counts = copied_manifest["event_counts"]
+                raw_frames = int(event_counts.get("raw_frames", 0))
+                derived_frames = sum(
+                    int(event_counts.get(stream, 0))
+                    for stream in (
+                        "trades", "orderbook_depth", "liquidations",
+                        "unknown", "collector_errors",
+                    )
+                )
+                # The collector persists each raw frame before deriving its typed
+                # event. A mismatch means the copy may have caught the writer
+                # between those operations, or the session has a capture defect.
+                if raw_frames < 1 or raw_frames != derived_frames:
+                    raise LiveSnapshotError("raw_frame_typed_event_count_mismatch")
                 result = build_pit_microstructure_features(
                     snapshot_root,
                     market,
