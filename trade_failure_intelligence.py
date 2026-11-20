@@ -9,7 +9,9 @@ import math
 from collections import Counter, defaultdict
 from typing import Any, Dict, Iterable, Optional
 
-import numpy as np\n\nfrom version import APP_VERSION
+import numpy as np
+
+from version import APP_VERSION
 
 
 def _f(value: Any) -> Optional[float]:
@@ -121,7 +123,7 @@ def analyze_trade_failures(
     n = min(len(opens), len(highs), len(lows), len(closes))
     if n < 2 or not (np.isfinite(opens[:n]).all() and np.isfinite(highs[:n]).all()
                      and np.isfinite(lows[:n]).all() and np.isfinite(closes[:n]).all()):
-        return {"version": "7.2.0", "status": "unavailable", "reason": "OHLC contains insufficient or non-finite data."}
+        return {"version": APP_VERSION, "status": "unavailable", "reason": "OHLC contains insufficient or non-finite data."}
 
     sig = None if signal is None else np.asarray(signal, dtype=float)
     regimes = None if entry_regime is None else np.asarray(entry_regime, dtype=object)

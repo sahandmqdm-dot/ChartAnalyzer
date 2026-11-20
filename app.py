@@ -24,7 +24,9 @@ import pandas as pd
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
-from version import APP_VERSION\n\nimport agent_core as AC
+from version import APP_VERSION
+
+import agent_core as AC
 import trend_engine as TE
 import predictive_intelligence as PMI
 from iran_crypto_market import IranCryptoMarket
@@ -1184,7 +1186,7 @@ def walk_forward_backtest(df, tf, symbol="", n_splits=None, warmup_bars=None, ga
         "engine": "MarketRegimeIntelligence V1.0", "status": "RESEARCH_ONLY",
         "note": "Causal labels sampled at signal close; no signal filtering or parameter fitting."
     }
-    result["version"] = "7.2.0"
+    result["version"] = APP_VERSION
     result["evaluation_scope"] = "sequential_out_of_sample"
     return result
 

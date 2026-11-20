@@ -12,7 +12,9 @@ import shutil
 import subprocess
 import threading
 from collections import deque
-from typing import Any\n\nfrom version import APP_VERSION
+from typing import Any
+
+from version import APP_VERSION
 
 
 class MCPError(RuntimeError):

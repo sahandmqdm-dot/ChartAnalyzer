@@ -1,4 +1,4 @@
-from version import APP_VERSION\n\nimport sys
+import sys
 from pathlib import Path
 
 import pytest

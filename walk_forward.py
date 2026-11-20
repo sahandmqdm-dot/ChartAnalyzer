@@ -10,7 +10,9 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Optional
 
-import numpy as np\n\nfrom version import APP_VERSION
+import numpy as np
+
+from version import APP_VERSION
 
 from backtest_engine import run_backtest
 
@@ -343,7 +345,7 @@ def run_walk_forward(
         entry_edge_research=entry_edge_research,
     )
     return {
-        "version": "7.2.0",
+        "version": APP_VERSION,
         "evaluation_scope": "sequential_out_of_sample",
         "oos_ranges": [
             {"fold": f["fold"], "start_index": f["test_start_index"],

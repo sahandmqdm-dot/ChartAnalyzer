@@ -1,4 +1,6 @@
-from version import APP_VERSION\n\nimport json
+import json
+
+from version import APP_VERSION
 
 from strategy_validation import (
     build_evidence_record,
