@@ -1,8 +1,10 @@
 """Snapshot-backed local L2 order-book state for Binance Spot and USD-M."""
 from __future__ import annotations
 
+import asyncio
 import json
 import math
+import time
 from dataclasses import dataclass
 from urllib.request import Request, urlopen
 from typing import Any, Callable
@@ -151,5 +153,128 @@ def synchronize_buffered(book: LocalOrderBook, snapshot: DepthSnapshot,
     return applied
 
 
-__all__ = ["DepthSnapshot", "LocalOrderBook", "OrderBookError",
+
+class AsyncOrderBookCapture:
+    """Continuously buffer depth diffs and recover the L2 book from REST snapshots.
+
+    Raw events must be persisted by the caller before ingesting them here. Snapshot
+    fetches run off the event loop so the WebSocket reader can keep buffering diffs.
+    The book remains unreadable until a buffered diff bridges the snapshot sequence.
+    """
+
+    def __init__(
+        self,
+        spec: MarketSpec,
+        store: Any,
+        *,
+        snapshot_fetch: Callable[[], DepthSnapshot] | None = None,
+        max_buffered_events: int = 10000,
+        retry_min: float = 1.0,
+        retry_max: float = 30.0,
+    ) -> None:
+        if max_buffered_events < 1 or retry_min <= 0 or retry_max < retry_min:
+            raise ValueError("invalid order-book recovery limits")
+        self.spec = spec
+        self.store = store
+        self.book = LocalOrderBook(spec.market, spec.symbol.upper())
+        self.snapshot_fetch = snapshot_fetch or (lambda: fetch_depth_snapshot(spec))
+        self.max_buffered_events = max_buffered_events
+        self.retry_min = retry_min
+        self.retry_max = retry_max
+        self._retry_delay = retry_min
+        self._retry_at = 0.0
+        self._snapshot_task: asyncio.Task[DepthSnapshot] | None = None
+        self._buffer: list[dict[str, Any]] = []
+        self._closed = False
+
+    def _state(self, state: str, **details: Any) -> None:
+        self.store.append(
+            self.spec.market,
+            "orderbook_state",
+            {"state": state, "symbol": self.spec.symbol.upper(),
+             "last_update_id": self.book.sequence.last_update_id, **details},
+        )
+
+    def _start_snapshot(self) -> None:
+        if self._closed or self._snapshot_task is not None:
+            return
+        if time.monotonic() < self._retry_at:
+            return
+        self._snapshot_task = asyncio.create_task(
+            asyncio.to_thread(self.snapshot_fetch), name=f"depth-snapshot-{self.spec.market}"
+        )
+
+    def _persist_snapshot(self, snapshot: DepthSnapshot) -> None:
+        self.store.append(
+            self.spec.market,
+            "orderbook_snapshots",
+            {"symbol": snapshot.symbol, "lastUpdateId": snapshot.last_update_id,
+             "bids": snapshot.bids, "asks": snapshot.asks},
+        )
+
+    async def _consume_snapshot(self) -> bool:
+        task = self._snapshot_task
+        if task is None or not task.done():
+            return False
+        self._snapshot_task = None
+        try:
+            snapshot = task.result()
+            self._persist_snapshot(snapshot)
+            applied = synchronize_buffered(self.book, snapshot, self._buffer)
+        except (OrderBookError, SequenceGap, OSError, ValueError, RuntimeError) as exc:
+            self.book.sequence.valid = False
+            self._state("invalid", reason=type(exc).__name__, message=str(exc))
+            self._retry_at = time.monotonic() + self._retry_delay
+            self._retry_delay = min(self.retry_max, self._retry_delay * 2)
+            return False
+        except Exception as exc:  # noqa: BLE001  # snapshot adapters may expose transport-specific exceptions
+            self.book.sequence.valid = False
+            self._state("snapshot_error", reason=type(exc).__name__)
+            self._retry_at = time.monotonic() + self._retry_delay
+            self._retry_delay = min(self.retry_max, self._retry_delay * 2)
+            return False
+
+        self._buffer.clear()
+        self._retry_delay = self.retry_min
+        self._retry_at = 0.0
+        self._state("synchronized", applied_diffs=applied)
+        return True
+
+    async def ingest(self, event: dict[str, Any]) -> str:
+        """Ingest one already-persisted raw depth event; return current book status."""
+        if self._closed:
+            raise RuntimeError("order-book capture is closed")
+
+        if self.book.valid:
+            try:
+                applied = self.book.apply_diff(event)
+            except (SequenceGap, OrderBookError, KeyError, TypeError, ValueError) as exc:
+                self._buffer = [event]
+                self._state("sequence_gap", reason=type(exc).__name__, message=str(exc))
+                self._start_snapshot()
+                return "invalid"
+            return "applied" if applied else "stale"
+
+        self._buffer.append(event)
+        if len(self._buffer) > self.max_buffered_events:
+            self._buffer.clear()
+            self._state("buffer_overflow", max_buffered_events=self.max_buffered_events)
+            self._retry_at = max(self._retry_at, time.monotonic() + self._retry_delay)
+            self._retry_delay = min(self.retry_max, self._retry_delay * 2)
+
+        if self._snapshot_task is not None and self._snapshot_task.done():
+            await self._consume_snapshot()
+        self._start_snapshot()
+        return "synchronized" if self.book.valid else "buffering"
+
+    async def close(self) -> None:
+        """Cancel any outstanding snapshot task on disconnect or shutdown."""
+        self._closed = True
+        if self._snapshot_task is not None:
+            self._snapshot_task.cancel()
+            await asyncio.gather(self._snapshot_task, return_exceptions=True)
+            self._snapshot_task = None
+
+
+__all__ = ["AsyncOrderBookCapture", "DepthSnapshot", "LocalOrderBook", "OrderBookError",
            "fetch_depth_snapshot", "synchronize_buffered"]
