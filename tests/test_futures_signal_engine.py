@@ -1,4 +1,4 @@
-import pytest
+import pytest  # noqa: I001
 from datetime import UTC, datetime, timedelta
 
 from futures_signal_engine import analyze_futures_scenarios
