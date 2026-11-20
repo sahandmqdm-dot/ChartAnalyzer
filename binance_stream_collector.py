@@ -149,7 +149,7 @@ class HashChainJSONLStore:
     def _last_hash(path: Path) -> str | None:
         if not path.exists():
             return None
-        valid, count, head = HashChainJSONLStore.verify_file(path)
+        valid, _, head = HashChainJSONLStore.verify_file(path)
         if not valid:
             raise CollectorError(f"refusing to extend corrupt partition: {path.name}")
         return head
@@ -301,6 +301,7 @@ class BinanceDualMarketCollector:
                             if stop.is_set():
                                 break
                             received_at = utc_now()
+                            stream = "unknown"
                             try:
                                 envelope = json.loads(message)
                                 stream = str(envelope.get("stream", "unknown"))
@@ -324,7 +325,7 @@ class BinanceDualMarketCollector:
                                 self.store.append(spec.market, "collector_errors",
                                                   {"error": type(exc).__name__, "message": str(exc)},
                                                   received_at=received_at,
-                                                  stream_name=stream if "stream" in locals() else None,
+                                                  stream_name=stream,
                                                   session_id=session_id)
                     finally:
                         await capture.close()
