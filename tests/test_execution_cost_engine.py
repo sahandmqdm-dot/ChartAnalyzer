@@ -226,7 +226,8 @@ def test_execution_cost_result_is_registered_with_provenance_and_completeness(tm
     assert recorded["registry_status"] == "COMPLETED"
 
     summary = registry.summary()
-    metrics = summary["recent_experiments"][0]["metrics"]
+    metrics = next(item["metrics"] for item in summary["recent_experiments"]
+                   if item["experiment_id"] == "cost-exp-001")
     assert metrics["fee_schedule_provenance"]["fee_schedule_hash"]
     assert metrics["cost_model_complete"] is True
 
