@@ -112,6 +112,7 @@ def build_active_session_snapshot(
                             "session_records": item["session_records"],
                             "chain_head": item["chain_head"],
                             "session_sha256": item["session_sha256"],
+                            "session_chain_head": item["session_chain_head"],
                         }
                         for item in copied_manifest["source_files"]
                     ],
@@ -137,6 +138,106 @@ def build_active_session_snapshot(
     raise LiveSnapshotError(
         "could_not_create_consistent_active_snapshot"
     ) from last_error
+
+
+def verify_snapshot_source_prefixes(
+    data_root: str | Path, snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    """Verify feature hashes and the exact raw-partition prefixes used by a snapshot.
+
+    Live daily JSONL partitions may continue growing. The snapshot records the
+    record/byte boundary and digest at decision time, so later appends are allowed
+    while edits, truncation, or replacement of the consumed prefix are rejected.
+    """
+    if not isinstance(snapshot, dict):
+        raise TypeError("snapshot must be an object")
+    dataset_hash = snapshot.get("dataset_hash")
+    dataset_body = dict(snapshot)
+    dataset_body.pop("dataset_hash", None)
+    if dataset_hash != hashlib.sha256(_canonical(dataset_body)).hexdigest():
+        raise LiveSnapshotError("feature_dataset_hash_mismatch")
+    snapshots = snapshot.get("snapshots")
+    if not isinstance(snapshots, list) or not snapshots:
+        raise LiveSnapshotError("feature_snapshots_missing")
+    for feature in snapshots:
+        if not isinstance(feature, dict):
+            raise LiveSnapshotError("feature_snapshot_must_be_an_object")
+        feature_hash = feature.get("feature_hash")
+        feature_body = dict(feature)
+        feature_body.pop("feature_hash", None)
+        if feature_hash != hashlib.sha256(_canonical(feature_body)).hexdigest():
+            raise LiveSnapshotError("feature_snapshot_hash_mismatch")
+    source_snapshot = snapshot.get("source_snapshot")
+    if not isinstance(source_snapshot, dict):
+        raise LiveSnapshotError("source_snapshot_manifest_missing")
+    if source_snapshot.get("manifest_hash") != snapshot.get("manifest_hash"):
+        raise LiveSnapshotError("source_snapshot_manifest_identity_mismatch")
+
+    root = Path(data_root).expanduser().resolve()
+    verified = 0
+    verified_records = 0
+    for source in source_snapshot.get("source_files", []):
+        relative = Path(str(source.get("path") or ""))
+        path = (root / relative).resolve()
+        if root not in path.parents or not path.is_file():
+            raise LiveSnapshotError("snapshot_source_partition_missing_or_escaped")
+        expected_records = source.get("records")
+        expected_bytes = source.get("bytes")
+        if (
+            isinstance(expected_records, bool) or not isinstance(expected_records, int)
+            or expected_records < 1
+            or isinstance(expected_bytes, bool) or not isinstance(expected_bytes, int)
+            or expected_bytes < 1
+        ):
+            raise LiveSnapshotError("snapshot_source_partition_boundary_invalid")
+        prefix = bytearray()
+        count = 0
+        session_digest = hashlib.sha256()
+        session_count = 0
+        session_head = None
+        try:
+            with path.open("rb") as handle:
+                for raw_line in handle:
+                    prefix.extend(raw_line)
+                    if not raw_line.strip():
+                        continue
+                    record = json.loads(raw_line.decode("utf-8"))
+                    count += 1
+                    if record.get("session_id") == snapshot.get("session_id"):
+                        session_count += 1
+                        session_digest.update(raw_line)
+                        session_head = record.get("event_hash")
+                    if count == expected_records:
+                        break
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise LiveSnapshotError("snapshot_source_partition_unreadable") from exc
+        if count != expected_records or len(prefix) != expected_bytes:
+            raise LiveSnapshotError("snapshot_source_partition_prefix_truncated_or_changed")
+        if hashlib.sha256(prefix).hexdigest() != source.get("sha256"):
+            raise LiveSnapshotError("snapshot_source_partition_prefix_hash_mismatch")
+
+        with tempfile.TemporaryDirectory(prefix="chartanalyzer-prefix-verify-") as temporary:
+            prefix_path = Path(temporary) / "prefix.jsonl"
+            prefix_path.write_bytes(prefix)
+            valid, verified_count, chain_head = HashChainJSONLStore.verify_file(prefix_path)
+        if not valid or verified_count != expected_records or chain_head != source.get("chain_head"):
+            raise LiveSnapshotError("snapshot_source_partition_prefix_chain_mismatch")
+        if (
+            session_count != source.get("session_records")
+            or session_digest.hexdigest() != source.get("session_sha256")
+            or session_head != source.get("session_chain_head")
+        ):
+            raise LiveSnapshotError("snapshot_source_session_prefix_mismatch")
+        verified += 1
+        verified_records += expected_records
+    if not verified:
+        raise LiveSnapshotError("snapshot_source_partitions_missing")
+    return {
+        "valid": True,
+        "dataset_hash": dataset_hash,
+        "partitions_verified": verified,
+        "partition_prefix_records_verified": verified_records,
+    }
 
 
 def find_latest_active_session(
