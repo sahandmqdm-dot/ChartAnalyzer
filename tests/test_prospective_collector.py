@@ -181,10 +181,8 @@ def test_single_instance_lock_rejects_second_process_lock(tmp_path):
     from prospective_collector import _single_instance_lock
 
     lock_path = tmp_path / "collector.lock"
-    with _single_instance_lock(lock_path):
-        with pytest.raises(RuntimeError, match="already holds"):
-            with _single_instance_lock(lock_path):
-                pass
+    with _single_instance_lock(lock_path), pytest.raises(RuntimeError, match="already holds"):
+        _single_instance_lock(lock_path).__enter__()
 
 
 def test_run_forever_stops_after_cohort_is_evaluated(tmp_path):
