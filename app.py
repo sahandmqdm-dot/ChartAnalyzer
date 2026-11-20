@@ -2392,6 +2392,8 @@ def _prospective_require_clean_frame(frame, source, timeframe):
         raise ValueError("prospective holdout blocked: OHLCV integrity audit did not pass")
     if int(audit.get("gap_count", 0) or 0) != 0:
         raise ValueError("prospective holdout blocked: OHLCV contains missing candle intervals")
+    if int(audit.get("off_grid_interval_count", 0) or 0) != 0:
+        raise ValueError("prospective holdout blocked: OHLCV candle intervals are off the declared timeframe")
     return audit
 
 
