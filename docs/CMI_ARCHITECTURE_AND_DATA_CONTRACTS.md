@@ -143,7 +143,41 @@ Required:
 - `confidence`: nullable and method-specific; not interchangeable with forecast probability
 - `supersedes_evidence_id`: nullable link for corrected or superseding evidence
 
-### 5.3 EventRecord
+### 5.3 EntityRecord and EntityAlias
+
+Entity identity is distinct from venue-specific instrument identity. The existing
+`multi_asset.Instrument` and `MarketRegistry` remain authoritative for
+venue, symbol and market-type instrument mapping. CMI entity records may refer
+to an existing `instrument_id`, but must not create a competing instrument
+registry.
+
+Entity aliases are namespaced and may be provider-scoped and valid-time-bounded.
+Resolution is exact-match only in the initial implementation:
+- one eligible match: resolved;
+- multiple eligible matches: ambiguous, with all candidate IDs retained;
+- no eligible match: unresolved.
+Fuzzy matching may suggest candidates in a future research-only layer, but it
+must never silently merge entities or override canonical instrument identity.
+Ticker strings are not globally unique. Venue/provider namespace and market
+type must be retained where applicable.
+
+### 5.4 ClaimRecord
+
+A claim is a source-grounded statement, not an independent fact. It carries:
+- canonical subject entity ID, predicate and normalized object text/value;
+- modality: fact, opinion, hypothesis or forecast;
+- stance: supports, opposes, neutral or uncertain;
+- valid-time bounds and point-in-time `available_at`;
+- one or more canonical evidence IDs;
+- extraction method/version and optional method-specific confidence;
+- deterministic claim ID.
+
+A claim registry must reject unknown subjects, missing evidence, duplicate
+evidence links, invalid confidence, and any claim whose `available_at`
+precedes the availability of cited evidence. Extraction itself is a separate
+stage: schema validation must not be mistaken for semantic verification.
+
+### 5.5 EventRecord
 
 Required:
 - `event_id`, `event_type`, `entities`
@@ -155,7 +189,7 @@ Required:
 
 An event's impact must be evaluated relative to information available before the event, not with revised or post-event data inserted into the prior context.
 
-### 5.4 Claim and contradiction
+### 5.6 Claim and contradiction
 
 A claim is an attributed statement, not an unqualified fact:
 - subject/entity, predicate, object/value and unit
@@ -166,7 +200,7 @@ A claim is an attributed statement, not an unqualified fact:
 
 Contradictions must preserve both claims and explain the conflict dimension (value, time, entity mapping, definition, unit, scope or interpretation). Do not resolve a conflict by silently selecting the most popular or most recent source.
 
-### 5.5 Forecast linkage
+### 5.7 Forecast linkage
 
 CMI forecasts should reuse the existing `ForecastRecord` / `forecast_validation.py` journal wherever semantics match. New forecast types must carry:
 - instrument/entity scope and market context
@@ -283,7 +317,7 @@ Separate services/modules by responsibility: adapters, ingestion, identity resol
 | Stage | Deliverable | Exit condition |
 |---|---|---|
 | CMI-01 | This architecture RFC and canonical contracts | Responsibilities, temporal model, evidence semantics and safety boundaries reviewed |
-| CMI-02 | Source registry, identity mapping and evidence validation | Deterministic IDs, schema validation, provenance and point-in-time tests |
+| CMI-02 | Source registry, entity resolution, claim contracts and evidence validation | Deterministic IDs, exact/ambiguous identity outcomes, evidence-linked claims, provenance and point-in-time tests |
 | CMI-03 | Fundamental and macro adapters | Primary-source provenance, revisions/vintages, unit and availability-time tests |
 | CMI-04 | News/research ingestion and claim extraction | Every claim source-linked; prompt-injection and timestamp tests |
 | CMI-05 | Human sentiment and narrative lifecycle | Deduplication, language/model provenance and uncertainty tests |
