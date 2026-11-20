@@ -251,6 +251,7 @@ class BinanceDualMarketCollector:
         self.connector = connector
         self.snapshot_fetch = snapshot_fetch
         self.max_buffered_depth_events = max_buffered_depth_events
+        self._active_websockets: dict[str, Any] = {}
 
     def _connect(self, uri: str):
         factory = self.connector or connect
@@ -296,6 +297,7 @@ class BinanceDualMarketCollector:
                         max_buffered_events=self.max_buffered_depth_events,
                         session_id=session_id,
                     )
+                    self._active_websockets[spec.market] = websocket
                     try:
                         async for message in websocket:
                             if stop.is_set():
@@ -329,6 +331,7 @@ class BinanceDualMarketCollector:
                                                   session_id=session_id)
                     finally:
                         await capture.close()
+                        self._active_websockets.pop(spec.market, None)
                 ended_at = utc_now()
                 termination = "operator_stop" if stop.is_set() else "stream_ended"
                 self.store.append(spec.market, "session_manifest",
@@ -394,9 +397,20 @@ class BinanceDualMarketCollector:
                         raise error
                     raise CollectorError("market collection task stopped unexpectedly")
         finally:
+            if stop_task.done() and not stop_task.cancelled():
+                # Close active sockets so their iterators finish and sessions receive
+                # a normal operator-stop terminal record instead of a cancellation.
+                for websocket in list(self._active_websockets.values()):
+                    close = getattr(websocket, "close", None)
+                    if close is not None:
+                        try:
+                            await close()
+                        except Exception:  # noqa: BLE001  # best-effort transport shutdown
+                            pass
+            else:
+                for task in tasks:
+                    task.cancel()
             stop_task.cancel()
-            for task in tasks:
-                task.cancel()
             await asyncio.gather(*tasks, stop_task, return_exceptions=True)
             self.store.close()
 
