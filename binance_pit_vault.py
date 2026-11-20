@@ -14,7 +14,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from binance_orderbook import DepthSnapshot, LocalOrderBook, OrderBookError, synchronize_buffered
+from binance_orderbook import (
+    DepthSnapshot,
+    LocalOrderBook,
+    OrderBookError,
+    synchronize_buffered,
+)
 from binance_stream_collector import HashChainJSONLStore, SequenceGap
 
 
