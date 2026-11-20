@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 import datetime
 
 import pytest
