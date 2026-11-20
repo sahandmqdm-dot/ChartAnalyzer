@@ -83,6 +83,10 @@ def _provenance(forecast, **overrides):
         "session_closed": False,
         "book_sequence_gaps": 0,
         "book_buffer_overflows": 0,
+        "collector_sequence_gaps": 0,
+        "collector_buffer_overflows": 0,
+        "collector_dropped_events": 0,
+        "collector_snapshot_failures": 0,
     }
     value.update(overrides)
     return value
