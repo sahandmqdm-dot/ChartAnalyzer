@@ -349,7 +349,7 @@ def persist_snapshot_content_addressed(
     directory = root / "vault" / "features"
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"{dataset_hash}.json"
-    payload = _canonical(snapshot) + b"\\n"
+    payload = _canonical(snapshot) + b"\n"
     artifact_hash = hashlib.sha256(payload).hexdigest()
     try:
         fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -381,7 +381,7 @@ def write_snapshot(snapshot: dict[str, Any], output: str | Path) -> Path:
     """Atomically persist the snapshot without modifying source partitions."""
     destination = Path(output).expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    payload = _canonical(snapshot) + b"\\n"
+    payload = _canonical(snapshot) + b"\n"
     fd, temporary_name = tempfile.mkstemp(
         prefix=".live-pit-snapshot-", dir=destination.parent
     )
