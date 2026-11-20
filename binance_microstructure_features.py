@@ -421,10 +421,11 @@ def build_pit_microstructure_features(
                     collector_sequence_gaps += 1
                 elif state_name == "buffer_overflow":
                     collector_buffer_overflows += 1
+                if state_name in {"buffer_overflow", "buffer_discarded_on_close"}:
                     dropped = state_payload.get("dropped_events", 0)
                     if isinstance(dropped, int) and not isinstance(dropped, bool) and dropped >= 0:
                         collector_dropped_events += dropped
-                elif state_name in {"snapshot_error", "invalid"}:
+                if state_name in {"snapshot_error", "invalid"}:
                     collector_snapshot_failures += 1
             elif stream == "liquidations":
                 event = _liquidation_event(pending_record, str(manifest["symbol"]))
