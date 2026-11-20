@@ -19,7 +19,7 @@ SESSION = "capture-session-001"
 START = "2026-11-20T12:00:00+00:00"
 
 
-def create_session(root, *, first_update=101, final_update=102):
+def create_session(root, *, first_update=101, final_update=102, terminal_state="ended"):
     store = HashChainJSONLStore(root, fsync_each_event=False)
     store.append(
         "spot",
@@ -62,9 +62,9 @@ def create_session(root, *, first_update=101, final_update=102):
         "spot",
         "session_manifest",
         {
-            "state": "ended",
+            "state": terminal_state,
             "ended_at": "2026-11-20T12:01:00+00:00",
-            "termination": "stream_ended",
+            "termination": "stream_ended" if terminal_state == "ended" else "transport_error",
         },
         received_at="2026-11-20T12:01:00+00:00",
         session_id=SESSION,
@@ -105,6 +105,44 @@ def test_replay_fails_closed_when_snapshot_cannot_bridge_depth_sequence(tmp_path
     assert report["final_valid"] is False
     assert report["sequence_gaps"] == 1
     assert report["buffered_events"] == 1
+
+
+def test_manifest_declares_receive_time_as_point_in_time_availability(tmp_path):
+    create_session(tmp_path)
+    manifest = build_session_manifest(tmp_path, "spot", SESSION)
+    assert manifest["availability_contract"]["available_at_field"] == "received_at"
+    assert manifest["availability_contract"]["event_time_is_not_availability_time"] is True
+    assert manifest["event_time_quality"]["market_events"] == 1
+    assert manifest["event_time_quality"]["missing_or_invalid_event_time"] == 1
+    assert manifest["session_closed"] is True
+    assert manifest["session_complete"] is True
+
+
+def test_interrupted_capture_is_explicitly_incomplete_not_mislabelled_complete(tmp_path):
+    create_session(tmp_path, terminal_state="interrupted")
+    manifest = build_session_manifest(tmp_path, "spot", SESSION)
+    assert manifest["session_state"] == "interrupted"
+    assert manifest["session_complete"] is False
+    report = replay_orderbook_session(tmp_path, "spot", SESSION)
+    assert report["integrity_valid"] is True
+    assert report["data_quality_status"] == "incomplete_capture"
+    assert report["session_complete"] is False
+
+
+def test_active_session_cannot_be_sealed_or_replayed(tmp_path):
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    store.append(
+        "spot", "session_manifest",
+        {"state": "started", "streams": ["btcusdt@depth@100ms"], "started_at": START},
+        received_at=START, session_id=SESSION,
+    )
+    store.close()
+    manifest = build_session_manifest(tmp_path, "spot", SESSION)
+    assert manifest["session_state"] == "active"
+    with pytest.raises(PITVaultError, match="active capture session"):
+        persist_session_manifest(tmp_path, "spot", SESSION)
+    with pytest.raises(PITVaultError, match="active capture session"):
+        replay_orderbook_session(tmp_path, "spot", SESSION)
 
 
 def test_manifest_detects_source_file_tampering(tmp_path):
