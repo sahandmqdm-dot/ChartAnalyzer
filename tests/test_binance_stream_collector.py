@@ -274,6 +274,7 @@ def test_collector_reconnects_into_a_new_auditable_session(tmp_path):
         assert len(trades) == 2
         assert len({r["session_id"] for r in trades}) == 2
         assert len(terminals) == 2
+        assert all(r["payload"]["raw_frame_count"] == 1 for r in terminals)
         assert {r["payload"]["termination"] for r in terminals} == {
             "stream_ended", "operator_stop",
         }
@@ -354,4 +355,5 @@ def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
         if r["stream"] == "session_manifest" and r["payload"].get("state") == "ended"
     ]
     assert len(terminal) == 1
+    assert terminal[0]["payload"]["raw_frame_count"] == 2
     assert terminal[0]["payload"]["termination"] == "operator_stop"
