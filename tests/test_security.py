@@ -249,3 +249,76 @@ def test_failed_login_tracking_has_a_hard_memory_bound(monkeypatch):
     app._fail("198.51.100.1")
     assert len(app._FAILS) <= 4096
     assert "198.51.100.1" in app._FAILS
+
+
+def test_holdout_seal_reloads_and_verifies_server_side_identity(tmp_path, monkeypatch):
+    import research_provenance as provenance
+
+    frame = pd.DataFrame({
+        "time": [1_700_000_000.0, 1_700_003_600.0],
+        "open": [100.0, 101.0], "high": [102.0, 103.0],
+        "low": [99.0, 100.0], "close": [101.0, 102.0],
+        "volume": [10.0, 11.0],
+    })
+    vault_path = tmp_path / "holdout.json"
+    monkeypatch.setattr(app, "HOLDOUT_VAULT_PATH", str(vault_path))
+    monkeypatch.setattr(app, "RESEARCH_REGISTRY_PATH", str(tmp_path / "registry.db"))
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {
+        "valid": True, "gap_count": 0, "state": "PASS", "warnings": [], "errors": []})
+    monkeypatch.setattr(app, "conf", lambda: {})
+    monkeypatch.setattr(app, "_research_execution_config", lambda *args, **kwargs: {"frozen": True})
+    monkeypatch.setattr(provenance, "dataset_fingerprint", lambda *args, **kwargs: "server-dataset")
+    monkeypatch.setattr(provenance, "config_fingerprint", lambda *args, **kwargs: "server-config")
+    monkeypatch.setattr(ResearchRegistry, "latest_sample_end", lambda *args, **kwargs: 1_699_999_999.0)
+
+    payload = {"source": "csv", "symbol": "BTCUSDT", "timeframe": "1h",
+               "dataset_id": "server-dataset", "config_hash": "server-config"}
+    result = app.api_seal_holdout(payload)
+    assert result["status"] == "SEALED"
+    assert result["dataset_id"] == "server-dataset"
+    assert result["config_hash"] == "server-config"
+    assert result["previous_research_sample_end"] == 1_699_999_999.0
+    assert result["independent_temporal_sample"] is True
+
+
+def test_holdout_seal_rejects_unregistered_or_overlapping_prior_sample(tmp_path, monkeypatch):
+    frame = pd.DataFrame({
+        "time": [1_700_000_000.0, 1_700_003_600.0],
+        "open": [100.0, 101.0], "high": [102.0, 103.0],
+        "low": [99.0, 100.0], "close": [101.0, 102.0],
+        "volume": [10.0, 11.0],
+    })
+    monkeypatch.setattr(app, "HOLDOUT_VAULT_PATH", str(tmp_path / "holdout.json"))
+    monkeypatch.setattr(app, "RESEARCH_REGISTRY_PATH", str(tmp_path / "registry.db"))
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {
+        "valid": True, "gap_count": 0, "state": "PASS", "warnings": [], "errors": []})
+    monkeypatch.setattr(ResearchRegistry, "latest_sample_end", lambda *args, **kwargs: None)
+    with pytest.raises(app.HTTPException, match="prior research sample"):
+        app.api_seal_holdout({"source": "csv", "symbol": "BTCUSDT", "timeframe": "1h"})
+
+
+def test_holdout_seal_rejects_caller_supplied_fingerprint_mismatch(tmp_path, monkeypatch):
+    import research_provenance as provenance
+
+    frame = pd.DataFrame({
+        "time": [1_700_000_000.0, 1_700_003_600.0],
+        "open": [100.0, 101.0], "high": [102.0, 103.0],
+        "low": [99.0, 100.0], "close": [101.0, 102.0],
+        "volume": [10.0, 11.0],
+    })
+    monkeypatch.setattr(app, "HOLDOUT_VAULT_PATH", str(tmp_path / "holdout.json"))
+    monkeypatch.setattr(app, "RESEARCH_REGISTRY_PATH", str(tmp_path / "registry.db"))
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {
+        "valid": True, "gap_count": 0, "state": "PASS", "warnings": [], "errors": []})
+    monkeypatch.setattr(app, "conf", lambda: {})
+    monkeypatch.setattr(app, "_research_execution_config", lambda *args, **kwargs: {"frozen": True})
+    monkeypatch.setattr(provenance, "dataset_fingerprint", lambda *args, **kwargs: "actual-dataset")
+    monkeypatch.setattr(provenance, "config_fingerprint", lambda *args, **kwargs: "actual-config")
+    monkeypatch.setattr(ResearchRegistry, "latest_sample_end", lambda *args, **kwargs: 1_699_999_999.0)
+    with pytest.raises(app.HTTPException, match="dataset fingerprint"):
+        app.api_seal_holdout({"source": "csv", "symbol": "BTCUSDT", "timeframe": "1h",
+                              "dataset_id": "forged-dataset", "config_hash": "actual-config"})
+    assert not (tmp_path / "holdout.json").exists()
