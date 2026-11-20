@@ -1,3 +1,5 @@
+from version import APP_VERSION
+
 from trade_intelligence import analyze_trade_intelligence
 
 
