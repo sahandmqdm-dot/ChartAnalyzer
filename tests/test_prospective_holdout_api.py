@@ -150,3 +150,42 @@ def test_prospective_cohort_rejects_unsupported_csv_source(monkeypatch, tmp_path
     payload["source"] = "csv"
     with pytest.raises(app.HTTPException):
         app.api_prospective_holdout_register(payload)
+
+
+def test_tick_fails_closed_when_forecast_input_has_integrity_gaps(monkeypatch, tmp_path):
+    clock = {"now": BASE_NOW}
+    setup_app(monkeypatch, tmp_path, clock)
+    payload = registration_payload()
+    app.api_prospective_holdout_register(payload)
+    clock["now"] = BASE_NOW + datetime.timedelta(minutes=2)
+    last_open = BASE_NOW.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
+    frame = make_frame(last_open)
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {
+        "valid": True, "gap_count": 2, "state": "WARN"})
+    with pytest.raises(app.HTTPException, match="missing candle intervals"):
+        app.api_prospective_holdout_tick(payload)
+    status = app.api_prospective_holdout_status(payload["cohort_id"])
+    assert status["cohort"]["forecast_count"] == 0
+
+
+def test_tick_does_not_resolve_outcome_from_invalid_ohlcv(monkeypatch, tmp_path):
+    clock = {"now": BASE_NOW}
+    setup_app(monkeypatch, tmp_path, clock)
+    payload = registration_payload()
+    app.api_prospective_holdout_register(payload)
+    clock["now"] = BASE_NOW + datetime.timedelta(minutes=2)
+    first_last_open = BASE_NOW.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
+    frame = make_frame(first_last_open)
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
+    first = app.api_prospective_holdout_tick(payload)
+    target = datetime.datetime.fromisoformat(first["issued_forecast"]["target_at"])
+    clock["now"] = target + datetime.timedelta(minutes=2)
+    matured = make_frame(target - datetime.timedelta(hours=1))
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: matured)
+    monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {
+        "valid": False, "gap_count": 0, "state": "FAIL"})
+    with pytest.raises(app.HTTPException, match="integrity audit did not pass"):
+        app.api_prospective_holdout_tick(payload)
+    status = app.api_prospective_holdout_status(payload["cohort_id"])
+    assert status["cohort"]["resolved_count"] == 0
