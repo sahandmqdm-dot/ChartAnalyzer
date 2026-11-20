@@ -33,7 +33,7 @@ Funding is not used as a directional vote.
 
 ## Important limitations
 
-The initial engine does not yet consume L2 order-book imbalance, tick trades,
+The directional engine does not consume L2 order-book imbalance, tick trades,
 CVD, liquidation streams, mark/index premium, funding accrual over the holding
 horizon, contract-specific maintenance tiers, or executable bid/ask prices.
 It does not claim calibrated probabilities, positive expectancy, OOS validity,
@@ -62,3 +62,32 @@ value have been validated. No live orders are placed.
 In the dashboard, the two ATR scenarios are explicitly labeled WATCH ONLY.
 The heuristic candidate is not a calibrated probability. The decision remains
 NO TRADE and deployment authorization remains false.
+
+
+## Live raw event capture and L2 reconstruction
+
+Run the local-first public stream collector from the repository root:
+
+```powershell
+python binance_stream_collector.py --data-dir .\data\binance_raw --symbol BTCUSDT
+```
+
+The collector captures Spot and USD-M depth diffs, trades and USD-M force-order
+liquidation messages. Each raw payload is hash-chained before downstream parsing,
+with provider event time, trade time when supplied, local receive time, full
+combined-stream name, native sequence/trade identifiers and connection session ID.
+
+For each market connection, the collector buffers depth diffs while fetching a
+REST depth snapshot asynchronously. It reconstructs the local L2 book only after
+a buffered diff bridges the snapshot update ID. A sequence gap invalidates the
+book and starts snapshot recovery; reconnects start a new synchronization cycle.
+Snapshot payloads and synchronization state transitions are also persisted in
+the hash-chained store. A bounded buffer prevents unbounded memory growth during
+extended snapshot/network failures.
+
+A valid in-memory book is a point-in-time reconstruction for that process/session,
+not an exchange-certified archive. The raw stream and snapshot files are the
+replay evidence. The collector does not yet perform a complete independent
+offline replay audit or use reconstructed book features in the directional
+candidate score. Do not treat a displayed or reconstructed imbalance as a
+validated predictive feature.
