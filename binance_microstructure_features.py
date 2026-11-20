@@ -19,6 +19,7 @@ from typing import Any
 from binance_pit_vault import (
     PITVaultError,
     build_session_manifest,
+    iter_session_records,
     verify_session_manifest,
 )
 
@@ -55,35 +56,18 @@ def _decimal(value: Any, field: str) -> Decimal:
 
 def _load_verified_session(
     data_root: str | Path, market: str, session_id: str, *, allow_incomplete: bool
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    root = Path(data_root).expanduser().resolve()
-    manifest = build_session_manifest(root, market, session_id)
+) -> dict[str, Any]:
+    """Build and verify the session manifest without materializing raw events."""
+    manifest = build_session_manifest(data_root, market, session_id)
     if not manifest["session_closed"]:
         raise PITFeatureError("active_session_not_eligible_for_features")
     if not manifest["session_complete"] and not allow_incomplete:
         raise PITFeatureError("incomplete_capture_not_eligible_for_research_features")
     try:
-        verify_session_manifest(root, manifest)
+        verify_session_manifest(data_root, manifest)
     except PITVaultError as exc:
         raise PITFeatureError("session_integrity_verification_failed") from exc
-
-    records: list[dict[str, Any]] = []
-    for source in manifest["source_files"]:
-        path = (root / source["path"]).resolve()
-        if root not in path.parents:
-            raise PITFeatureError("source_path_escapes_data_root")
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                record = json.loads(line)
-                if record.get("session_id") == session_id:
-                    records.append(record)
-    records.sort(key=lambda item: (
-        str(item.get("received_at", "")),
-        str(item.get("stream", "")),
-    ))
-    return manifest, records
+    return manifest
 
 
 class _ReferenceBook:
@@ -347,7 +331,7 @@ def build_pit_microstructure_features(
     if book_depth < 1:
         raise ValueError("book_depth must be >= 1")
 
-    manifest, records = _load_verified_session(
+    manifest = _load_verified_session(
         data_root, market, session_id, allow_incomplete=allow_incomplete
     )
     decisions = [_timestamp(value, "decision_time") for value in decision_times]
@@ -358,69 +342,53 @@ def build_pit_microstructure_features(
     if any(value < started or value > ended for value in decisions):
         raise PITFeatureError("decision_time_outside_capture_session")
 
-    l2_records = sorted(
-        (r for r in records if r.get("stream") in {"orderbook_depth", "orderbook_snapshots"}),
-        key=lambda r: (
-            str(r.get("received_at", "")),
-            0 if r.get("stream") == "orderbook_depth" else 1,
-        ),
-    )
-    trades = [
-        event for record in records
-        if record.get("stream") == "trades"
-        if (event := _trade_event(record)) is not None
-    ]
-    liquidations = [
-        event for record in records
-        if record.get("stream") == "liquidations"
-        if (event := _liquidation_event(record)) is not None
-    ]
-    trades.sort(key=lambda event: event[0])
-    liquidations.sort(key=lambda event: event[0])
-
     book = _ReferenceBook(str(manifest["symbol"]))
     window_state = {seconds: _new_window_state() for seconds in sorted(set(window_seconds))}
-    l2_index = trade_index = liquidation_index = 0
     snapshots: list[dict[str, Any]] = []
-    processed_counts = {"orderbook_depth": 0, "orderbook_snapshots": 0, "trades": 0, "liquidations": 0}
+    processed_counts = {
+        "orderbook_depth": 0, "orderbook_snapshots": 0,
+        "trades": 0, "liquidations": 0,
+    }
     max_received: datetime | None = None
+    record_iterator = iter_session_records(data_root, manifest, session_id)
+    pending_record = next(record_iterator, None)
 
     for decision in decisions:
-        while l2_index < len(l2_records):
-            record = l2_records[l2_index]
-            received = _timestamp(record.get("received_at"), "received_at")
+        while pending_record is not None:
+            received = _timestamp(pending_record.get("received_at"), "received_at")
             if received > decision:
                 break
-            if record.get("stream") == "orderbook_depth":
-                book.ingest_depth(record.get("payload", {}))
+            stream = pending_record.get("stream")
+            if stream == "orderbook_depth":
+                book.ingest_depth(pending_record.get("payload", {}))
                 processed_counts["orderbook_depth"] += 1
-            else:
-                book.ingest_snapshot(record.get("payload", {}))
+                max_received = max(max_received, received) if max_received else received
+            elif stream == "orderbook_snapshots":
+                book.ingest_snapshot(pending_record.get("payload", {}))
                 processed_counts["orderbook_snapshots"] += 1
-            max_received = max(max_received, received) if max_received else received
-            l2_index += 1
-
-        while trade_index < len(trades) and trades[trade_index][0] <= decision:
-            event = trades[trade_index]
-            for state in window_state.values():
-                _add_trade(state, event)
-            max_received = max(max_received, event[0]) if max_received else event[0]
-            processed_counts["trades"] += 1
-            trade_index += 1
-
-        while liquidation_index < len(liquidations) and liquidations[liquidation_index][0] <= decision:
-            received, price, quantity, side = liquidations[liquidation_index]
-            notional = price * quantity
-            for state in window_state.values():
-                state["liquidations"].append((received, notional, side))
-                state["liquidation_count"] += 1
-                if side == "SELL":
-                    state["long_liquidation_notional"] += notional
-                else:
-                    state["short_liquidation_notional"] += notional
-            max_received = max(max_received, received) if max_received else received
-            processed_counts["liquidations"] += 1
-            liquidation_index += 1
+                max_received = max(max_received, received) if max_received else received
+            elif stream == "trades":
+                event = _trade_event(pending_record)
+                if event is not None:
+                    for state in window_state.values():
+                        _add_trade(state, event)
+                    max_received = max(max_received, received) if max_received else received
+                    processed_counts["trades"] += 1
+            elif stream == "liquidations":
+                event = _liquidation_event(pending_record)
+                if event is not None:
+                    event_received, price, quantity, side = event
+                    notional = price * quantity
+                    for state in window_state.values():
+                        state["liquidations"].append((event_received, notional, side))
+                        state["liquidation_count"] += 1
+                        if side == "SELL":
+                            state["long_liquidation_notional"] += notional
+                        else:
+                            state["short_liquidation_notional"] += notional
+                    max_received = max(max_received, event_received) if max_received else event_received
+                    processed_counts["liquidations"] += 1
+            pending_record = next(record_iterator, None)
 
         windows: dict[str, Any] = {}
         for seconds, state in window_state.items():
