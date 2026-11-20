@@ -157,3 +157,11 @@ def test_venue_instrument_resolution_fails_closed_without_registry_match():
         venue="binance", symbol="BTCUSDT", market_type="spot"
     )
     assert result.status is ResolutionStatus.UNRESOLVED
+
+
+def test_alias_key_collision_with_changed_validity_is_rejected_atomically():
+    resolver = EntityResolver([entity()], [alias("crypto:BTC", "BTC")])
+    changed = alias("crypto:BTC", "BTC", valid_to=T0 + timedelta(days=5))
+    with pytest.raises(IdentityContractError, match="alias key collision"):
+        resolver.register_many([], [changed])
+    assert resolver.resolve("BTC", namespace="ticker", as_of=T0).status is ResolutionStatus.RESOLVED
