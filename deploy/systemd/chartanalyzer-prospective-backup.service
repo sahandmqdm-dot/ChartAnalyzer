@@ -1,0 +1,19 @@
+[Unit]
+Description=Create verified ChartAnalyzer prospective holdout backups
+After=chartanalyzer.service
+
+[Service]
+Type=oneshot
+User=chartanalyzer
+Group=chartanalyzer
+WorkingDirectory=/opt/chartanalyzer
+Environment=PYTHONUNBUFFERED=1
+Environment=CHARTANALYZER_DATA_DIR=/var/lib/chartanalyzer/prospective_holdouts
+Environment=CHARTANALYZER_BACKUP_DIR=/var/backups/chartanalyzer/prospective_holdouts
+ExecStart=/opt/chartanalyzer/.venv/bin/python /opt/chartanalyzer/prospective_backup.py --retention-days 30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/backups/chartanalyzer
+UMask=0077

@@ -176,3 +176,28 @@ sudo cat /var/lib/chartanalyzer/collector-state.json
 این استقرار به معنای شروع خودکار 42 روز نیست. شمارش فقط بعد از ثبت موفق Cohort با زمان شروع آینده و ثبت اولین پیش‌بینی معتبر آغاز می‌شود. از آن تاریخ، هیچ کد، وابستگی، تنظیمات مدل، provider، symbol، timeframe، horizon یا history window را تغییر ندهید.
 
 این سیستم پیش‌بینی توزیعی را ارزیابی می‌کند؛ سودآوری استراتژی یا کیفیت اجرای سفارش را اثبات نمی‌کند. API عمداً روی loopback می‌ماند و دسترسی مدیریتی از SSH tunnel انجام می‌شود.
+
+
+## پشتیبان‌گیری خودکار روزانه
+
+برای محافظت از داده‌های آزمون 42 روزه، مخزن شامل اسکریپت Backup سازگار با SQLite و Timer روزانه systemd است. این روش از SQLite Online Backup API استفاده می‌کند و با WAL سازگار است؛ فایل دیتابیس فعال را به‌صورت خام کپی نمی‌کند.
+
+پس از نصب سرویس API و ایجاد مسیر Backup:
+
+~~~bash
+sudo install -d -o chartanalyzer -g chartanalyzer -m 0700 /var/backups/chartanalyzer/prospective_holdouts
+sudo install -o root -g root -m 0644 deploy/systemd/chartanalyzer-prospective-backup.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 deploy/systemd/chartanalyzer-prospective-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now chartanalyzer-prospective-backup.timer
+~~~
+
+اجرای آزمایشی دستی:
+
+~~~bash
+sudo systemctl start chartanalyzer-prospective-backup.service
+sudo journalctl -u chartanalyzer-prospective-backup.service -n 50 --no-pager
+sudo ls -lh /var/backups/chartanalyzer/prospective_holdouts
+~~~
+
+هر Backup با `PRAGMA integrity_check` بررسی می‌شود و فایل Manifest شامل SHA-256، زمان ایجاد و اندازه دارد. نگهداری پیش‌فرض 30 روز است. یک نسخه خارج از VPS نیز نگه دارید؛ Backup روی همان دیسک جایگزین Disaster Recovery نیست.
