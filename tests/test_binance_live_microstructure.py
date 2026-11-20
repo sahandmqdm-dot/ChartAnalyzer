@@ -8,6 +8,7 @@ from binance_live_microstructure import (
     build_active_session_snapshot,
     find_latest_active_session,
     persist_snapshot_content_addressed,
+    verify_snapshot_artifact,
     verify_snapshot_source_prefixes,
     write_snapshot,
 )
@@ -105,6 +106,11 @@ def test_snapshot_artifact_is_content_addressed_and_never_overwritten(tmp_path):
     artifact = tmp_path / "raw" / first["artifact_path"]
     assert artifact.is_file()
     assert len(first["artifact_sha256"]) == 64
+    audit = verify_snapshot_artifact(
+        tmp_path / "raw", first["artifact_path"], first["artifact_sha256"]
+    )
+    assert audit["valid"] is True
+    assert audit["partitions_verified"] == 3
 
 
 
