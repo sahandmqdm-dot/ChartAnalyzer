@@ -56,7 +56,7 @@ def _net_after_costs(gross_asset_return: float, exposure: float, fee: float,
         funding_base = 1.0 - exposure * funding_per_bar
         if funding_base <= 0:
             return None
-        funding_factor = funding_base ** max(0, int(bars))
+        funding_factor = funding_base ** max(0, bars)
         factor = gross_factor * fee_factor * spread_factor * funding_factor
         return factor - 1.0 if math.isfinite(factor) else None
     except Exception:
