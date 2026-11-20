@@ -14,7 +14,7 @@ The required automated test and security jobs passed on the validated source tre
 | Check | Result |
 |---|---|
 | Python 3.12 test suite | **489 passed** |
-| Python 3.13 test suite | **488 passed** |
+| Python 3.13 test suite | **489 passed** |
 | Coverage | **83%** on both Python versions |
 | Python compilation | Passed (`python -m compileall -q .`) |
 | Dependency audit | `pip-audit`: no known vulnerabilities found |
