@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import heapq
 import json
 import os
 import tempfile
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 
 from binance_orderbook import (
@@ -43,119 +45,172 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _read_partition(path: Path) -> list[dict[str, Any]]:
-    valid, _, error = HashChainJSONLStore.verify_file(path)
-    if not valid:
-        raise PITVaultError(f"hash chain failed for {path.name}: {error}")
-    records = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                records.append(json.loads(line))
-    return records
+def _record_sort_key(record: dict[str, Any]) -> tuple[datetime, int, str]:
+    try:
+        received = datetime.fromisoformat(str(record["received_at"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PITVaultError("invalid_or_missing_received_at") from exc
+    if received.tzinfo is None:
+        raise PITVaultError("timezone_required_received_at")
+    stream = str(record.get("stream", "unknown"))
+    priority = 0 if stream == "orderbook_depth" else 1
+    return received.astimezone(UTC), priority, stream
 
 
-def _session_partitions(
+def _session_source_files(
     root: Path, market: str, session_id: str
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> list[dict[str, Any]]:
+    """Scan partitions with bounded memory and bind only files containing this session."""
     market_root = (root / market).resolve()
-    if not market_root.is_dir():
+    if root not in market_root.parents or not market_root.is_dir():
         raise PITVaultError(f"market partition does not exist: {market}")
-    records: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []
     for path in sorted(market_root.rglob("*.jsonl")):
-        partition_records = _read_partition(path)
-        selected = [r for r in partition_records if r.get("session_id") == session_id]
-        if not selected:
+        record_count = 0
+        session_count = 0
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    record_count += 1
+                    if record.get("session_id") == session_id:
+                        session_count += 1
+        except (OSError, ValueError, TypeError) as exc:
+            raise PITVaultError(f"unreadable_or_malformed_partition: {path.name}") from exc
+        if not session_count:
             continue
+        valid, verified_count, head = HashChainJSONLStore.verify_file(path)
+        if not valid or verified_count != record_count:
+            raise PITVaultError(f"hash chain failed for {path.name}")
         relative = path.relative_to(root).as_posix()
         files.append({
             "path": relative,
             "sha256": _sha256_file(path),
             "bytes": path.stat().st_size,
-            "records": len(partition_records),
-            "session_records": len(selected),
-            "chain_head": partition_records[-1].get("event_hash") if partition_records else None,
+            "records": verified_count,
+            "session_records": session_count,
+            "chain_head": head,
         })
-        records.extend(selected)
-    if not records:
+    if not files:
         raise PITVaultError(f"no records found for session {session_id}")
-    records.sort(key=lambda r: (str(r.get("received_at", "")), str(r.get("stream", ""))))
-    return records, files
+    return files
+
+
+def iter_session_records(
+    data_root: str | Path,
+    manifest: dict[str, Any],
+    session_id: str,
+) -> Iterator[dict[str, Any]]:
+    """Merge session records chronologically without loading full partitions into RAM.
+
+    The caller must first build and verify the manifest. Each source partition is
+    checked for nondecreasing receive time before it participates in the merge.
+    """
+    root = Path(data_root).expanduser().resolve()
+    iterators = []
+    for source in manifest.get("source_files", []):
+        path = (root / source["path"]).resolve()
+        if root not in path.parents:
+            raise PITVaultError("manifest source path escapes data root")
+
+        def partition_records(source_path: Path = path) -> Iterator[dict[str, Any]]:
+            previous_key = None
+            try:
+                with source_path.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if not line.strip():
+                            continue
+                        record = json.loads(line)
+                        if record.get("session_id") != session_id:
+                            continue
+                        key = _record_sort_key(record)
+                        if previous_key is not None and key < previous_key:
+                            raise PITVaultError(
+                                f"non_monotonic_received_at_in_partition: {source_path.name}"
+                            )
+                        previous_key = key
+                        yield record
+            except (OSError, ValueError, TypeError) as exc:
+                if isinstance(exc, PITVaultError):
+                    raise
+                raise PITVaultError(
+                    f"unreadable_or_malformed_partition: {source_path.name}"
+                ) from exc
+
+        iterators.append(partition_records())
+    yield from heapq.merge(*iterators, key=_record_sort_key)
 
 
 def build_session_manifest(
     data_root: str | Path, market: str, session_id: str
 ) -> dict[str, Any]:
-    """Create a deterministic content-addressed manifest for one capture session."""
+    """Create a deterministic content-addressed manifest using bounded-memory scans."""
     if market not in {"spot", "usdm"}:
         raise ValueError("market must be spot or usdm")
     if not session_id or not isinstance(session_id, str):
         raise ValueError("session_id is required")
 
     root = Path(data_root).expanduser().resolve()
-    records, files = _session_partitions(root, market, session_id)
-    manifests = [
-        r.get("payload", {}) for r in records
-        if r.get("stream") == "session_manifest"
-    ]
-    started = next((m for m in manifests if m.get("state") == "started"), None)
-    if started is None:
-        raise PITVaultError("session start manifest is missing")
-
+    files = _session_source_files(root, market, session_id)
     event_counts: dict[str, int] = {}
-    for record in records:
-        stream = str(record.get("stream", "unknown"))
-        event_counts[stream] = event_counts.get(stream, 0) + 1
-
-    streams = started.get("streams", [])
-    symbols = sorted({
-        str(stream).split("@", 1)[0].upper()
-        for stream in streams if isinstance(stream, str) and "@" in stream
-    })
-    terminal = next(
-        (m for m in reversed(manifests)
-         if m.get("state") in {"ended", "interrupted"}), None
-    )
-    market_events = [
-        r for r in records
-        if r.get("stream") in {"trades", "orderbook_depth", "liquidations"}
-    ]
+    started = None
+    terminal = None
+    streams: list[str] = []
+    symbols: set[str] = set()
+    total_records = 0
+    market_events = 0
     missing_event_time = 0
     event_after_receive = 0
-    received_times: list[datetime] = []
-    for record in records:
-        received_raw = record.get("received_at")
-        try:
-            received_dt = datetime.fromisoformat(str(received_raw))
-            if received_dt.tzinfo is None:
-                raise ValueError("naive received_at")
-            received_times.append(received_dt)
-        except (TypeError, ValueError):
-            raise PITVaultError("invalid_or_timezone_naive_received_at")
-    for record in market_events:
-        event_raw = record.get("event_time")
-        if not event_raw:
-            missing_event_time += 1
-            continue
-        try:
-            event_dt = datetime.fromisoformat(str(event_raw))
-            received_dt = datetime.fromisoformat(
-                str(record["received_at"])
-            )
-            if event_dt.tzinfo is None or received_dt.tzinfo is None:
-                raise ValueError("naive timestamp")
-            if event_dt > received_dt:
-                event_after_receive += 1
-        except (KeyError, TypeError, ValueError):
-            missing_event_time += 1
+    first_received = None
+    last_received = None
+
+    for record in iter_session_records(root, {"source_files": files}, session_id):
+        total_records += 1
+        stream = str(record.get("stream", "unknown"))
+        event_counts[stream] = event_counts.get(stream, 0) + 1
+        received = _record_sort_key(record)[0]
+        if first_received is None:
+            first_received = received
+        last_received = received
+
+        if stream == "session_manifest":
+            payload = record.get("payload", {})
+            if payload.get("state") == "started" and started is None:
+                started = payload
+                streams = list(payload.get("streams", []))
+                symbols = {
+                    str(item).split("@", 1)[0].upper()
+                    for item in streams if isinstance(item, str) and "@" in item
+                }
+            elif payload.get("state") in {"ended", "interrupted"}:
+                terminal = payload
+
+        if stream in {"trades", "orderbook_depth", "liquidations"}:
+            market_events += 1
+            event_raw = record.get("event_time")
+            if not event_raw:
+                missing_event_time += 1
+            else:
+                try:
+                    event_dt = datetime.fromisoformat(str(event_raw))
+                    if event_dt.tzinfo is None:
+                        raise ValueError("naive event timestamp")
+                    if event_dt.astimezone(UTC) > received:
+                        event_after_receive += 1
+                except (TypeError, ValueError):
+                    missing_event_time += 1
+
+    if started is None:
+        raise PITVaultError("session start manifest is missing")
 
     session_state = terminal.get("state") if terminal else "active"
     body = {
         "schema": "chartanalyzer_pit_session_manifest_v1",
         "market": market,
         "session_id": session_id,
-        "symbol": symbols[0] if len(symbols) == 1 else None,
+        "symbol": next(iter(symbols)) if len(symbols) == 1 else None,
         "started_at": started.get("started_at"),
         "ended_at": terminal.get("ended_at") if terminal else None,
         "session_state": session_state,
@@ -164,20 +219,20 @@ def build_session_manifest(
         "termination": terminal.get("termination") if terminal else None,
         "streams": streams,
         "event_counts": event_counts,
-        "total_session_records": len(records),
+        "total_session_records": total_records,
         "availability_contract": {
             "available_at_field": "received_at",
             "rule": "An event is unavailable to the strategy before local receipt time.",
             "event_time_is_not_availability_time": True,
         },
         "event_time_quality": {
-            "market_events": len(market_events),
+            "market_events": market_events,
             "missing_or_invalid_event_time": missing_event_time,
             "event_time_after_receive_time": event_after_receive,
         },
         "received_time_range": {
-            "first": min(received_times).isoformat() if received_times else None,
-            "last": max(received_times).isoformat() if received_times else None,
+            "first": first_received.isoformat() if first_received else None,
+            "last": last_received.isoformat() if last_received else None,
         },
         "source_files": files,
     }
@@ -257,7 +312,6 @@ def replay_orderbook_session(
         raise PITVaultError("cannot replay an active capture session")
     verify_session_manifest(data_root, manifest)
     root = Path(data_root).expanduser().resolve()
-    records, _ = _session_partitions(root, market, session_id)
     symbol = manifest.get("symbol")
     if not symbol:
         raise PITVaultError("session must identify exactly one symbol")
@@ -267,14 +321,9 @@ def replay_orderbook_session(
     depth_events = snapshots = applied = stale = gaps = 0
     replay_errors: list[str] = []
 
-    ordered = sorted(
-        (r for r in records if r.get("stream") in {"orderbook_depth", "orderbook_snapshots"}),
-        key=lambda r: (
-            str(r.get("received_at", "")),
-            0 if r.get("stream") == "orderbook_depth" else 1,
-        ),
-    )
-    for record in ordered:
+    for record in iter_session_records(root, manifest, session_id):
+        if record.get("stream") not in {"orderbook_depth", "orderbook_snapshots"}:
+            continue
         payload = record.get("payload", {})
         if record.get("stream") == "orderbook_depth":
             depth_events += 1
@@ -310,7 +359,14 @@ def replay_orderbook_session(
             gaps += 1
             replay_errors.append(type(exc).__name__)
 
-    reference = _reference_replay_records(ordered, market, symbol)
+    reference = _reference_replay_records(
+        (
+            record for record in iter_session_records(root, manifest, session_id)
+            if record.get("stream") in {"orderbook_depth", "orderbook_snapshots"}
+        ),
+        market,
+        symbol,
+    )
     comparison_fields = (
         "depth_events", "snapshots", "applied_diffs", "stale_diffs",
         "sequence_gaps", "final_valid", "final_update_id", "buffered_events",
@@ -510,15 +566,10 @@ def reference_replay_orderbook_session(
     verify_session_manifest(data_root, manifest)
     if not manifest.get("symbol"):
         raise PITVaultError("session must identify exactly one symbol")
-    records, _ = _session_partitions(
-        Path(data_root).expanduser().resolve(), market, session_id
-    )
-    ordered = sorted(
-        (r for r in records if r.get("stream") in {"orderbook_depth", "orderbook_snapshots"}),
-        key=lambda r: (
-            str(r.get("received_at", "")),
-            0 if r.get("stream") == "orderbook_depth" else 1,
-        ),
+    root = Path(data_root).expanduser().resolve()
+    ordered = (
+        record for record in iter_session_records(root, manifest, session_id)
+        if record.get("stream") in {"orderbook_depth", "orderbook_snapshots"}
     )
     result = _reference_replay_records(ordered, market, manifest["symbol"])
     return {
@@ -536,6 +587,7 @@ def reference_replay_orderbook_session(
 __all__ = [
     "PITVaultError",
     "build_session_manifest",
+    "iter_session_records",
     "persist_session_manifest",
     "reference_replay_orderbook_session",
     "replay_orderbook_session",
