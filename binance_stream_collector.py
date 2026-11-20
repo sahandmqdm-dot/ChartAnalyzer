@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import time
 import urllib.parse
 from collections import deque
@@ -324,11 +325,31 @@ class BinanceDualMarketCollector:
                                 return None
                             index = min(len(ordered) - 1, int((len(ordered) - 1) * fraction))
                             return round(ordered[index], 3)
+                        try:
+                            disk_usage = shutil.disk_usage(self.store.root)
+                            disk = {
+                                "total_bytes": disk_usage.total,
+                                "used_bytes": disk_usage.used,
+                                "free_bytes": disk_usage.free,
+                                "used_percent": round(
+                                    disk_usage.used / disk_usage.total * 100.0, 2
+                                ) if disk_usage.total else None,
+                            }
+                        except OSError:
+                            disk = None
+                        if disk and (
+                            disk["free_bytes"] < 5 * 1024**3
+                            or (disk["used_percent"] is not None and disk["used_percent"] >= 90.0)
+                        ):
+                            logging.getLogger(__name__).warning(
+                                "Low collector disk capacity for %s: %s", spec.market, disk
+                            )
                         self.store.append(
                             spec.market,
                             "collector_health",
                             {
                                 "state": state,
+                                "disk": disk,
                                 "raw_frame_count": raw_frame_count,
                                 "typed_event_count": typed_event_count,
                                 "collector_error_count": collector_error_count,
