@@ -6,6 +6,7 @@ import pytest
 from binance_orderbook import DepthSnapshot
 from binance_stream_collector import (
     BinanceDualMarketCollector,
+    CollectorError,
     HashChainJSONLStore,
     MarketSpec,
     OrderBookSequence,
@@ -52,6 +53,32 @@ def test_hash_chain_detects_payload_tampering(tmp_path):
     assert not valid
     assert count == 0
     assert error == "hash_chain_mismatch"
+
+
+def test_hash_chain_store_refuses_to_extend_a_corrupt_existing_partition(tmp_path):
+    path = tmp_path / "spot" / "trades" / "2026-11-20.jsonl"
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    store.append("spot", "trades", {"t": 1}, received_at="2026-11-20T10:00:00+00:00")
+    store.close()
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["payload"]["t"] = 999
+    path.write_text(json.dumps(record) + "\\n", encoding="utf-8")
+
+    restarted = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    with pytest.raises(CollectorError, match="corrupt partition"):
+        restarted.append("spot", "trades", {"t": 2}, received_at="2026-11-20T10:00:01+00:00")
+    restarted.close()
+
+
+def test_store_normalizes_received_timestamp_to_utc(tmp_path):
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    record = store.append(
+        "spot", "trades", {"t": 1},
+        received_at="2026-11-20T13:30:00+03:30",
+    )
+    assert record["received_at"] == "2026-11-20T10:00:00+00:00"
+    assert (tmp_path / "spot" / "trades" / "2026-11-20.jsonl").exists()
+    store.close()
 
 
 def test_orderbook_sequence_bootstrap_and_contiguous_updates():
@@ -180,3 +207,9 @@ def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
     session_ids = {r["session_id"] for r in depth + snapshots + states}
     assert len(session_ids) == 1
     assert all(r["event_time"] for r in depth)
+    terminal = [
+        r for r in records
+        if r["stream"] == "session_manifest" and r["payload"].get("state") == "ended"
+    ]
+    assert len(terminal) == 1
+    assert terminal[0]["payload"]["termination"] == "operator_stop"
