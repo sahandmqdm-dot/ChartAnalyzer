@@ -199,7 +199,7 @@ def test_manifest_detects_source_file_tampering(tmp_path):
     record = json.loads(depth_file.read_text(encoding="utf-8"))
     record["payload"]["u"] = 999
     depth_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
-    with pytest.raises(PITVaultError, match="source_file_digest_mismatch"):
+    with pytest.raises(PITVaultError, match="source_hash_chain_mismatch"):
         verify_session_manifest(tmp_path, manifest)
 
 
