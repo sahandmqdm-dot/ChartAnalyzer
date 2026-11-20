@@ -170,6 +170,7 @@ class AsyncOrderBookCapture:
         *,
         snapshot_fetch: Callable[[], DepthSnapshot] | None = None,
         max_buffered_events: int = 10000,
+        session_id: str | None = None,
         retry_min: float = 1.0,
         retry_max: float = 30.0,
     ) -> None:
@@ -177,6 +178,7 @@ class AsyncOrderBookCapture:
             raise ValueError("invalid order-book recovery limits")
         self.spec = spec
         self.store = store
+        self.session_id = session_id
         self.book = LocalOrderBook(spec.market, spec.symbol.upper())
         self.snapshot_fetch = snapshot_fetch or (lambda: fetch_depth_snapshot(spec))
         self.max_buffered_events = max_buffered_events
@@ -194,6 +196,7 @@ class AsyncOrderBookCapture:
             "orderbook_state",
             {"state": state, "symbol": self.spec.symbol.upper(),
              "last_update_id": self.book.sequence.last_update_id, **details},
+            session_id=self.session_id,
         )
 
     def _start_snapshot(self) -> None:
@@ -211,6 +214,7 @@ class AsyncOrderBookCapture:
             "orderbook_snapshots",
             {"symbol": snapshot.symbol, "lastUpdateId": snapshot.last_update_id,
              "bids": snapshot.bids, "asks": snapshot.asks},
+            session_id=self.session_id,
         )
 
     async def _consume_snapshot(self) -> bool:
