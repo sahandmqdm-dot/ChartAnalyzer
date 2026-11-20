@@ -5,8 +5,8 @@ param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path,
     [string]$PythonPath = "",
     [string]$DataDir = "",
-    [int]$FsyncEveryEvents = 100,
-    [int]$HealthEveryEvents = 1000,
+    [ValidateRange(1, 1000000)][int]$FsyncEveryEvents = 100,
+    [ValidateRange(1, 1000000)][int]$HealthEveryEvents = 1000,
     [switch]$FsyncEachEvent,
     [int]$StopTimeoutSeconds = 45
 )
@@ -24,7 +24,7 @@ $StderrLog = Join-Path $RuntimeDir "collector.stderr.log"
 $CollectorScript = Join-Path $ProjectRoot "binance_stream_collector.py"
 function Get-CollectorProcess {
     if (-not (Test-Path $PidFile)) { return $null }
-    try { $meta = Get-Content $PidFile -Raw | ConvertFrom-Json } catch { Write-Warning "PID metadata is unreadable: $PidFile"; return $null }
+    try { $meta = Get-Content $PidFile -Raw | ConvertFrom-Json } catch { throw "PID metadata is unreadable: $PidFile. Inspect it manually; refusing to start or signal another process." }
     $proc = Get-Process -Id ([int]$meta.pid) -ErrorAction SilentlyContinue
     if (-not $proc) { return $null }
     $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $($meta.pid)" -ErrorAction SilentlyContinue
