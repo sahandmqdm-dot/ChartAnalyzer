@@ -1,3 +1,4 @@
+# ruff: noqa: I001  # Flat-layout import ordering differs across Ruff versions.
 from datetime import UTC, datetime
 
 import pytest
