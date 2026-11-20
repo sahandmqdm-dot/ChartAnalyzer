@@ -275,3 +275,50 @@ def validate_source_links(
                 and record.published_at != source.published_at):
             raise EvidenceContractError("evidence publication timestamp conflicts with source reference")
     return validated
+
+
+
+class SourceRegistry:
+    """Small in-memory registry for immutable source-reference versions.
+
+    Persistence is deliberately left to a later stage. Re-registering the
+    identical source version is idempotent; reusing an ID for changed metadata
+    is rejected instead of silently overwriting provenance.
+    """
+
+    def __init__(self, sources: Iterable[SourceReference] = ()) -> None:
+        self._sources: dict[str, SourceReference] = {}
+        self.register_many(sources)
+
+    def register(self, source: SourceReference) -> SourceReference:
+        return self.register_many((source,))[0]
+
+    def register_many(
+        self, sources: Iterable[SourceReference]
+    ) -> tuple[SourceReference, ...]:
+        rows = tuple(sources)
+        staged = dict(self._sources)
+        registered: list[SourceReference] = []
+        for source in rows:
+            if not isinstance(source, SourceReference):
+                raise EvidenceContractError("registry accepts SourceReference instances only")
+            existing = staged.get(source.source_id)
+            if existing is not None and existing.fingerprint != source.fingerprint:
+                raise EvidenceContractError(
+                    f"source_id collision with different immutable metadata: {source.source_id}"
+                )
+            staged[source.source_id] = source
+            registered.append(existing or source)
+        self._sources = staged
+        return tuple(registered)
+
+    def get(self, source_id: str) -> SourceReference | None:
+        return self._sources.get(_required_text(source_id, "source_id"))
+
+    def all(self) -> tuple[SourceReference, ...]:
+        return tuple(self._sources[key] for key in sorted(self._sources))
+
+    def validate_evidence(
+        self, records: Iterable[EvidenceRecord]
+    ) -> tuple[EvidenceRecord, ...]:
+        return validate_source_links(records, self._sources.values())
