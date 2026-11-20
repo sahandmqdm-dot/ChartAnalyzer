@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -309,6 +310,24 @@ def replay_orderbook_session(
             gaps += 1
             replay_errors.append(type(exc).__name__)
 
+    reference = _reference_replay_records(ordered, market, symbol)
+    comparison_fields = (
+        "depth_events", "snapshots", "applied_diffs", "stale_diffs",
+        "sequence_gaps", "final_valid", "final_update_id", "buffered_events",
+    )
+    reconstruction_agreement = all(
+        {
+            "depth_events": depth_events,
+            "snapshots": snapshots,
+            "applied_diffs": applied,
+            "stale_diffs": stale,
+            "sequence_gaps": gaps,
+            "final_valid": book.valid,
+            "final_update_id": book.sequence.last_update_id,
+            "buffered_events": len(buffer),
+        }[field] == reference[field]
+        for field in comparison_fields
+    )
     report_body = {
         "schema": "chartanalyzer_l2_replay_report_v1",
         "market": market,
@@ -320,7 +339,8 @@ def replay_orderbook_session(
         "session_complete": manifest["session_complete"],
         "termination": manifest["termination"],
         "data_quality_status": (
-            "complete_capture" if manifest["session_complete"]
+            "reconstruction_mismatch" if not reconstruction_agreement
+            else "complete_capture" if manifest["session_complete"]
             else "incomplete_capture"
         ),
         "availability_contract": manifest["availability_contract"],
@@ -333,16 +353,191 @@ def replay_orderbook_session(
         "final_valid": book.valid,
         "final_update_id": book.sequence.last_update_id,
         "buffered_events": len(buffer),
+        "reconstruction_agreement": reconstruction_agreement,
+        "independent_reference": {
+            "engine": "decimal_reference_replay_v1",
+            "replay_hash": reference["replay_hash"],
+            "final_valid": reference["final_valid"],
+            "final_update_id": reference["final_update_id"],
+        },
         "errors": replay_errors,
     }
     replay_hash = hashlib.sha256(_canonical(report_body)).hexdigest()
     return {**report_body, "replay_hash": replay_hash}
 
 
+def _reference_replay_records(
+    ordered_records: list[dict[str, Any]], market: str, symbol: str
+) -> dict[str, Any]:
+    """Independent Decimal-based reference replay; intentionally avoids LocalOrderBook."""
+    bids: dict[Decimal, Decimal] = {}
+    asks: dict[Decimal, Decimal] = {}
+    last_update_id: int | None = None
+    valid = False
+    buffer: list[dict[str, Any]] = []
+    depth_events = snapshots = applied = stale = gaps = 0
+    errors: list[str] = []
+
+    def decimal_value(value: Any) -> Decimal:
+        try:
+            result = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("invalid_decimal_level") from exc
+        if not result.is_finite():
+            raise ValueError("non_finite_orderbook_level")
+        return result
+
+    def apply_levels(
+        side: dict[Decimal, Decimal], updates: Any
+    ) -> None:
+        if not isinstance(updates, list):
+            raise TypeError("orderbook_levels_must_be_a_list")
+        for level in updates:
+            if not isinstance(level, (list, tuple)) or len(level) != 2:
+                raise ValueError("invalid_orderbook_level")
+            price = decimal_value(level[0])
+            quantity = decimal_value(level[1])
+            if price <= 0 or quantity < 0:
+                raise ValueError("invalid_orderbook_price_or_quantity")
+            if quantity == 0:
+                side.pop(price, None)
+            else:
+                side[price] = quantity
+
+    def apply_diff(payload: dict[str, Any]) -> str:
+        nonlocal last_update_id, valid
+        if last_update_id is None:
+            raise ValueError("snapshot_required")
+        first = int(payload["U"])
+        final = int(payload["u"])
+        if first < 0 or final < first:
+            raise ValueError("invalid_depth_sequence")
+        if final <= last_update_id:
+            return "stale"
+        if first > last_update_id + 1:
+            valid = False
+            raise ValueError("depth_sequence_gap")
+        if not first <= last_update_id + 1 <= final:
+            valid = False
+            raise ValueError("depth_sequence_invalid")
+        apply_levels(bids, payload.get("b", []))
+        apply_levels(asks, payload.get("a", []))
+        last_update_id = final
+        valid = True
+        return "applied"
+
+    for record in ordered_records:
+        payload = record.get("payload", {})
+        if record.get("stream") == "orderbook_depth":
+            depth_events += 1
+            if not valid:
+                buffer.append(payload)
+                continue
+            try:
+                result = apply_diff(payload)
+                if result == "applied":
+                    applied += 1
+                else:
+                    stale += 1
+            except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+                valid = False
+                buffer = [payload]
+                gaps += 1
+                errors.append(type(exc).__name__)
+            continue
+
+        if record.get("stream") != "orderbook_snapshots":
+            continue
+        snapshots += 1
+        try:
+            if str(payload["symbol"]).upper() != symbol.upper():
+                raise ValueError("snapshot_symbol_mismatch")
+            snapshot_id = int(payload["lastUpdateId"])
+            if snapshot_id < 0:
+                raise ValueError("invalid_snapshot_sequence")
+            next_bids: dict[Decimal, Decimal] = {}
+            next_asks: dict[Decimal, Decimal] = {}
+            apply_levels(next_bids, payload["bids"])
+            apply_levels(next_asks, payload["asks"])
+            if not next_bids or not next_asks:
+                raise ValueError("snapshot_missing_book_side")
+            bids, asks = next_bids, next_asks
+            last_update_id = snapshot_id
+            valid = False
+            bridged = False
+            for buffered in buffer:
+                if int(buffered["u"]) <= snapshot_id and not valid:
+                    continue
+                result = apply_diff(buffered)
+                if result == "applied":
+                    applied += 1
+                    bridged = True
+            if not bridged:
+                raise ValueError("buffer_did_not_bridge_snapshot")
+            buffer.clear()
+        except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+            valid = False
+            gaps += 1
+            errors.append(type(exc).__name__)
+
+    report_body = {
+        "schema": "chartanalyzer_l2_reference_replay_v1",
+        "market": market,
+        "symbol": symbol,
+        "depth_events": depth_events,
+        "snapshots": snapshots,
+        "applied_diffs": applied,
+        "stale_diffs": stale,
+        "sequence_gaps": gaps,
+        "final_valid": valid,
+        "final_update_id": last_update_id,
+        "buffered_events": len(buffer),
+        "best_bid": str(max(bids)) if valid and bids else None,
+        "best_ask": str(min(asks)) if valid and asks else None,
+        "errors": errors,
+    }
+    report_hash = hashlib.sha256(_canonical(report_body)).hexdigest()
+    return {**report_body, "replay_hash": report_hash}
+
+
+def reference_replay_orderbook_session(
+    data_root: str | Path, market: str, session_id: str
+) -> dict[str, Any]:
+    """Run the independent Decimal reference engine against a sealed raw session."""
+    manifest = build_session_manifest(data_root, market, session_id)
+    if not manifest["session_closed"]:
+        raise PITVaultError("cannot replay an active capture session")
+    verify_session_manifest(data_root, manifest)
+    if not manifest.get("symbol"):
+        raise PITVaultError("session must identify exactly one symbol")
+    records, _ = _session_partitions(
+        Path(data_root).expanduser().resolve(), market, session_id
+    )
+    ordered = sorted(
+        (r for r in records if r.get("stream") in {"orderbook_depth", "orderbook_snapshots"}),
+        key=lambda r: (
+            str(r.get("received_at", "")),
+            0 if r.get("stream") == "orderbook_depth" else 1,
+        ),
+    )
+    result = _reference_replay_records(ordered, market, manifest["symbol"])
+    return {
+        **result,
+        "session_id": session_id,
+        "manifest_hash": manifest["manifest_hash"],
+        "session_complete": manifest["session_complete"],
+        "data_quality_status": (
+            "complete_capture" if manifest["session_complete"]
+            else "incomplete_capture"
+        ),
+    }
+
+
 __all__ = [
     "PITVaultError",
     "build_session_manifest",
     "persist_session_manifest",
+    "reference_replay_orderbook_session",
     "replay_orderbook_session",
     "verify_session_manifest",
 ]
@@ -354,7 +549,7 @@ def _main() -> None:
     parser.add_argument("--data-dir", default="./data/binance_raw")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for command in ("manifest", "replay"):
+    for command in ("manifest", "replay", "reference-replay"):
         sub = subparsers.add_parser(command)
         sub.add_argument("--market", choices=("spot", "usdm"), required=True)
         sub.add_argument("--session-id", required=True)
@@ -369,8 +564,13 @@ def _main() -> None:
     elif args.command == "verify":
         result = verify_session_manifest(args.data_dir, args.manifest)
         print(json.dumps(result, indent=2))
-    else:
+    elif args.command == "replay":
         result = replay_orderbook_session(args.data_dir, args.market, args.session_id)
+        print(json.dumps(result, indent=2))
+    else:
+        result = reference_replay_orderbook_session(
+            args.data_dir, args.market, args.session_id
+        )
         print(json.dumps(result, indent=2))
 
 

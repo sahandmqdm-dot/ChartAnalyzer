@@ -10,6 +10,7 @@ from binance_pit_vault import (
     PITVaultError,
     persist_session_manifest,
     replay_orderbook_session,
+    reference_replay_orderbook_session,
     verify_session_manifest,
 )
 from binance_stream_collector import HashChainJSONLStore
@@ -97,6 +98,13 @@ def test_replay_reconstructs_book_from_snapshot_and_buffered_diffs(tmp_path):
     assert report["applied_diffs"] == 1
     assert report["sequence_gaps"] == 0
     assert len(report["replay_hash"]) == 64
+    assert report["reconstruction_agreement"] is True
+    assert report["independent_reference"]["engine"] == "decimal_reference_replay_v1"
+    reference = reference_replay_orderbook_session(tmp_path, "spot", SESSION)
+    assert reference["final_valid"] is True
+    assert reference["final_update_id"] == 102
+    assert reference["best_bid"] == "100.5"
+    assert reference["best_ask"] == "101.0"
 
 
 def test_replay_fails_closed_when_snapshot_cannot_bridge_depth_sequence(tmp_path):
@@ -105,6 +113,10 @@ def test_replay_fails_closed_when_snapshot_cannot_bridge_depth_sequence(tmp_path
     assert report["final_valid"] is False
     assert report["sequence_gaps"] == 1
     assert report["buffered_events"] == 1
+    assert report["reconstruction_agreement"] is True
+    reference = reference_replay_orderbook_session(tmp_path, "spot", SESSION)
+    assert reference["final_valid"] is False
+    assert reference["sequence_gaps"] == 1
 
 
 def test_manifest_declares_receive_time_as_point_in_time_availability(tmp_path):
