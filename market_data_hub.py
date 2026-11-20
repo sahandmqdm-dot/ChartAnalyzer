@@ -288,6 +288,106 @@ class BinanceUSDMPublicAdapter:
         return {"records": records, "retrieved_at": retrieved, "provider": self.provider,
                 "endpoint": "/fapi/v1/fundingRate", "market_type": self.market_type}
 
+    def fetch_premium_index(self, symbol: str) -> dict[str, Any]:
+        """Fetch current mark/index and indicative next funding from public USD-M."""
+        symbol = self._symbol(symbol)
+        raw, retrieved = self._get("/fapi/v1/premiumIndex", {"symbol": symbol})
+        if not isinstance(raw, Mapping):
+            raise DataValidationError("premium-index payload must be an object")
+        try:
+            funding_rate = _number(raw["lastFundingRate"], "lastFundingRate")
+            mark_price = _number(raw["markPrice"], "markPrice", positive=True)
+            index_price = _number(raw["indexPrice"], "indexPrice", positive=True)
+            next_funding_at = datetime.fromtimestamp(int(raw["nextFundingTime"]) / 1000, UTC)
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise DataValidationError("malformed premium-index payload") from exc
+        return {
+            "instrument_id": symbol, "provider": self.provider,
+            "market_type": self.market_type, "retrieved_at": retrieved,
+            "observed_at": retrieved, "funding_rate": funding_rate,
+            "funding_rate_semantics": "latest_exchange_indicative_funding_rate",
+            "mark_price": mark_price, "index_price": index_price,
+            "next_funding_at": next_funding_at,
+            "mark_index_basis_pct": (mark_price / index_price - 1.0) * 100.0,
+            "endpoint": "/fapi/v1/premiumIndex",
+        }
+
+    def fetch_order_book(self, symbol: str, limit: int = 100) -> dict[str, Any]:
+        """Fetch one public L2 snapshot; this is not a sequenced diff stream."""
+        symbol = self._symbol(symbol)
+        allowed_limits = {5, 10, 20, 50, 100, 500, 1000}
+        if isinstance(limit, bool) or int(limit) not in allowed_limits:
+            raise ValueError("order-book limit must be one of 5, 10, 20, 50, 100, 500 or 1000")
+        raw, retrieved = self._get("/fapi/v1/depth", {"symbol": symbol, "limit": int(limit)})
+        if not isinstance(raw, Mapping) or not isinstance(raw.get("bids"), list) or not isinstance(raw.get("asks"), list):
+            raise DataValidationError("malformed order-book snapshot")
+        def levels(name: str) -> list[dict[str, float]]:
+            out = []
+            for row in raw[name]:
+                if not isinstance(row, Sequence) or len(row) < 2:
+                    raise DataValidationError(f"malformed {name} level")
+                price = _number(row[0], f"{name}.price", positive=True)
+                quantity = _number(row[1], f"{name}.quantity", positive=True)
+                out.append({"price": price, "quantity": quantity})
+            return out
+        bids, asks = levels("bids"), levels("asks")
+        if not bids or not asks or max(x["price"] for x in bids) >= min(x["price"] for x in asks):
+            raise DataValidationError("order-book snapshot is empty or crossed")
+        bid_qty = sum(x["quantity"] for x in bids[:20])
+        ask_qty = sum(x["quantity"] for x in asks[:20])
+        total = bid_qty + ask_qty
+        return {
+            "instrument_id": symbol, "provider": self.provider,
+            "market_type": self.market_type, "retrieved_at": retrieved,
+            "last_update_id": int(raw.get("lastUpdateId", 0)),
+            "bids": bids, "asks": asks, "limit": int(limit),
+            "top20_quantity_imbalance": (bid_qty - ask_qty) / total if total else None,
+            "best_bid": bids[0]["price"], "best_ask": asks[0]["price"],
+            "mid_price": (bids[0]["price"] + asks[0]["price"]) / 2.0,
+            "spread_bps": (asks[0]["price"] / bids[0]["price"] - 1.0) * 10000.0,
+            "sequence_semantics": "single_rest_snapshot_not_continuous_diff_stream",
+            "endpoint": "/fapi/v1/depth",
+        }
+
+    def fetch_aggregate_trades(self, symbol: str, limit: int = 1000) -> dict[str, Any]:
+        """Fetch a bounded recent aggregate-trade sample, not complete tick history."""
+        symbol = self._symbol(symbol)
+        if isinstance(limit, bool) or not 1 <= int(limit) <= 1000:
+            raise ValueError("aggregate-trade limit must be between 1 and 1000")
+        raw, retrieved = self._get("/fapi/v1/aggTrades", {"symbol": symbol, "limit": int(limit)})
+        if not isinstance(raw, list):
+            raise DataValidationError("aggregate-trades payload must be a list")
+        records = []
+        buy_qty = sell_qty = 0.0
+        for row in raw:
+            if not isinstance(row, Mapping) or not {"p", "q", "T", "m"}.issubset(row):
+                raise DataValidationError("malformed aggregate-trade record")
+            price = _number(row["p"], "trade_price", positive=True)
+            quantity = _number(row["q"], "trade_quantity", positive=True)
+            buyer_is_maker = row["m"]
+            if not isinstance(buyer_is_maker, bool):
+                raise DataValidationError("aggregate trade maker flag must be boolean")
+            if buyer_is_maker:
+                sell_qty += quantity
+            else:
+                buy_qty += quantity
+            records.append({
+                "price": price, "quantity": quantity,
+                "event_time": datetime.fromtimestamp(int(row["T"]) / 1000, UTC),
+                "buyer_is_maker": buyer_is_maker,
+            })
+        records.sort(key=lambda item: item["event_time"])
+        return {
+            "instrument_id": symbol, "provider": self.provider,
+            "market_type": self.market_type, "retrieved_at": retrieved,
+            "records": records, "record_count": len(records),
+            "taker_buy_base_quantity": buy_qty,
+            "taker_sell_base_quantity": sell_qty,
+            "sampled_net_taker_flow_base_quantity": buy_qty - sell_qty,
+            "sample_semantics": "bounded_recent_aggregate_trade_sample_not_complete_tick_history",
+            "endpoint": "/fapi/v1/aggTrades",
+        }
+
     def fetch_open_interest_history(self, symbol: str, period: str = "1h", limit: int = 30) -> dict[str, Any]:
         symbol = self._symbol(symbol)
         if period not in self.oi_periods:
