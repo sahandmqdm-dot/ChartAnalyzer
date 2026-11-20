@@ -1,4 +1,4 @@
-from trade_intelligence import analyze_trade_intelligence
+from version import APP_VERSION\n\nfrom trade_intelligence import analyze_trade_intelligence
 
 
 def test_trade_intelligence_groups_and_cost_drag():
@@ -57,7 +57,7 @@ def test_app_backtest_exposes_trade_intelligence_cost_components(monkeypatch):
     })
 
     out = app.backtest(frame, "1h", start=1, symbol="USDTIRR")
-    assert out["version"] == "7.2.0"
+    assert out["version"] == APP_VERSION
     assert out["trade_edge_discovery"]["status"] == "RESEARCH_ONLY"
     assert out["execution_viability"]["status"] == "RESEARCH_ONLY"
     assert out["market_regime_intelligence"]["status"] == "RESEARCH_ONLY"
