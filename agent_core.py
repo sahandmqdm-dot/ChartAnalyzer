@@ -15,6 +15,16 @@ TF_SEC = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400,
 _LOCK = threading.Lock()
 Z80 = 1.2815515655446004
 
+
+class _ClosingSQLiteConnection(sqlite3.Connection):
+    """Commit/rollback through the context manager, then always close the handle."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
 SCHEMA = """CREATE TABLE IF NOT EXISTS predictions(
  id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, tf TEXT NOT NULL, bar INTEGER NOT NULL,
  horizon_h REAL NOT NULL, last REAL NOT NULL, p_up REAL, q10 REAL, q50 REAL, q90 REAL, t_eff REAL, verdict TEXT,
@@ -41,7 +51,7 @@ def _secure_sqlite_file(path):
 
 def _db():
     _secure_sqlite_file(DB_PATH)
-    con = sqlite3.connect(DB_PATH, timeout=15)
+    con = sqlite3.connect(DB_PATH, timeout=15, factory=_ClosingSQLiteConnection)
     con.row_factory = sqlite3.Row
     con.execute(SCHEMA)
     # SQLite may create WAL/SHM sidecars; keep all journal state owner-readable only.
