@@ -112,6 +112,14 @@ def _sha(value: str, name: str) -> str:
     return text
 
 
+def _timeframe_seconds(timeframe: str) -> int:
+    match = re.fullmatch(r"([1-9][0-9]*)(m|h|d|w)", str(timeframe).lower())
+    if not match:
+        raise ValueError("timeframe must use a supported interval such as 15m, 1h, 4h, 1d or 1w")
+    amount = int(match.group(1))
+    return amount * {"m": 60, "h": 3600, "d": 86400, "w": 604800}[match.group(2)]
+
+
 def _forecast_payload(forecast: ForecastRecord) -> dict[str, Any]:
     payload = asdict(forecast)
     for key in ("issued_at", "target_at", "data_cutoff_at"):
@@ -230,6 +238,9 @@ class ProspectiveHoldoutLedger:
             raise ValueError("forecast dataset_fingerprint must be a SHA-256 digest")
         if current < forecast.issued_at or current >= forecast.target_at:
             raise ValueError("forecast must be recorded at/after issuance and strictly before its target")
+        expected_target = forecast.issued_at.timestamp() + forecast.horizon_bars * _timeframe_seconds(forecast.timeframe)
+        if abs(forecast.target_at.timestamp() - expected_target) > 1.0:
+            raise ValueError("target_at must equal issued_at plus horizon_bars for the declared timeframe")
         payload = {
             "forecast": _forecast_payload(forecast),
             "config_fingerprint": config_hash,
@@ -435,11 +446,32 @@ class ProspectiveHoldoutLedger:
                     valid = False
                     break
                 previous = event["event_hash"]
-            refs = []
-            for table in ("cohort", "forecasts", "outcomes", "evaluations"):
-                refs.extend(row[0] for row in connection.execute(f"SELECT event_hash FROM {table}"))
-            event_hashes = {row["event_hash"] for row in events}
-            valid = valid and len(refs) == len(event_hashes) and set(refs) == event_hashes
+            event_by_hash = {row["event_hash"]: row for row in events}
+            record_specs = (
+                ("cohort", "COHORT_REGISTERED", "cohort_id", "payload"),
+                ("forecasts", "FORECAST_RECORDED", "forecast_id", "payload"),
+                ("outcomes", "OUTCOME_RESOLVED", "forecast_id", "payload"),
+                ("evaluations", "HOLDOUT_EVALUATED", None, "payload"),
+            )
+            referenced = set()
+            for table, expected_type, id_column, payload_column in record_specs:
+                rows = connection.execute(f"SELECT * FROM {table}").fetchall()
+                for row in rows:
+                    event = event_by_hash.get(row["event_hash"])
+                    payload = json.loads(row[payload_column])
+                    event_id = (
+                        payload.get("cohort_id") if table == "cohort" else
+                        payload.get("forecast_id") if table == "outcomes" else
+                        (payload.get("report", {}).get("prospective_holdout", {}).get("cohort_id")
+                         if table == "evaluations" else row[id_column])
+                    )
+                    if (event is None or event["event_type"] != expected_type
+                            or event["event_id"] != str(event_id)
+                            or event["payload_hash"] != _hash(_json(payload))):
+                        valid = False
+                    referenced.add(row["event_hash"])
+            event_hashes = set(event_by_hash)
+            valid = valid and len(referenced) == len(event_hashes) and referenced == event_hashes
             return {
                 "status": "PASS" if valid else "BLOCKED",
                 "events": len(events), "last_event_hash": previous if events else None,
