@@ -256,3 +256,28 @@ __all__ = [
     "BinanceDualMarketCollector", "CollectorError", "HashChainJSONLStore",
     "MarketSpec", "OrderBookSequence", "SequenceGap",
 ]
+
+
+async def _run_cli() -> None:
+    import argparse
+    import signal
+
+    parser = argparse.ArgumentParser(description="Capture public Binance Spot and USD-M streams locally.")
+    parser.add_argument("--data-dir", default=os.environ.get("CHARTANALYZER_DATA_DIR", "./data/binance_raw"))
+    parser.add_argument("--symbol", default="BTCUSDT")
+    parser.add_argument("--proxy", default=os.environ.get("CHARTANALYZER_BINANCE_PROXY"))
+    args = parser.parse_args()
+    collector = BinanceDualMarketCollector(args.data_dir, proxy=args.proxy)
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:  # Windows event-loop compatibility
+            pass
+    print(f"Binance local collector started: {args.symbol.upper()} Spot + USD-M; Ctrl+C to stop")
+    await collector.run(stop, symbol=args.symbol)
+
+
+if __name__ == "__main__":
+    asyncio.run(_run_cli())
