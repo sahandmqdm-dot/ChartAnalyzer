@@ -2385,6 +2385,16 @@ def api_pmi(source: str = "ramzinex", symbol: str = "USDTIRR", tf: str = "1h", n
 
 
 
+def _prospective_require_clean_frame(frame, source, timeframe):
+    """Fail closed when point-in-time forecast inputs or outcome candles are incomplete."""
+    audit = _audit_research_frame(frame, source, timeframe)
+    if not isinstance(audit, dict) or not audit.get("valid", False):
+        raise ValueError("prospective holdout blocked: OHLCV integrity audit did not pass")
+    if int(audit.get("gap_count", 0) or 0) != 0:
+        raise ValueError("prospective holdout blocked: OHLCV contains missing candle intervals")
+    return audit
+
+
 # ------------------------------------------------ prospective future holdout
 def _prospective_now():
     from datetime import UTC, datetime
@@ -2581,7 +2591,7 @@ def api_prospective_holdout_tick(payload: dict):
                 frame = load_cached(source, item["instrument_id"], timeframe,
                                     max(120, min(5000, int(identity["history_bars"]))),
                                     exchange, "", "")
-                _audit_research_frame(frame, source, timeframe)
+                _prospective_require_clean_frame(frame, source, timeframe)
                 target_open = target.timestamp() - bar_seconds
                 matched = frame.loc[np.isclose(frame["time"].to_numpy(dtype=float), target_open, atol=1.0, rtol=0.0)]
                 if len(matched) != 1:
@@ -2617,7 +2627,7 @@ def api_prospective_holdout_tick(payload: dict):
             exchange = identity["exchange"] or "binance"
             frame = load_cached(source, identity["symbol"], identity["timeframe"],
                                 identity["history_bars"], exchange, "", "")
-            _audit_research_frame(frame, source, identity["timeframe"])
+            _prospective_require_clean_frame(frame, source, identity["timeframe"])
             result = PMI.analyze(
                 frame, timeframe=identity["timeframe"],
                 horizons=(identity["horizon_bars"],),
