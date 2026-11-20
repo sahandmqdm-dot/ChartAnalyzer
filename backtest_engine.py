@@ -439,6 +439,10 @@ def run_backtest(
                 pos = 0
                 entry_px = entry_bar = None
                 entry_side = 0
+                peak = max(peak, equity)
+                max_dd = min(max_dd, equity / peak - 1.0 if peak > 0 else -1.0)
+                equity_curve.append(float(equity))
+                equity_bar_indices.append(int(i + 2))
                 break
             equity *= multiplier
             trade_factor *= multiplier
