@@ -253,3 +253,20 @@ sudo -u chartanalyzer .venv/bin/python binance_daily_audit.py verify \
 ~~~
 
 **محدودیت مهم:** این ابزار Seal روزانه و یکپارچگی پارتیشن‌ها را کنترل می‌کند؛ هنوز شمارنده جامع queue overflow/dropped events، هشدار زنده دیسک، یا آزمون Restore از آرشیو مستقل را فراهم نمی‌کند. این موارد باید قبل از Freeze نهایی و شروع 42 روز با آزمون عملی تکمیل شوند. Manifest روزانه جایگزین کپی مستقل خود داده‌های خام نیست.
+
+
+## پایش سلامت Collector و شمارنده افت داده
+
+Collector علاوه بر Raw Frame و رویدادهای تایپ‌شده، رکوردهای `collector_health` را به‌صورت دوره‌ای در همان Hash Chain ذخیره می‌کند. هر ۱۰۰۰ فریم خام به‌طور پیش‌فرض یک رکورد سلامت نوشته می‌شود؛ مقدار را می‌توان با متغیر `CHARTANALYZER_BINANCE_HEALTH_EVERY_EVENTS` یا گزینه `--health-every-events` تغییر داد.
+
+نمونه اجرای با فاصله ۵۰۰ فریم:
+
+~~~bash
+CHARTANALYZER_BINANCE_HEALTH_EVERY_EVENTS=500 .venv/bin/python -m binance_stream_collector --symbol BTCUSDT
+~~~
+
+رکورد سلامت شامل تعداد Raw Frame، رویدادهای تایپ‌شده، خطاهای Decode، خطاهای Persistence، تعداد Reconnect، تأخیر Pipeline نوشتن (p50/p95/max)، فضای کل/مصرف‌شده/آزاد دیسک و شمارنده‌های بازیابی Order Book است. اگر فضای آزاد کمتر از ۵ GiB یا مصرف دیسک حداقل ۹۰٪ شود، هشدار در خروجی سرویس ثبت می‌شود. خطاهای نوشتن دیسک نیز در journal سرویس ثبت می‌شوند؛ در صورت پر بودن دیسک ممکن است خود خطای Persistence قابل ذخیره در JSONL نباشد.
+
+در `orderbook_state`، رخداد `buffer_overflow` اکنون تعداد دقیق Diffهای دورریخته‌شده در آن Overflow و شمارنده تجمعی را ثبت می‌کند. رخدادهای Sequence Gap و شکست Snapshot نیز شمارش می‌شوند. این شمارنده‌های سمت Collector در ویژگی‌های PIT و در provenance هر Forecast منعکس می‌شوند؛ آن‌ها را با شمارنده‌های مستقل Replay اشتباه نگیرید.
+
+**محدودیت:** Health eventها بر اساس تعداد فریم هستند، نه یک Heartbeat مستقل زمان‌محور. اگر جریان کاملاً ساکت شود، رکورد دوره‌ای جدیدی تولید نمی‌شود؛ برای تشخیص توقف کامل سرویس باید systemd و پایش بیرونی نیز فعال باشند.
