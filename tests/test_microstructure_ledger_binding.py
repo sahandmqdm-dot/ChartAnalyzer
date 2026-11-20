@@ -70,6 +70,8 @@ def _provenance(forecast, **overrides):
         "manifest_hash": "a" * 64,
         "feature_hash": "b" * 64,
         "dataset_hash": "c" * 64,
+        "artifact_path": "vault/features/" + "c" * 64 + ".json",
+        "artifact_sha256": "d" * 64,
         "decision_time": forecast.data_cutoff_at.isoformat(),
         "available_at": forecast.data_cutoff_at.isoformat(),
         "source_event_watermark": forecast.data_cutoff_at.isoformat(),
@@ -112,6 +114,8 @@ def test_forecast_ledger_persists_microstructure_hash_lineage(tmp_path):
     assert bound["manifest_hash"] == "a" * 64
     assert bound["feature_hash"] == "b" * 64
     assert bound["dataset_hash"] == "c" * 64
+    assert bound["artifact_path"] == "vault/features/" + "c" * 64 + ".json"
+    assert bound["artifact_sha256"] == "d" * 64
     assert bound["session_complete"] is False
     assert ledger.verify_integrity()["status"] == "PASS"
 
