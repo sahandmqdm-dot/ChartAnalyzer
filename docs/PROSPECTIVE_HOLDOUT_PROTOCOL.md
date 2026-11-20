@@ -49,7 +49,7 @@ Each `ForecastRecord` must have:
 - Quantile distribution and optional directional probability.
 - A server-side record-write timestamp at or after issuance, within 60 seconds of issuance, and strictly before `target_at`.
 
-The ledger checks that `target_at = issued_at + horizon_bars × timeframe`. Forecast horizons in one cohort may not overlap. This deliberately reduces sample count to avoid pretending that highly overlapping forecasts are independent observations.
+The ledger checks that `target_at = data_cutoff_at + horizon_bars × timeframe`. Here `data_cutoff_at` is the close timestamp of the last fully closed candle used by the forecast; `issued_at` is the later wall-clock time when the forecast is generated and persisted. Forecast horizons in one cohort may not overlap. This deliberately reduces sample count to avoid pretending that highly overlapping forecasts are independent observations.
 
 A forecast is immutable after insertion. Duplicate forecast IDs are rejected.
 
