@@ -62,4 +62,4 @@ def test_sync_is_repeatable_and_separates_market_namespaces(tmp_path):
     client = FakeObjectStore()
     results = sync_closed_partitions(tmp_path, bucket="b", client=client, today=date(2026, 11, 20))
     assert len(results) == 2
-    assert {item.object_key.split("/")[1] for item in results} == {"spot", "usdm"}
+    assert {item.object_key.split("/")[2] for item in results} == {"spot", "usdm"}
