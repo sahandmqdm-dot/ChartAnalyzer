@@ -9,9 +9,9 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from collections.abc import Iterable
 from enum import Enum
 from threading import RLock
-from typing import Iterable
 
 from evidence_contracts import EvidenceRecord, canonical_sha256
 from multi_asset import MarketRegistry
