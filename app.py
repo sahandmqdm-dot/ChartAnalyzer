@@ -2494,7 +2494,7 @@ def api_prospective_holdout_register(payload: dict):
                     "note": "Non-overlapping forecast horizons reduce effective sample dependence. Missed collector ticks can leave the cohort below its pre-registered minimum."
                 },
                 "note": "Freeze this exact request configuration. Every later tick must use the same settings."}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
 
@@ -2512,8 +2512,9 @@ def api_prospective_holdout_tick(payload: dict):
     """Resolve matured outcomes, then issue at most one new non-overlapping forecast."""
     try:
         from datetime import datetime, timedelta
-        from research_provenance import dataset_fingerprint
+
         from forecast_validation import create_forecast_record
+        from research_provenance import dataset_fingerprint
         cohort_id = str(payload.get("cohort_id") or "").strip()
         ledger = _prospective_ledger(cohort_id)
         cohort = ledger.cohort_details()
@@ -2561,7 +2562,7 @@ def api_prospective_holdout_tick(payload: dict):
                     resolved_at=resolved_at,
                 )
                 resolved_count += 1
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 unresolved_data.append({"forecast_id": item["forecast_id"], "reason": redact(type(exc).__name__ + ": " + str(exc))})
         issued = None
         start = _prospective_parse_datetime(cohort["collection_start"], "collection_start")
