@@ -95,7 +95,7 @@ The 42-day holdout clock is NOT started by running this collector. Start only af
 ## Tests
 
 ```powershell
-python -m pytest tests/test_binance_stream_collector.py tests/test_binance_orderbook.py tests/test_binance_pit_vault.py -q
+python -m pytest tests/test_binance_stream_collector.py tests/test_binance_orderbook.py tests/test_binance_pit_vault.py tests/test_binance_microstructure_features.py -q
 ```
 
 
