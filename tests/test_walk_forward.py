@@ -2,6 +2,8 @@ from version import APP_VERSION\n\nimport sys
 from pathlib import Path
 
 import numpy as np
+
+from version import APP_VERSION
 import pandas as pd
 import pytest
 
