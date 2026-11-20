@@ -593,6 +593,11 @@ async def _run_cli() -> None:
         default=int(os.environ.get("CHARTANALYZER_BINANCE_HEALTH_EVERY_EVENTS", "1000")),
         help="append collector health telemetry after this many raw frames",
     )
+    parser.add_argument(
+        "--stop-file",
+        default=os.environ.get("CHARTANALYZER_BINANCE_STOP_FILE"),
+        help="gracefully stop when this sentinel file appears (useful for Windows background runs)",
+    )
     args = parser.parse_args()
     store = HashChainJSONLStore(
         args.data_dir,
@@ -612,8 +617,26 @@ async def _run_cli() -> None:
             loop.add_signal_handler(sig, stop.set)
         except NotImplementedError:  # Windows event-loop compatibility
             pass
-    print(f"Binance local collector started: {args.symbol.upper()} Spot + USD-M; Ctrl+C to stop")
-    await collector.run(stop, symbol=args.symbol)
+    print(f"Binance local collector started: {args.symbol.upper()} Spot + USD-M; Ctrl+C or stop-file to stop")
+
+    async def watch_stop_file() -> None:
+        if not args.stop_file:
+            return
+        stop_path = Path(args.stop_file)
+        while not stop.is_set():
+            if stop_path.exists():
+                print(f"Graceful stop requested by sentinel: {stop_path}")
+                stop.set()
+                return
+            await asyncio.sleep(1)
+
+    watcher = asyncio.create_task(watch_stop_file()) if args.stop_file else None
+    try:
+        await collector.run(stop, symbol=args.symbol)
+    finally:
+        if watcher is not None:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
 
 
 if __name__ == "__main__":
