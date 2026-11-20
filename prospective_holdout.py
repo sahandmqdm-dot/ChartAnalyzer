@@ -378,10 +378,10 @@ class ProspectiveHoldoutLedger:
             forecast_rows = connection.execute("SELECT payload FROM forecasts ORDER BY recorded_at").fetchall()
             outcome_rows = connection.execute("SELECT forecast_id,payload FROM outcomes").fetchall()
             outcomes = {row["forecast_id"]: json.loads(row["payload"]) for row in outcome_rows}
-            if len(forecast_rows) < int(cohort["min_forecasts"]):
-                raise ValueError("insufficient prospective forecasts for the pre-registered minimum")
             if len(outcomes) != len(forecast_rows):
                 raise ValueError("every forecast must resolve before the final report is opened")
+            if len(forecast_rows) < int(cohort["min_forecasts"]):
+                raise ValueError("insufficient prospective forecasts for the pre-registered minimum")
             resolved = []
             for row in forecast_rows:
                 payload = json.loads(row["payload"])
