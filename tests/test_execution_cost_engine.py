@@ -1,6 +1,10 @@
 import pytest
 
-from execution_cost_engine import evaluate_execution, validate_fee_schedule
+from execution_cost_engine import (
+    evaluate_execution,
+    market_sweep_fills,
+    validate_fee_schedule,
+)
 
 
 def schedule(**overrides):
@@ -129,3 +133,71 @@ def test_fill_probability_requires_calibration_and_source():
 def test_rejected_order_cannot_claim_fills():
     with pytest.raises(ValueError, match="cannot contain fills"):
         run(rejection_reason="venue rejection")
+
+
+def test_l2_market_sweep_consumes_asks_and_returns_partial_when_depth_is_short():
+    book = {
+        "market": "spot", "symbol": "BTCUSDT", "valid": True,
+        "last_update_id": 1234,
+        "asks": [(101.0, 0.4), (101.5, 0.6)],
+        "bids": [(100.0, 0.7), (99.5, 0.8)],
+    }
+    sweep = market_sweep_fills(
+        book, side="buy", requested_quantity=1.5,
+        book_received_at="2026-11-20T12:00:00.000Z",
+        decision_at="2026-11-20T12:00:00.100Z",
+    )
+    assert sweep["estimated_filled_quantity"] == pytest.approx(1.0)
+    assert sweep["estimated_unfilled_quantity"] == pytest.approx(0.5)
+    assert sweep["is_full_depth_fill"] is False
+    assert [fill["price"] for fill in sweep["fills"]] == [101.0, 101.5]
+    assert all(fill["liquidity_role"] == "taker" for fill in sweep["fills"])
+
+
+def test_l2_market_sweep_uses_bid_side_for_sell():
+    book = {
+        "market": "usdm", "symbol": "BTCUSDT", "valid": True,
+        "last_update_id": 42,
+        "asks": [(101.0, 2.0)], "bids": [(100.0, 0.5), (99.0, 2.0)],
+    }
+    sweep = market_sweep_fills(
+        book, side="sell", requested_quantity=1.0,
+        book_received_at="2026-11-20T12:00:00Z",
+        decision_at="2026-11-20T12:00:00.010Z",
+    )
+    assert [fill["price"] for fill in sweep["fills"]] == [100.0, 99.0]
+    assert sweep["estimated_filled_quantity"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("received,decision", [
+    ("2026-11-20T12:00:01Z", "2026-11-20T12:00:00Z"),
+    ("2026-11-20T11:59:00Z", "2026-11-20T12:00:00Z"),
+])
+def test_l2_market_sweep_rejects_future_or_stale_book(received, decision):
+    book = {
+        "market": "spot", "symbol": "BTCUSDT", "valid": True,
+        "last_update_id": 1, "asks": [(101.0, 1.0)], "bids": [(100.0, 1.0)],
+    }
+    with pytest.raises(ValueError):
+        market_sweep_fills(
+            book, side="buy", requested_quantity=1,
+            book_received_at=received, decision_at=decision, max_age_ms=500,
+        )
+
+
+def test_l2_market_sweep_rejects_invalid_sequence_book_and_unsorted_levels():
+    book = {
+        "market": "spot", "symbol": "BTCUSDT", "valid": False,
+        "last_update_id": 1, "asks": [(101.0, 1.0)], "bids": [(100.0, 1.0)],
+    }
+    kwargs = {
+        "side": "buy", "requested_quantity": 1,
+        "book_received_at": "2026-11-20T12:00:00Z",
+        "decision_at": "2026-11-20T12:00:00Z",
+    }
+    with pytest.raises(ValueError, match="sequence-valid"):
+        market_sweep_fills(book, **kwargs)
+    book["valid"] = True
+    book["asks"] = [(102.0, 1.0), (101.0, 1.0)]
+    with pytest.raises(ValueError, match="sorted"):
+        market_sweep_fills(book, **kwargs)
