@@ -12,7 +12,9 @@ import hashlib
 import json
 import logging
 import os
+import time
 import urllib.parse
+from collections import deque
 import urllib.request
 import uuid
 from collections.abc import Callable
@@ -245,9 +247,12 @@ class BinanceDualMarketCollector:
                  store: HashChainJSONLStore | None = None,
                  connector: Callable[..., Any] | None = None,
                  snapshot_fetch: Callable[[MarketSpec], Any] | None = None,
-                 max_buffered_depth_events: int = 10000) -> None:
+                 max_buffered_depth_events: int = 10000,
+                 health_interval_events: int = 1000) -> None:
         if reconnect_min <= 0 or reconnect_max < reconnect_min:
             raise ValueError("invalid reconnect backoff")
+        if health_interval_events < 1:
+            raise ValueError("health_interval_events must be >= 1")
         self.store = store or HashChainJSONLStore(root)
         self.proxy = proxy
         self.reconnect_min = reconnect_min
@@ -256,6 +261,7 @@ class BinanceDualMarketCollector:
         self.connector = connector
         self.snapshot_fetch = snapshot_fetch
         self.max_buffered_depth_events = max_buffered_depth_events
+        self.health_interval_events = health_interval_events
         self._active_websockets: dict[str, Any] = {}
 
     def _connect(self, uri: str):
@@ -274,6 +280,7 @@ class BinanceDualMarketCollector:
 
     async def run_market(self, spec: MarketSpec, stop: asyncio.Event) -> None:
         delay = self.reconnect_min
+        reconnect_count = 0
         streams = "/".join(spec.streams)
         uri = f"{spec.ws_url}?{urllib.parse.urlencode({'streams': streams})}"
         while not stop.is_set():
@@ -281,6 +288,10 @@ class BinanceDualMarketCollector:
             session_started = None
             stream_counts: dict[str, int] = {}
             raw_frame_count = 0
+            typed_event_count = 0
+            collector_error_count = 0
+            persistence_failure_count = 0
+            latency_samples: deque[float] = deque(maxlen=512)
             try:
                 async with self._connect(uri) as websocket:
                     session_id = uuid.uuid4().hex
@@ -288,7 +299,8 @@ class BinanceDualMarketCollector:
                     self.store.append(spec.market, "session_manifest",
                                       {"state": "started", "endpoint": spec.ws_url,
                                        "streams": list(spec.streams),
-                                       "started_at": session_started},
+                                       "started_at": session_started,
+                                       "reconnect_count": reconnect_count},
                                       received_at=session_started, session_id=session_id)
                     self.store.append(spec.market, "connection",
                                       {"state": "connected", "endpoint": spec.ws_url},
@@ -304,6 +316,37 @@ class BinanceDualMarketCollector:
                         session_id=session_id,
                     )
                     self._active_websockets[spec.market] = websocket
+
+                    def emit_health(state: str) -> None:
+                        ordered = sorted(latency_samples)
+                        def percentile(fraction: float) -> float | None:
+                            if not ordered:
+                                return None
+                            index = min(len(ordered) - 1, int((len(ordered) - 1) * fraction))
+                            return round(ordered[index], 3)
+                        self.store.append(
+                            spec.market,
+                            "collector_health",
+                            {
+                                "state": state,
+                                "raw_frame_count": raw_frame_count,
+                                "typed_event_count": typed_event_count,
+                                "collector_error_count": collector_error_count,
+                                "persistence_failure_count": persistence_failure_count,
+                                "reconnect_count": reconnect_count,
+                                "write_pipeline_latency_ms": {
+                                    "sample_count": len(ordered),
+                                    "p50": percentile(0.50),
+                                    "p95": percentile(0.95),
+                                    "max": round(ordered[-1], 3) if ordered else None,
+                                },
+                                "orderbook": capture.metrics(),
+                            },
+                            received_at=utc_now(),
+                            session_id=session_id,
+                        )
+
+                    emit_health("connected")
                     try:
                         if stop.is_set():
                             await websocket.close()
@@ -312,6 +355,7 @@ class BinanceDualMarketCollector:
                                 break
                             received_at = utc_now()
                             stream = "unknown"
+                            pipeline_started = time.perf_counter()
                             try:
                                 # Preserve the exact provider frame before JSON parsing or
                                 # downstream validation. The typed event below is a derived copy.
@@ -342,7 +386,9 @@ class BinanceDualMarketCollector:
                                                   stream_name=metadata["stream_name"],
                                                   sequence=metadata["sequence"],
                                                   session_id=session_id)
+                                typed_event_count += 1
                                 stream_counts[kind] = stream_counts.get(kind, 0) + 1
+                                latency_samples.append((time.perf_counter() - pipeline_started) * 1000.0)
                                 if kind == "orderbook_depth":
                                     await capture.ingest(payload)
                             except (ValueError, TypeError) as exc:
@@ -351,8 +397,13 @@ class BinanceDualMarketCollector:
                                                   received_at=received_at,
                                                   stream_name=stream,
                                                   session_id=session_id)
+                                collector_error_count += 1
+                                latency_samples.append((time.perf_counter() - pipeline_started) * 1000.0)
+                            if raw_frame_count and raw_frame_count % self.health_interval_events == 0:
+                                emit_health("running")
                     finally:
                         await capture.close()
+                        emit_health("session_ending")
                         self._active_websockets.pop(spec.market, None)
                 ended_at = utc_now()
                 termination = "operator_stop" if stop.is_set() else "stream_ended"
@@ -361,6 +412,9 @@ class BinanceDualMarketCollector:
                                    "ended_at": ended_at, "event_count": sum(stream_counts.values()),
                                    "raw_frame_count": raw_frame_count,
                                    "stream_counts": stream_counts,
+                                   "collector_error_count": collector_error_count,
+                                   "persistence_failure_count": persistence_failure_count,
+                                   "reconnect_count": reconnect_count,
                                    "termination": termination},
                                   received_at=ended_at, session_id=session_id)
                 self.store.append(spec.market, "connection",
@@ -368,6 +422,7 @@ class BinanceDualMarketCollector:
                                    "retry_in_seconds": delay},
                                   session_id=session_id)
                 if not stop.is_set():
+                    reconnect_count += 1
                     try:
                         await asyncio.wait_for(stop.wait(), timeout=delay)
                     except TimeoutError:
@@ -386,6 +441,14 @@ class BinanceDualMarketCollector:
                                       received_at=interrupted_at, session_id=session_id)
                 raise
             except Exception as exc:  # noqa: BLE001  # network libraries expose several transport exception types
+                if isinstance(exc, OSError):
+                    persistence_failure_count += 1
+                reconnect_count += 1
+                logging.getLogger(__name__).exception(
+                    "Binance collector session failed for %s (%s)",
+                    spec.market,
+                    type(exc).__name__,
+                )
                 interrupted_at = utc_now()
                 self.store.append(spec.market, "session_manifest",
                                   {"state": "interrupted", "started_at": session_started,
@@ -393,12 +456,17 @@ class BinanceDualMarketCollector:
                                    "event_count": sum(stream_counts.values()),
                                    "raw_frame_count": raw_frame_count,
                                    "stream_counts": stream_counts,
+                                   "collector_error_count": collector_error_count,
+                                   "persistence_failure_count": persistence_failure_count,
+                                   "reconnect_count": reconnect_count,
                                    "termination": "transport_error",
                                    "error": type(exc).__name__},
                                   received_at=interrupted_at, session_id=session_id)
                 self.store.append(spec.market, "connection",
                                   {"state": "disconnected", "error": type(exc).__name__,
-                                   "retry_in_seconds": delay},
+                                   "retry_in_seconds": delay,
+                                   "reconnect_count": reconnect_count,
+                                   "persistence_failure_count": persistence_failure_count},
                                   session_id=locals().get("session_id"))
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=delay)
