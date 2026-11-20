@@ -448,6 +448,11 @@ def build_pit_microstructure_features(
         feature["feature_hash"] = hashlib.sha256(_canonical(feature)).hexdigest()
         snapshots.append(feature)
 
+    try:
+        verify_session_manifest(data_root, manifest)
+    except PITVaultError as exc:
+        raise PITFeatureError("session_integrity_changed_during_feature_build") from exc
+
     result = {
         "schema": "chartanalyzer_pit_microstructure_dataset_v1",
         "market": market,
