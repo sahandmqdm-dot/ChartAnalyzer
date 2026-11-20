@@ -7,15 +7,16 @@ positioning signal. Inputs must be completed, chronological OHLCV bars.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 ENGINE_VERSION = "FuturesDirectionalIntelligence 1.0.0"
 
 
 def _finite(name: str, value: Any, *, positive: bool = False) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{name} must be finite numeric")
+        raise TypeError(f"{name} must be finite numeric")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -66,11 +67,11 @@ def _atr(rows: list[dict[str, float]], period: int = 14) -> float:
 def _utc(value: Any, name: str) -> datetime:
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            value = datetime.fromisoformat(value)
         except ValueError as exc:
             raise ValueError(f"{name} must be an ISO-8601 timestamp") from exc
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{name} must be timezone-aware")
+        raise TypeError(f"{name} must be a timezone-aware datetime")
     return value.astimezone(UTC)
 
 
@@ -115,7 +116,7 @@ def analyze_futures_scenarios(
     timestamps: list[datetime] = []
     for index, item in enumerate(raw):
         if not isinstance(item, Mapping):
-            raise ValueError(f"bar {index} must be a mapping")
+            raise TypeError(f"bar {index} must be a mapping")
         stamp = _utc(item.get("close_time", item.get("time")), f"bar[{index}].close_time")
         row = {key: _finite(f"bar[{index}].{key}", item.get(key), positive=key != "volume")
                for key in ("open", "high", "low", "close", "volume")}
@@ -221,4 +222,4 @@ def analyze_futures_scenarios(
     }
 
 
-__all__ = ["analyze_futures_scenarios", "ENGINE_VERSION"]
+__all__ = ["ENGINE_VERSION", "analyze_futures_scenarios"]
