@@ -53,6 +53,12 @@ The ledger checks that `target_at = data_cutoff_at + horizon_bars × timeframe`.
 
 A forecast is immutable after insertion. Duplicate forecast IDs are rejected.
 
+## Microstructure evidence binding boundary
+
+The prospective ledger now accepts an optional `microstructure_provenance` object on each forecast record. When supplied, it validates and hash-chains the feature schema, Spot market/symbol identity, active-session snapshot mode, manifest/feature/dataset SHA-256 values, decision/availability timestamps, source-event watermark, book validity, sequence-gap/overflow counters, and session completion state. The decision timestamp must match the forecast's closed-candle `data_cutoff_at`; no feature watermark may exceed that cutoff.
+
+This is an evidence-binding primitive, not proof that the PMI model consumed those features. The current PMI forecast path does not yet use microstructure values in its quantile calculation, and the API does not yet load the snapshot artifact automatically. Until that adapter is wired and a feature-aware candidate model is separately frozen, report these fields as auxiliary observed context only, never as a model input or demonstrated predictive edge. A forecast cohort intended to evaluate microstructure must require provenance on every forecast rather than mixing records with and without it.
+
 ## Outcome resolution contract
 
 An outcome is accepted only when:
