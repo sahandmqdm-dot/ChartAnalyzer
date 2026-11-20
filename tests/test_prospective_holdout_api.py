@@ -262,6 +262,10 @@ def test_tick_archives_and_binds_microstructure_evidence_before_issuance(monkeyp
             "session_closed": False,
             "book_sequence_gaps": 0,
             "book_buffer_overflows": 0,
+            "collector_sequence_gaps": 0,
+            "collector_buffer_overflows": 0,
+            "collector_dropped_events": 0,
+            "collector_snapshot_failures": 0,
         }
 
     monkeypatch.setattr(app, "_prospective_binance_microstructure_provenance", fake_provenance)
