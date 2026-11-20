@@ -22,9 +22,9 @@ The repository is suitable for controlled research use and further validation. I
 | Dependency audit | `pip-audit`: no known vulnerabilities found |
 | Bandit | **0 medium / 0 high**; 888 low-severity findings remain |
 | SQLite resource lifecycle | Previously observed Python 3.13 unclosed-database warnings are resolved |
-| Ruff | Advisory job remains non-blocking and reports **441 repository-wide diagnostics** |
+| Ruff | Advisory job remains non-blocking and reports **438 repository-wide diagnostics** |
 
-The largest Ruff groups are UP006 (105), I001 (75), UP035 (53), BLE001 (49), UP045 (39), RUF046 (22), F401 (18), UP017 (15), TRY004 (10), RUF022 (9), F841 (6), C408 (4), SIM115 (4), SIM102 (3), UP031 (2), EXE001 (2), UP012 (2), PIE807 (2), RUF007 (2), RUF012 (3), RUF059 (5), RUF034 (1), RUF100 (1), SIM117 (1), and S110 (1).
+The Ruff breakdown is UP006 (105), I001 (75), UP035 (53), BLE001 (49), UP045 (39), RUF046 (22), F401 (18), UP017 (15), TRY004 (10), RUF022 (9), RUF059 (5), F841 (6), C408 (4), SIM115 (4), SIM102 (3), RUF012 (3), UP031 (2), EXE001 (2), RUF007 (2), UP012 (2), PIE807 (2), FURB188 (1), FURB167 (1), FURB157 (1), RUF034 (1), S110 (1), RUF100 (1), and SIM117 (1).
 
 Ruff is not a clean result. Its current advisory configuration means these diagnostics do not fail the overall workflow. They must be addressed in controlled batches; do not apply a blind repository-wide rewrite to security-sensitive or financial logic.
 
