@@ -1,4 +1,5 @@
-# ruff: noqa: I001  # Flat-layout import ordering differs across Ruff versions.\nimport datetime
+# ruff: noqa: I001  # Flat-layout import ordering differs across Ruff versions.
+import datetime
 import json
 import sqlite3
 
