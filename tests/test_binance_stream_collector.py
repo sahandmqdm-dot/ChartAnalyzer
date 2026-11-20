@@ -7,6 +7,7 @@ from binance_stream_collector import (
     MarketSpec,
     OrderBookSequence,
     SequenceGap,
+    extract_event_metadata,
 )
 
 
@@ -67,3 +68,41 @@ def test_orderbook_sequence_gap_invalidates_book():
     with pytest.raises(SequenceGap, match="depth_gap"):
         book.apply_diff({"U": 102, "u": 104})
     assert not book.valid
+
+
+
+def test_event_metadata_preserves_exchange_time_stream_and_native_sequence():
+    metadata = extract_event_metadata(
+        "btcusdt@depth@100ms",
+        {"E": 1795176000000, "U": 120, "u": 125, "s": "BTCUSDT"},
+    )
+    assert metadata["stream_name"] == "btcusdt@depth@100ms"
+    assert metadata["event_time"] == "2026-11-20T12:00:00+00:00"
+    assert metadata["sequence"] == {"U": 120, "u": 125}
+
+
+def test_trade_metadata_uses_trade_time_when_event_time_is_absent():
+    metadata = extract_event_metadata(
+        "btcusdt@trade", {"T": 1795176000000, "t": 9876, "a": 4321}
+    )
+    assert metadata["event_time"] == "2026-11-20T12:00:00+00:00"
+    assert metadata["sequence"] == {"T": 1795176000000, "t": 9876, "a": 4321}
+
+
+def test_hash_chain_persists_provenance_fields(tmp_path):
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    record = store.append(
+        "usdm", "orderbook_depth", {"U": 100, "u": 102},
+        received_at="2026-11-20T12:00:01+00:00",
+        event_time="2026-11-20T12:00:00+00:00",
+        stream_name="btcusdt@depth@100ms",
+        sequence={"U": 100, "u": 102},
+        session_id="session-1",
+    )
+    path = tmp_path / "usdm" / "orderbook_depth" / "2026-11-20.jsonl"
+    valid, count, head = store.verify_file(path)
+    assert valid and count == 1 and head == record["event_hash"]
+    assert record["event_time"] == "2026-11-20T12:00:00+00:00"
+    assert record["stream_name"] == "btcusdt@depth@100ms"
+    assert record["sequence"] == {"U": 100, "u": 102}
+    assert record["session_id"] == "session-1"
