@@ -14,16 +14,20 @@ OHLCV backtest engine until a validated event-driven replay adapter exists.
 - Requested quantity and zero or more fills, each with price, quantity and
   explicit maker or taker liquidity role.
 - Fill provenance for any supplied fills.
-- Explicit impact basis points, funding rate/event count and latency where
-  available. Missing estimates must not be silently replaced with zero in a
-  production evaluation; callers should mark the cost model incomplete.
+- Explicit impact basis points and, when funding events apply, a funding rate.
+  Missing impact or applicable funding inputs are flagged and make the cost
+  breakdown incomplete, rather than silently asserting zero cost.
+- Optional fill probability is accepted only with a calibration flag and a
+  traceable model source. It is reported as a supplied estimate, not used to
+  fabricate fills or expected PnL.
 
 ## Accounting semantics
 
 - Fees are calculated per fill using the fill's liquidity role. A limit order
   is not automatically maker.
-- A zero-fill limit order remains unfilled; a partial fill is charged only on
-  its executed quantity. No price-touch heuristic creates a fill.
+- A zero-fill limit order remains unfilled; venue rejection is represented
+  separately; a partial fill is charged only on executed quantity. No
+  price-touch heuristic creates a fill.
 - Spread cost is measured from reference mid to contemporaneous touch.
   Slippage is adverse execution beyond that touch. Impact is a separately
   supplied assumption because OHLCV alone does not reveal impact.
