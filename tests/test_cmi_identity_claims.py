@@ -165,3 +165,19 @@ def test_alias_key_collision_with_changed_validity_is_rejected_atomically():
     with pytest.raises(IdentityContractError, match="alias key collision"):
         resolver.register_many([], [changed])
     assert resolver.resolve("BTC", namespace="ticker", as_of=T0).status is ResolutionStatus.RESOLVED
+
+
+def test_future_recorded_entity_and_alias_are_not_visible_in_past():
+    future = entity(recorded_at=T0 + timedelta(days=1))
+    future_alias = alias("crypto:BTC", "BTC", recorded_at=T0 + timedelta(days=1))
+    resolver = EntityResolver([future], [future_alias])
+    assert resolver.resolve("crypto:BTC", namespace="id", as_of=T0).status is ResolutionStatus.UNRESOLVED
+    assert resolver.resolve("BTC", namespace="ticker", as_of=T0).status is ResolutionStatus.UNRESOLVED
+
+
+def test_claim_subject_must_be_point_in_time_valid():
+    record = evidence()
+    item = claim(record)
+    future_subject = entity(recorded_at=T0 + timedelta(seconds=1))
+    with pytest.raises(IdentityContractError, match="point-in-time valid"):
+        ClaimRegistry().register_many([item], entities=[future_subject], evidence=[record])
