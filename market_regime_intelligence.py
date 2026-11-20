@@ -58,6 +58,10 @@ def analyze_market_regimes(
     close = pd.to_numeric(candles["close"], errors="coerce").astype(float)
     if len(candles) == 0:
         raise ValueError("candles must not be empty")
+    if "time" in candles:
+        timestamps = pd.to_numeric(candles["time"], errors="coerce").to_numpy(dtype=float)
+        if not np.isfinite(timestamps).all() or (np.diff(timestamps) <= 0).any():
+            raise ValueError("time values must be finite, unique and strictly increasing")
     if not (np.isfinite(high).all() and np.isfinite(low).all() and np.isfinite(close).all()):
         raise ValueError("OHLC values must be finite")
     if (close <= 0).any() or (high <= 0).any() or (low <= 0).any() or (high < low).any():

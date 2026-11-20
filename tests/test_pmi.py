@@ -29,3 +29,22 @@ def test_regime_requires_history():
 def test_validation_metrics():
     out = pmi.validation_summary([0, 1, 1], [0.1, 0.8, 0.7], [0.1, 0.8, 0.7])
     assert out["n"] == 3 and out["brier"] >= 0
+
+
+def test_pmi_verifies_timestamps_when_available_and_rejects_reordering():
+    candles = frame()
+    candles["time"] = np.arange(len(candles), dtype=float) * 3600
+    result = pmi.analyze(candles, horizons=(1,), paths=100)
+    assert result["input_order_status"] == "VERIFIED_STRICTLY_INCREASING"
+    candles.loc[100, "time"] = candles.loc[99, "time"]
+    try:
+        pmi.analyze(candles, horizons=(1,), paths=100)
+    except ValueError as exc:
+        assert "strictly increasing" in str(exc)
+    else:
+        raise AssertionError("unordered timestamps must be rejected")
+
+
+def test_pmi_discloses_unverifiable_order_when_timestamps_are_absent():
+    result = pmi.analyze(frame(), horizons=(1,), paths=100)
+    assert result["input_order_status"] == "UNVERIFIED_NO_TIMESTAMP"

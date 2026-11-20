@@ -87,6 +87,12 @@ def analyze(df, timeframe="1h", horizons=(1, 4, 12, 24), paths=3000, seed=19):
     required = {"close"}
     if not required.issubset(df.columns):
         raise ValueError("dataframe must include close")
+    input_order_status = "UNVERIFIED_NO_TIMESTAMP"
+    if "time" in df:
+        timestamps = np.asarray(df["time"], dtype=float)
+        if not np.isfinite(timestamps).all() or np.any(np.diff(timestamps) <= 0):
+            raise ValueError("time values must be finite, unique and strictly increasing")
+        input_order_status = "VERIFIED_STRICTLY_INCREASING"
     c = np.asarray(df["close"], float)
     r = _log_returns(c)
     regime = classify_regime(c)
@@ -114,7 +120,7 @@ def analyze(df, timeframe="1h", horizons=(1, 4, 12, 24), paths=3000, seed=19):
             "price_quantiles": {"p10": _safe_float(last*(1+q[0])), "p50": _safe_float(last*(1+q[1])), "p90": _safe_float(last*(1+q[2]))},
             "annualization": "not applied", "distribution": "demeaned moving-block bootstrap"}
     return {"engine": "ChartAnalyzer PMI", "version": "5.0.0", "timeframe": timeframe,
-        "last_price": last, "regime": regime,
+        "last_price": last, "regime": regime, "input_order_status": input_order_status,
         "directional_score": score, "directional_label": "bullish_bias" if score > .12 else ("bearish_bias" if score < -.12 else "neutral"),
         "directional_probability": None,
         "probability_status": "not_calibrated: collect resolved out-of-sample journal predictions before reporting probabilities",
