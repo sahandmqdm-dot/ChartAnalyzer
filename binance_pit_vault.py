@@ -77,6 +77,8 @@ def _session_source_files(
                     if not line.strip():
                         continue
                     record = json.loads(line)
+                    if not isinstance(record, dict):
+                        raise PITVaultError("partition_record_must_be_an_object")
                     record_count += 1
                     if record.get("session_id") == session_id:
                         session_count += 1
@@ -126,6 +128,8 @@ def iter_session_records(
                         if not line.strip():
                             continue
                         record = json.loads(line)
+                        if not isinstance(record, dict):
+                            raise PITVaultError("partition_record_must_be_an_object")
                         if record.get("session_id") != session_id:
                             continue
                         if record.get("stream") != source_path.parent.name:
@@ -288,6 +292,8 @@ def verify_session_manifest(
     else:
         document = dict(manifest)
 
+    if not isinstance(document, dict):
+        raise PITVaultError("manifest_must_be_an_object")
     expected_hash = document.pop("manifest_hash", None)
     actual_hash = hashlib.sha256(_canonical(document)).hexdigest()
     if expected_hash != actual_hash:
