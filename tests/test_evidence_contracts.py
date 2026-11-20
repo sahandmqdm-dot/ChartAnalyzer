@@ -1,7 +1,6 @@
 import datetime
 
 import pytest
-
 from evidence_contracts import (
     EvidenceContractError,
     EvidenceRecord,
