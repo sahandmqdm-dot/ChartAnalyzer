@@ -120,6 +120,22 @@ def _timeframe_seconds(timeframe: str) -> int:
     return amount * {"m": 60, "h": 3600, "d": 86400, "w": 604800}[match.group(2)]
 
 
+def _baseline_payload(value: dict[str, Any]) -> dict[str, dict[str, float]]:
+    required = {"zero_return_point", "historical_unconditional", "ewma_gaussian"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("baseline_quantiles must contain the frozen baseline registry")
+    normalized = {}
+    for name in sorted(required):
+        item = value[name]
+        if not isinstance(item, dict) or set(item) != {"q10", "q50", "q90"}:
+            raise ValueError(f"{name} must contain q10, q50 and q90")
+        q10, q50, q90 = (float(item[key]) for key in ("q10", "q50", "q90"))
+        if not all(math.isfinite(x) for x in (q10, q50, q90)) or not q10 <= q50 <= q90:
+            raise ValueError(f"{name} quantiles must be finite and ordered")
+        normalized[name] = {"q10": q10, "q50": q50, "q90": q90}
+    return normalized
+
+
 def _forecast_payload(forecast: ForecastRecord) -> dict[str, Any]:
     payload = asdict(forecast)
     for key in ("issued_at", "target_at", "data_cutoff_at"):
@@ -241,6 +257,7 @@ class ProspectiveHoldoutLedger:
     def record_forecast(
         self, forecast: ForecastRecord, *, config_fingerprint: str,
         input_source: str, reference_price: float,
+        baseline_quantiles: dict[str, Any],
         recorded_at: datetime | None = None,
     ) -> dict[str, Any]:
         """Append a forecast before its target time; never overwrite a prior forecast."""
@@ -255,6 +272,7 @@ class ProspectiveHoldoutLedger:
         reference = float(reference_price)
         if not math.isfinite(reference) or reference <= 0:
             raise ValueError("reference_price must be finite and positive")
+        baselines = _baseline_payload(baseline_quantiles)
         if current < forecast.issued_at or current >= forecast.target_at:
             raise ValueError("forecast must be recorded at/after issuance and strictly before its target")
         if (current - forecast.issued_at).total_seconds() > 60:
@@ -267,6 +285,7 @@ class ProspectiveHoldoutLedger:
             "config_fingerprint": config_hash,
             "input_source": input_source.strip(),
             "reference_price": reference,
+            "baseline_quantiles": baselines,
             "recorded_at": _iso(current),
         }
         connection = self._connect()
@@ -474,8 +493,17 @@ class ProspectiveHoldoutLedger:
                     resolved_at=_parse(outcome["resolved_at"]),
                 ))
             report = evaluate_forecasts(resolved, min_segment_count=int(cohort["min_segment_count"]))
+            from prospective_baselines import compare_candidate_to_baselines
+            baseline_quantiles = [
+                json.loads(row["payload"])["baseline_quantiles"] for row in forecast_rows
+            ]
+            baseline_comparison = compare_candidate_to_baselines(
+                resolved, baseline_quantiles,
+                min_segment_count=int(cohort["min_segment_count"]),
+            )
             report = {
                 **report,
+                "baseline_comparison": baseline_comparison,
                 "prospective_holdout": {
                     "cohort_id": cohort["cohort_id"],
                     "config_fingerprint": cohort["config_fingerprint"],
