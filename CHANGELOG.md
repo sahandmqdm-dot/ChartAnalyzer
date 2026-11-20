@@ -7,6 +7,7 @@
 - Added read-only funding, mark/index, open-interest, order-book snapshot and bounded aggregate-trade context.
 - Explicitly label directional levels as WATCH ONLY; no order placement or Futures deployment authorization.
 - Added independent Decimal-based L2 reference replay and automatic agreement checks against the production order-book reconstruction.
+- Added bounded-memory PIT manifest/replay scans and receive-time-causal tick, liquidation and L2 feature snapshots.
 
 
 ## 7.2.0 - 2026-11-16
