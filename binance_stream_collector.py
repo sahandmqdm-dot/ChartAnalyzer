@@ -466,8 +466,24 @@ async def _run_cli() -> None:
     parser.add_argument("--data-dir", default=os.environ.get("CHARTANALYZER_DATA_DIR", "./data/binance_raw"))
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--proxy", default=os.environ.get("CHARTANALYZER_BINANCE_PROXY"))
+    parser.add_argument(
+        "--fsync-every-events",
+        type=int,
+        default=int(os.environ.get("CHARTANALYZER_BINANCE_FSYNC_EVERY_EVENTS", "100")),
+        help="fsync each partition after this many appended records (1 = every record)",
+    )
+    parser.add_argument(
+        "--fsync-each-event",
+        action="store_true",
+        help="fsync every record; strongest durability, potentially lower throughput",
+    )
     args = parser.parse_args()
-    collector = BinanceDualMarketCollector(args.data_dir, proxy=args.proxy)
+    store = HashChainJSONLStore(
+        args.data_dir,
+        fsync_each_event=args.fsync_each_event,
+        fsync_every_events=args.fsync_every_events,
+    )
+    collector = BinanceDualMarketCollector(args.data_dir, proxy=args.proxy, store=store)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
