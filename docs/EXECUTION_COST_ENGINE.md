@@ -34,7 +34,10 @@ OHLCV backtest engine until a validated event-driven replay adapter exists.
 - Funding is applied only from explicit funding inputs. Latency is retained as
   context and is not converted into fabricated slippage.
 - Every report carries fee schedule provenance, a schedule hash, fill source,
-  assumptions and an assumptions hash.
+  assumptions and an assumptions hash. The registry adapter persists this
+  breakdown with the experiment and marks incomplete cost models separately
+  from completed evidence; missing cost inputs cannot silently become a
+  completed cost experiment.
 
 ## Integration boundary
 
