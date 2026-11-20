@@ -24,7 +24,7 @@ def _active_session(root):
     )
     store.append(
         "spot", "raw_frames",
-        {"encoding": "utf-8", "raw_message": "{\\"stream\\":\\"btcusdt@trade\\",\\"data\\":{\\"t\\":1}}"},
+        {"encoding": "utf-8", "raw_message": '{"stream":"btcusdt@trade","data":{"t":1}}'},
         received_at=_stamp(1), session_id=SESSION,
     )
     store.append(
@@ -37,7 +37,7 @@ def _active_session(root):
     # the decision time. Exchange event time alone must not make it eligible.
     store.append(
         "spot", "raw_frames",
-        {"encoding": "utf-8", "raw_message": "{\\"stream\\":\\"btcusdt@trade\\",\\"data\\":{\\"t\\":2}}"},
+        {"encoding": "utf-8", "raw_message": '{"stream":"btcusdt@trade","data":{"t":2}}'},
         received_at=_stamp(6), session_id=SESSION,
     )
     store.append(
