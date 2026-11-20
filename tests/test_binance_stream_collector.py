@@ -41,6 +41,15 @@ def test_hash_chain_store_appends_and_verifies(tmp_path):
     assert valid and count == 2 and head == second["event_hash"]
 
 
+def test_hash_chain_verifier_rejects_non_object_jsonl_records(tmp_path):
+    path = tmp_path / "malformed.jsonl"
+    path.write_text("[]\n", encoding="utf-8")
+    valid, count, error = HashChainJSONLStore.verify_file(path)
+    assert valid is False
+    assert count == 0
+    assert error == "unreadable_or_malformed"
+
+
 def test_hash_chain_detects_payload_tampering(tmp_path):
     store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
     store.append("usdm", "orderbook_depth", {"U": 1, "u": 2},
