@@ -438,6 +438,9 @@ class ProspectiveHoldoutLedger:
     def final_report(self) -> dict[str, Any]:
         connection = self._connect()
         try:
+            integrity = self._verify_connection(connection)
+            if integrity["status"] != "PASS":
+                raise ValueError("prospective holdout ledger integrity check failed; final report is blocked")
             row = connection.execute("SELECT payload FROM evaluations WHERE singleton=1").fetchone()
             if row is None:
                 raise ValueError("final report is locked until the one-time evaluation is completed")
