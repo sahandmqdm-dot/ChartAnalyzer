@@ -1,0 +1,164 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from evidence_contracts import (
+    EvidenceContractError,
+    EvidenceRecord,
+    EvidenceType,
+    SourceReference,
+    SourceType,
+    TrustTier,
+    canonical_sha256,
+    evidence_available_at,
+    validate_source_links,
+)
+
+
+T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+
+def source(**overrides):
+    values = dict(
+        source_id="src:exchange:binance:btc",
+        provider="binance",
+        source_type=SourceType.EXCHANGE,
+        source_uri="https://example.invalid/market/BTCUSDT",
+        first_seen_at=T0,
+        retrieved_at=T0 + timedelta(seconds=2),
+        published_at=T0,
+        publisher="Binance",
+        content_hash="a" * 64,
+        license_policy="public_market_data",
+        trust_tier=TrustTier.PRIMARY,
+    )
+    values.update(overrides)
+    return SourceReference(**values)
+
+
+def evidence(**overrides):
+    values = dict(
+        evidence_type=EvidenceType.OBSERVATION,
+        claim="BTC reference price observed",
+        source_reference_id="src:exchange:binance:btc",
+        first_seen_at=T0 + timedelta(seconds=1),
+        available_at=T0 + timedelta(seconds=2),
+        published_at=T0,
+        entity_ids=("crypto:BTC",),
+        instrument_id="binance:spot:BTCUSDT",
+        value=65000.0,
+        unit="USD/BTC",
+        currency="USD",
+    )
+    values.update(overrides)
+    return EvidenceRecord(**values)
+
+
+def test_source_normalizes_timezone_to_utc():
+    local = datetime(2026, 1, 1, 15, 30, tzinfo=__import__("datetime").timezone(
+        timedelta(hours=3, minutes=30)
+    ))
+    item = source(first_seen_at=local, retrieved_at=local + timedelta(seconds=1))
+    assert item.first_seen_at == datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("field", ["first_seen_at", "retrieved_at"])
+def test_source_rejects_naive_timestamps(field):
+    values = dict(first_seen_at=T0, retrieved_at=T0 + timedelta(seconds=1))
+    values[field] = datetime(2026, 1, 1)
+    with pytest.raises(EvidenceContractError, match="timezone-aware"):
+        source(**values)
+
+
+def test_source_rejects_retrieval_before_first_seen():
+    with pytest.raises(EvidenceContractError, match="cannot precede"):
+        source(retrieved_at=T0 - timedelta(seconds=1))
+
+
+def test_source_rejects_invalid_content_hash():
+    with pytest.raises(EvidenceContractError, match="SHA-256"):
+        source(content_hash="not-a-hash")
+
+
+def test_evidence_id_is_deterministic_and_payload_sensitive():
+    first = evidence()
+    second = evidence()
+    changed = evidence(value=65001.0)
+    assert first.evidence_id == second.evidence_id
+    assert first.evidence_id != changed.evidence_id
+    assert len(first.evidence_id) == 64
+
+
+def test_evidence_rejects_naive_and_future_availability():
+    with pytest.raises(EvidenceContractError, match="timezone-aware"):
+        evidence(available_at=datetime(2026, 1, 1, 12, 0))
+    with pytest.raises(EvidenceContractError, match="cannot precede"):
+        evidence(available_at=T0 - timedelta(microseconds=1))
+
+
+def test_evidence_rejects_non_finite_values_and_confidence():
+    with pytest.raises(EvidenceContractError, match="finite"):
+        evidence(value=float("nan"))
+    with pytest.raises(EvidenceContractError, match=r"\[0, 1\]"):
+        evidence(confidence=1.1)
+
+
+def test_evidence_rejects_duplicate_entity_ids():
+    with pytest.raises(EvidenceContractError, match="duplicates"):
+        evidence(entity_ids=("asset:BTC", "asset:BTC"))
+
+
+def test_valid_time_must_be_ordered():
+    with pytest.raises(EvidenceContractError, match="valid_time_end"):
+        evidence(
+            valid_time_start=T0 + timedelta(days=2),
+            valid_time_end=T0 + timedelta(days=1),
+        )
+
+
+def test_point_in_time_filter_excludes_not_yet_available_evidence():
+    early = evidence(available_at=T0 + timedelta(seconds=2))
+    late = evidence(
+        claim="Later correction",
+        available_at=T0 + timedelta(days=1),
+        first_seen_at=T0 + timedelta(days=1),
+    )
+    selected = evidence_available_at([late, early], T0 + timedelta(minutes=1))
+    assert selected == (early,)
+
+
+def test_point_in_time_filter_rejects_naive_cutoff():
+    with pytest.raises(EvidenceContractError, match="timezone-aware"):
+        evidence_available_at([evidence()], datetime(2026, 1, 1))
+
+
+def test_source_link_validation_and_temporal_consistency():
+    src = source()
+    record = evidence()
+    assert validate_source_links([record], [src]) == (record,)
+    with pytest.raises(EvidenceContractError, match="missing source"):
+        validate_source_links([record], [])
+    with pytest.raises(EvidenceContractError, match="precedes its source"):
+        validate_source_links(
+            [evidence(first_seen_at=T0 - timedelta(seconds=1))], [src]
+        )
+
+
+def test_publication_timestamp_must_match_source_reference():
+    with pytest.raises(EvidenceContractError, match="publication timestamp"):
+        validate_source_links(
+            [evidence(published_at=T0 + timedelta(seconds=5))], [source()]
+        )
+
+
+def test_serialization_is_json_safe_and_stable():
+    item = evidence()
+    encoded = item.to_dict()
+    assert encoded["available_at"].endswith("Z")
+    assert encoded["evidence_type"] == "observation"
+    assert canonical_sha256({"b": 2, "a": 1}) == canonical_sha256({"a": 1, "b": 2})
+
+
+def test_evidence_rejects_forged_supplied_id():
+    with pytest.raises(EvidenceContractError, match="does not match"):
+        evidence(evidence_id="f" * 64)
