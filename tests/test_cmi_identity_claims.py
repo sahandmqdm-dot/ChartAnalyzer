@@ -3,12 +3,21 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from cmi_identity_claims import (
-    ClaimModality, ClaimRecord, ClaimRegistry, ClaimStance, EntityAlias,
-    EntityRecord, EntityResolver, EntityType, IdentityContractError,
-    ResolutionMethod, ResolutionStatus,
+    ClaimModality,
+    ClaimRecord,
+    ClaimRegistry,
+    ClaimStance,
+    EntityAlias,
+    EntityRecord,
+    EntityResolver,
+    EntityType,
+    IdentityContractError,
+    ResolutionMethod,
+    ResolutionStatus,
 )
 from evidence_contracts import EvidenceRecord, EvidenceType
 from multi_asset import AssetClass, Instrument, MarketRegistry, MarketType
+
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
