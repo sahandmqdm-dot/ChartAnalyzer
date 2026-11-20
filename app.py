@@ -60,6 +60,25 @@ CFG_PATH = os.path.join(BASE_DIR, "config.json")
 VALIDATION_EVIDENCE_PATH = os.path.join(BASE_DIR, "strategy_validation_evidence.json")
 RESEARCH_REGISTRY_PATH = os.path.join(BASE_DIR, "research_registry.db")
 HOLDOUT_VAULT_PATH = os.path.join(BASE_DIR, "holdout_vault.json")
+
+
+def _prospective_data_directory():
+    configured = os.getenv("CHARTANALYZER_DATA_DIR", "").strip()
+    if configured:
+        root = os.path.abspath(os.path.expanduser(configured))
+    elif os.name == "nt":
+        root = os.path.join(os.getenv("LOCALAPPDATA") or os.path.expanduser("~"),
+                            "ChartAnalyzer", "prospective_holdouts")
+    else:
+        state_home = os.getenv("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+        root = os.path.join(state_home, "chartanalyzer", "prospective_holdouts")
+    os.makedirs(root, mode=0o700, exist_ok=True)
+    if os.name == "posix":
+        os.chmod(root, 0o700)
+    return root
+
+
+PROSPECTIVE_DATA_DIR = _prospective_data_directory()
 AC.DB_PATH = os.path.join(BASE_DIR, "agent_journal.db")
 RAMZINEX = "https://publicapi.ramzinex.ir/exchange/api/v1.0/exchange/chart/tv/v2.0/history"
 TF_MIN = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "12h": 720, "1d": 1440}
