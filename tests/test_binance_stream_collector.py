@@ -1,8 +1,11 @@
+import asyncio
 import json
 
 import pytest
 
+from binance_orderbook import DepthSnapshot
 from binance_stream_collector import (
+    BinanceDualMarketCollector,
     HashChainJSONLStore,
     MarketSpec,
     OrderBookSequence,
@@ -110,3 +113,70 @@ def test_hash_chain_persists_provenance_fields(tmp_path):
     assert record["stream_name"] == "btcusdt@depth@100ms"
     assert record["sequence"] == {"U": 100, "u": 102}
     assert record["session_id"] == "session-1"
+
+
+
+def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
+    stop = asyncio.Event()
+
+    class FakeWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        def __aiter__(self):
+            async def messages():
+                yield json.dumps({
+                    "stream": "btcusdt@depth@100ms",
+                    "data": {
+                        "e": "depthUpdate", "E": 1795176000000, "s": "BTCUSDT",
+                        "U": 101, "u": 102, "b": [["100.5", "3"]], "a": [],
+                    },
+                })
+                await asyncio.sleep(0.02)
+                yield json.dumps({
+                    "stream": "btcusdt@depth@100ms",
+                    "data": {
+                        "e": "depthUpdate", "E": 1795176000100, "s": "BTCUSDT",
+                        "U": 103, "u": 103, "b": [], "a": [],
+                    },
+                })
+                stop.set()
+
+            return messages()
+
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    collector = BinanceDualMarketCollector(
+        tmp_path,
+        store=store,
+        connector=lambda uri, **options: FakeWebSocket(),
+        snapshot_fetch=lambda spec: DepthSnapshot(
+            last_update_id=100,
+            bids=((100.0, 2.0), (99.0, 3.0)),
+            asks=((101.0, 1.0), (102.0, 4.0)),
+            market="spot",
+            symbol="BTCUSDT",
+        ),
+    )
+
+    async def scenario():
+        await collector.run_market(MarketSpec.spot("BTCUSDT"), stop)
+        store.close()
+
+    asyncio.run(scenario())
+
+    records = []
+    for path in tmp_path.rglob("*.jsonl"):
+        records.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
+
+    depth = [r for r in records if r["stream"] == "orderbook_depth"]
+    snapshots = [r for r in records if r["stream"] == "orderbook_snapshots"]
+    states = [r for r in records if r["stream"] == "orderbook_state"]
+    assert len(depth) == 2
+    assert len(snapshots) == 1
+    assert any(r["payload"]["state"] == "synchronized" for r in states)
+    session_ids = {r["session_id"] for r in depth + snapshots + states}
+    assert len(session_ids) == 1
+    assert all(r["event_time"] for r in depth)
