@@ -47,10 +47,10 @@ Leave the proxy variable unset for the library's default environment proxy behav
 
 This first implementation is a durable raw-stream capture foundation, not yet a complete reconstructed market-data product.
 
-- `OrderBookSequence` is a sequence-continuity guard only. It is not a full bid/ask book and does not yet perform REST snapshot bootstrap, buffered diff replay, or periodic snapshot reconciliation.
+- `binance_orderbook.py` now provides a public REST snapshot fetcher, a bounded-by-provider-depth in-memory bid/ask map, buffered diff synchronization, sequence-gap rejection, and top-of-book/depth-imbalance metrics. The caller must buffer WebSocket depth events while fetching the snapshot, then pass that buffer to `synchronize_buffered`. The long-running collector is not yet orchestrating this bootstrap/rebootstrap loop or periodically reconciling snapshots.
 - Raw trade events preserve Binance payload fields, including trade IDs, event/trade timestamps, price, quantity and maker-side flag where supplied.
 - Historical public trade endpoints can sometimes backfill trade IDs, subject to endpoint retention and API limits. Historical L2 order-book deltas cannot be reconstructed after a disconnect. The collector must record those intervals as unrecoverable depth gaps.
-- The next implementation stage must add snapshot bootstrap + buffered diff synchronization, a bounded in-memory book, recovery-gap records, replay, schema validation, and a Parquet compaction path. Do not mark an order book valid until snapshot and diff sequence synchronization succeeds.
+- The next implementation stage must connect the collector's live depth stream to the snapshot/buffer synchronizer, persist explicit depth-gap/rebootstrap lifecycle events, add deterministic replay, schema validation, and a Parquet compaction path. Do not mark an order book valid until snapshot and diff sequence synchronization succeeds.
 - Liquidation stream events are sampled/aggregated provider events, not a complete record of every liquidation.
 
 ## Integrity and holdout boundary
