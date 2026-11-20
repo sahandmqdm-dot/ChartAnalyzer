@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+ # ruff: noqa: I001\nfrom datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
