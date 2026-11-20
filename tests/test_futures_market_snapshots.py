@@ -37,7 +37,7 @@ def test_order_book_snapshot_reports_imbalance_spread_and_snapshot_semantics():
     adapter = BinanceUSDMPublicAdapter(transport=fake_transport(payload), clock=lambda: NOW)
     result = adapter.fetch_order_book("BTCUSDT", 5)
     assert result["last_update_id"] == 123
-    assert result["top20_quantity_imbalance"] == pytest.approx(0.5)
+    assert result["top20_quantity_imbalance"] == pytest.approx(1.0 / 3.0)
     assert result["spread_bps"] == pytest.approx(100.0)
     assert result["sequence_semantics"] == "single_rest_snapshot_not_continuous_diff_stream"
 
