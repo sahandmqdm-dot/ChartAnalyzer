@@ -103,7 +103,15 @@ This is tamper-evident operational control, not a cryptographic boundary against
 
 ## Current implementation boundary
 
-`prospective_holdout.py` currently provides the tested ledger and evaluation primitive. It is not yet wired to the dashboard, live forecast generation, or an automatic market-data resolver. No future data has been collected and no prospective performance result exists yet. The API/UI integration and provider-specific outcome resolver are follow-on work; the holdout must remain locked until those are complete.
+The repository contains three distinct operational paths that must not be conflated:
+
+1. The local API integrates the Spot PMI forecast, prospective ledger, and provider-specific closed-candle outcome resolver. Its current documented scope is Spot only.
+2. `binance_stream_collector.py` independently captures raw Binance Spot and USD-M Futures WebSocket frames, derived trades/depth/liquidation events, and Order Book synchronization records. It writes append-only JSONL partitions with hash chaining. It does not place orders.
+3. The microstructure feature and replay modules provide research primitives, but this does not by itself prove that their features are consumed by the frozen PMI forecast or scored in the prospective ledger.
+
+The raw Binance stream collector is therefore an independent evidence-capture service, not an automatic input to the current Spot PMI Holdout. Do not claim a combined OHLCV + Tick + Order Book model evaluation until a versioned, tested adapter links the same point-in-time raw-data manifest and derived features to forecast issuance and evaluation.
+
+No future data has been collected and no prospective performance result exists yet. The holdout must remain locked until the complete intended path, provider identity, data completeness checks, and release fingerprint are validated.
 
 ## Acceptance checklist before starting the clock
 
