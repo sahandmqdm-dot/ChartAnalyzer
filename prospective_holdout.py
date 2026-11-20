@@ -240,7 +240,8 @@ class ProspectiveHoldoutLedger:
 
     def record_forecast(
         self, forecast: ForecastRecord, *, config_fingerprint: str,
-        input_source: str, recorded_at: datetime | None = None,
+        input_source: str, reference_price: float,
+        recorded_at: datetime | None = None,
     ) -> dict[str, Any]:
         """Append a forecast before its target time; never overwrite a prior forecast."""
         if not isinstance(forecast, ForecastRecord):
@@ -251,6 +252,9 @@ class ProspectiveHoldoutLedger:
             raise ValueError("input_source must be a non-empty string")
         if not _SHA256.fullmatch(forecast.dataset_fingerprint.lower()):
             raise ValueError("forecast dataset_fingerprint must be a SHA-256 digest")
+        reference = float(reference_price)
+        if not math.isfinite(reference) or reference <= 0:
+            raise ValueError("reference_price must be finite and positive")
         if current < forecast.issued_at or current >= forecast.target_at:
             raise ValueError("forecast must be recorded at/after issuance and strictly before its target")
         if (current - forecast.issued_at).total_seconds() > 60:
@@ -262,6 +266,7 @@ class ProspectiveHoldoutLedger:
             "forecast": _forecast_payload(forecast),
             "config_fingerprint": config_hash,
             "input_source": input_source.strip(),
+            "reference_price": reference,
             "recorded_at": _iso(current),
         }
         connection = self._connect()
@@ -347,6 +352,60 @@ class ProspectiveHoldoutLedger:
             raise
         return self.status()
 
+    def cohort_details(self) -> dict[str, Any]:
+        """Return frozen cohort metadata, never forecast scores."""
+        connection = self._connect()
+        try:
+            row = connection.execute("SELECT payload FROM cohort WHERE singleton=1").fetchone()
+            return json.loads(row["payload"]) if row else {}
+        finally:
+            connection.close()
+
+    def next_issuance_due(self) -> datetime | None:
+        """Earliest permitted next issue time under the non-overlap policy."""
+        connection = self._connect()
+        try:
+            cohort_row = connection.execute("SELECT payload FROM cohort WHERE singleton=1").fetchone()
+            if cohort_row is None:
+                return None
+            latest = connection.execute(
+                "SELECT payload FROM forecasts ORDER BY recorded_at DESC LIMIT 1"
+            ).fetchone()
+            if latest is None:
+                return _parse(json.loads(cohort_row["payload"])["collection_start"])
+            payload = json.loads(latest["payload"])
+            return _parse(payload["forecast"]["target_at"])
+        finally:
+            connection.close()
+
+    def pending_forecasts(self) -> list[dict[str, Any]]:
+        """Internal resolver queue; returns unresolved forecast metadata, not scores."""
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT f.forecast_id,f.payload FROM forecasts AS f "
+                "LEFT JOIN outcomes AS o ON o.forecast_id=f.forecast_id "
+                "WHERE o.forecast_id IS NULL ORDER BY f.recorded_at"
+            ).fetchall()
+            pending = []
+            for row in rows:
+                payload = json.loads(row["payload"])
+                forecast = _forecast_from_payload(payload["forecast"])
+                pending.append({
+                    "forecast_id": forecast.forecast_id,
+                    "instrument_id": forecast.instrument_id,
+                    "market_type": forecast.market_type,
+                    "timeframe": forecast.timeframe,
+                    "horizon_bars": forecast.horizon_bars,
+                    "data_cutoff_at": _iso(forecast.data_cutoff_at),
+                    "target_at": _iso(forecast.target_at),
+                    "input_source": payload["input_source"],
+                    "reference_price": float(payload["reference_price"]),
+                })
+            return pending
+        finally:
+            connection.close()
+
     def status(self) -> dict[str, Any]:
         connection = self._connect()
         try:
@@ -371,7 +430,8 @@ class ProspectiveHoldoutLedger:
                 "cohort_id": cohort["cohort_id"], "instrument_id": cohort["instrument_id"],
                 "timeframe": cohort["timeframe"], "horizon_bars": cohort["horizon_bars"],
                 "collection_start": cohort["collection_start"], "collection_end": cohort["collection_end"],
-                "min_forecasts": cohort["min_forecasts"], "forecast_count": forecast_count,
+                "min_forecasts": cohort["min_forecasts"],
+                "min_segment_count": cohort["min_segment_count"], "forecast_count": forecast_count,
                 "resolved_count": resolved_count, "unresolved_count": forecast_count - resolved_count,
                 "report_available": evaluated,
             }
