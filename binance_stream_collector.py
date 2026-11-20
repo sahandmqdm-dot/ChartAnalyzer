@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import urllib.parse
 import urllib.request
@@ -85,7 +86,14 @@ class HashChainJSONLStore:
                trade_time: str | None = None, stream_name: str | None = None,
                sequence: dict[str, int] | None = None,
                session_id: str | None = None) -> dict[str, Any]:
-        received = received_at or utc_now()
+        received_value = received_at or utc_now()
+        try:
+            received_dt = datetime.fromisoformat(received_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("received_at must be an ISO-8601 timestamp") from exc
+        if received_dt.tzinfo is None:
+            raise ValueError("received_at must include a timezone")
+        received = received_dt.astimezone(UTC).isoformat()
         day = received[:10]
         directory = self.root / market / stream
         directory.mkdir(parents=True, exist_ok=True)
@@ -93,6 +101,13 @@ class HashChainJSONLStore:
         previous = self._heads.get(path)
         if previous is None:
             previous = self._last_hash(path)
+            if path.exists():
+                valid, existing_count, _ = self.verify_file(path)
+                if not valid:
+                    raise CollectorError(
+                        f"refusing to append to corrupt partition: {path.name}"
+                    )
+                self._counts[path] = existing_count
         body = {
             "schema": "binance_raw_event_v1",
             "market": market,
@@ -135,12 +150,10 @@ class HashChainJSONLStore:
     def _last_hash(path: Path) -> str | None:
         if not path.exists():
             return None
-        last = None
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if line.strip():
-                    last = json.loads(line).get("event_hash")
-        return last
+        valid, _, head = HashChainJSONLStore.verify_file(path)
+        if not valid:
+            raise CollectorError(f"refusing to extend corrupt partition: {path.name}")
+        return head
 
     @staticmethod
     def verify_file(path: str | Path) -> tuple[bool, int, str | None]:
@@ -239,6 +252,7 @@ class BinanceDualMarketCollector:
         self.connector = connector
         self.snapshot_fetch = snapshot_fetch
         self.max_buffered_depth_events = max_buffered_depth_events
+        self._active_websockets: dict[str, Any] = {}
 
     def _connect(self, uri: str):
         factory = self.connector or connect
@@ -260,11 +274,12 @@ class BinanceDualMarketCollector:
         uri = f"{spec.ws_url}?{urllib.parse.urlencode({'streams': streams})}"
         while not stop.is_set():
             session_id = None
+            session_started = None
+            stream_counts: dict[str, int] = {}
             try:
                 async with self._connect(uri) as websocket:
                     session_id = uuid.uuid4().hex
                     session_started = utc_now()
-                    stream_counts: dict[str, int] = {}
                     self.store.append(spec.market, "session_manifest",
                                       {"state": "started", "endpoint": spec.ws_url,
                                        "streams": list(spec.streams),
@@ -283,11 +298,15 @@ class BinanceDualMarketCollector:
                         max_buffered_events=self.max_buffered_depth_events,
                         session_id=session_id,
                     )
+                    self._active_websockets[spec.market] = websocket
                     try:
+                        if stop.is_set():
+                            await websocket.close()
                         async for message in websocket:
                             if stop.is_set():
                                 break
                             received_at = utc_now()
+                            stream = "unknown"
                             try:
                                 envelope = json.loads(message)
                                 stream = str(envelope.get("stream", "unknown"))
@@ -310,20 +329,25 @@ class BinanceDualMarketCollector:
                             except (ValueError, TypeError) as exc:
                                 self.store.append(spec.market, "collector_errors",
                                                   {"error": type(exc).__name__, "message": str(exc)},
-                                                  received_at=received_at)
+                                                  received_at=received_at,
+                                                  stream_name=stream,
+                                                  session_id=session_id)
                     finally:
                         await capture.close()
+                        self._active_websockets.pop(spec.market, None)
+                ended_at = utc_now()
+                termination = "operator_stop" if stop.is_set() else "stream_ended"
+                self.store.append(spec.market, "session_manifest",
+                                  {"state": "ended", "started_at": session_started,
+                                   "ended_at": ended_at, "event_count": sum(stream_counts.values()),
+                                   "stream_counts": stream_counts,
+                                   "termination": termination},
+                                  received_at=ended_at, session_id=session_id)
+                self.store.append(spec.market, "connection",
+                                  {"state": "stopped" if stop.is_set() else "stream_ended",
+                                   "retry_in_seconds": delay},
+                                  session_id=session_id)
                 if not stop.is_set():
-                    ended_at = utc_now()
-                    self.store.append(spec.market, "session_manifest",
-                                      {"state": "ended", "started_at": session_started,
-                                       "ended_at": ended_at, "event_count": sum(stream_counts.values()),
-                                       "stream_counts": stream_counts,
-                                       "termination": "stream_ended"},
-                                      received_at=ended_at, session_id=session_id)
-                    self.store.append(spec.market, "connection",
-                                      {"state": "stream_ended", "retry_in_seconds": delay},
-                                      session_id=session_id)
                     try:
                         await asyncio.wait_for(stop.wait(), timeout=delay)
                     except TimeoutError:
@@ -331,17 +355,25 @@ class BinanceDualMarketCollector:
                     delay = min(self.reconnect_max, delay * 2)
             except asyncio.CancelledError:
                 if session_id is not None:
+                    interrupted_at = utc_now()
                     self.store.append(spec.market, "session_manifest",
-                                      {"state": "interrupted", "ended_at": utc_now(),
+                                      {"state": "interrupted", "started_at": session_started,
+                                       "ended_at": interrupted_at,
+                                       "event_count": sum(stream_counts.values()),
+                                       "stream_counts": stream_counts,
                                        "termination": "cancelled"},
-                                      session_id=session_id)
+                                      received_at=interrupted_at, session_id=session_id)
                 raise
             except Exception as exc:  # noqa: BLE001  # network libraries expose several transport exception types
+                interrupted_at = utc_now()
                 self.store.append(spec.market, "session_manifest",
-                                  {"state": "interrupted", "ended_at": utc_now(),
+                                  {"state": "interrupted", "started_at": session_started,
+                                   "ended_at": interrupted_at,
+                                   "event_count": sum(stream_counts.values()),
+                                   "stream_counts": stream_counts,
                                    "termination": "transport_error",
                                    "error": type(exc).__name__},
-                                  session_id=session_id)
+                                  received_at=interrupted_at, session_id=session_id)
                 self.store.append(spec.market, "connection",
                                   {"state": "disconnected", "error": type(exc).__name__,
                                    "retry_in_seconds": delay},
@@ -368,9 +400,22 @@ class BinanceDualMarketCollector:
                         raise error
                     raise CollectorError("market collection task stopped unexpectedly")
         finally:
+            if stop_task.done() and not stop_task.cancelled():
+                # Close active sockets so their iterators finish and sessions receive
+                # a normal operator-stop terminal record instead of a cancellation.
+                for market, websocket in list(self._active_websockets.items()):
+                    close = getattr(websocket, "close", None)
+                    if close is not None:
+                        try:
+                            await close()
+                        except Exception as exc:  # noqa: BLE001  # best-effort transport shutdown
+                            logging.getLogger(__name__).warning(
+                                "WebSocket close failed for %s: %s", market, type(exc).__name__
+                            )
+            else:
+                for task in tasks:
+                    task.cancel()
             stop_task.cancel()
-            for task in tasks:
-                task.cancel()
             await asyncio.gather(*tasks, stop_task, return_exceptions=True)
             self.store.close()
 
