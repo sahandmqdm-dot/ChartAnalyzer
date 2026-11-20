@@ -208,7 +208,9 @@ class EntityResolver:
         as_of = _utc(as_of, "as_of")
         provider_key = provider.casefold() if provider else None
         with self._lock:
-            if value in self._entities and self._entities[value].is_valid_at(as_of):
+            if (value in self._entities
+                    and self._entities[value].recorded_at <= as_of
+                    and self._entities[value].is_valid_at(as_of)):
                 return EntityResolutionResult(
                     ResolutionStatus.RESOLVED, value, (value,),
                     ResolutionMethod.CANONICAL_ID, 1.0, "exact canonical identifier",
@@ -218,7 +220,9 @@ class EntityResolver:
                 if alias.namespace.casefold() == namespace.casefold()
                 and alias.value.casefold() == value.casefold()
                 and (alias.provider is None or alias.provider.casefold() == provider_key)
+                and alias.recorded_at <= as_of
                 and alias.is_valid_at(as_of)
+                and self._entities[alias.entity_id].recorded_at <= as_of
                 and self._entities[alias.entity_id].is_valid_at(as_of)
             }
         candidates = tuple(sorted(matches))
@@ -351,7 +355,9 @@ class ClaimRegistry:
         entities: Iterable[EntityRecord], evidence: Iterable[EvidenceRecord],
     ) -> tuple[ClaimRecord, ...]:
         claim_rows, entity_rows, evidence_rows = tuple(claims), tuple(entities), tuple(evidence)
-        entity_ids = {item.entity_id for item in entity_rows}
+        entities_by_id = {item.entity_id: item for item in entity_rows}
+        if len(entities_by_id) != len(entity_rows):
+            raise IdentityContractError("duplicate entity_id values")
         evidence_by_id = {item.evidence_id: item for item in evidence_rows}
         if len(evidence_by_id) != len(evidence_rows):
             raise IdentityContractError("duplicate evidence_id values")
@@ -360,8 +366,11 @@ class ClaimRegistry:
             for claim in claim_rows:
                 if not isinstance(claim, ClaimRecord):
                     raise IdentityContractError("claims must be ClaimRecord instances")
-                if claim.subject_entity_id not in entity_ids:
+                subject = entities_by_id.get(claim.subject_entity_id)
+                if subject is None:
                     raise IdentityContractError(f"unknown claim subject: {claim.subject_entity_id}")
+                if subject.recorded_at > claim.available_at or not subject.is_valid_at(claim.available_at):
+                    raise IdentityContractError("claim subject is not point-in-time valid")
                 for evidence_id in claim.evidence_ids:
                     record = evidence_by_id.get(evidence_id)
                     if record is None:
