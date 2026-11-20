@@ -37,6 +37,7 @@ A positive technical score is not, by itself, proof of statistical edge. `NO_TRA
 | `market_regime_intelligence.py` | Causal regime and transition diagnostics; research output does not automatically tune signals. |
 | `market_data_hub.py` | Read-only normalized historical market data for Binance Spot and USD-M plus existing providers. |
 | `binance_stream_collector.py` | Local-first raw Binance Spot/USD-M WebSocket capture, durable hash-chained event partitions and depth sequence guard; not yet a full reconstructed book. |
+| `binance_orderbook.py` | Snapshot-backed Spot/USD-M L2 state, buffered diff synchronization, sequence-gap rejection and top/depth diagnostics; live collector orchestration remains separate. |
 | `statistical_edge.py` | Forward-return association and sample/effective-sample diagnostics. |
 | `forecast_engine.py` | Distributional forecast diagnostics; probabilities require calibration before operational interpretation. |
 | `backtest_engine.py` | Bar-level next-open simulator with configured transaction costs, optional ATR exits and synthetic futures exposure. |
