@@ -384,6 +384,10 @@ def build_pit_microstructure_features(
     max_received: datetime | None = None
     record_iterator = iter_session_records(data_root, manifest, session_id)
     pending_record = next(record_iterator, None)
+    collector_sequence_gaps = 0
+    collector_buffer_overflows = 0
+    collector_dropped_events = 0
+    collector_snapshot_failures = 0
 
     for decision in decisions:
         for seconds, state in window_state.items():
@@ -410,6 +414,18 @@ def build_pit_microstructure_features(
                             _add_trade(state, event)
                     max_received = max(max_received, received) if max_received else received
                     processed_counts["trades"] += 1
+            elif stream == "orderbook_state":
+                state_payload = pending_record.get("payload", {})
+                state_name = state_payload.get("state")
+                if state_name == "sequence_gap":
+                    collector_sequence_gaps += 1
+                elif state_name == "buffer_overflow":
+                    collector_buffer_overflows += 1
+                    dropped = state_payload.get("dropped_events", 0)
+                    if isinstance(dropped, int) and not isinstance(dropped, bool) and dropped >= 0:
+                        collector_dropped_events += dropped
+                elif state_name in {"snapshot_error", "invalid"}:
+                    collector_snapshot_failures += 1
             elif stream == "liquidations":
                 event = _liquidation_event(pending_record, str(manifest["symbol"]))
                 if event is not None:
@@ -448,6 +464,10 @@ def build_pit_microstructure_features(
             "book": book.metrics(book_depth),
             "book_sequence_gaps": book.sequence_gaps,
             "book_buffer_overflows": book.buffer_overflows,
+            "collector_sequence_gaps": collector_sequence_gaps,
+            "collector_buffer_overflows": collector_buffer_overflows,
+            "collector_dropped_events": collector_dropped_events,
+            "collector_snapshot_failures": collector_snapshot_failures,
             "windows": windows,
             "processed_event_counts": dict(processed_counts),
             "session_complete": manifest["session_complete"],
