@@ -193,6 +193,8 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
         and q_value is not None
         and bool(record.get("strategy_frozen", False))
         and not bool(record.get("parameter_optimization", True))
+        and 0.0 <= age_hours <= float(p["validation_max_age_hours"])
+        and int(record.get("data_gap_count", 0) or 0) == 0
     )
     if data_invalid:
         decision_class = "DATA_INVALID"
@@ -248,6 +250,9 @@ def evaluate_strategy_lifecycle(
 
     ordered = windows[-required_bad_windows:]
     previous_end = None
+    expected_config = ordered[0].get("config_fingerprint") if isinstance(ordered[0], dict) else None
+    if not expected_config:
+        return {"lifecycle": "WATCH", "reason": "Strategy configuration identity is missing."}
     for item in ordered:
         if not isinstance(item, dict):
             return {"lifecycle": "WATCH", "reason": "Malformed OOS window record."}
@@ -262,7 +267,8 @@ def evaluate_strategy_lifecycle(
                 (previous_end is not None and start < previous_end)):
             return {"lifecycle": "WATCH", "reason": "OOS windows are not valid and disjoint."}
         previous_end = end
-        if (item.get("data_integrity_valid") is not True
+        if (item.get("config_fingerprint") != expected_config
+                or item.get("data_integrity_valid") is not True
                 or item.get("cohort_integrity") != "PASS"
                 or item.get("strategy_frozen") is not True
                 or item.get("parameter_optimization") is not False
