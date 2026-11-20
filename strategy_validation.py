@@ -205,13 +205,15 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
         and record.get("cost_stress_1_5x_positive") in (True, False)
         and bool(record.get("strategy_frozen", False))
         and record.get("parameter_optimization") is False
-        and 0.0 <= age_hours <= float(p["validation_max_age_hours"])
         and gap_count == 0
     )
+    fresh_evidence = 0.0 <= age_hours <= float(p["validation_max_age_hours"])
     if data_invalid:
         decision_class = "DATA_INVALID"
     elif not sample_complete:
         decision_class = "INSUFFICIENT_EVIDENCE"
+    elif not fresh_evidence:
+        decision_class = "UNVERIFIED"
     elif expectancy is not None and pf is not None and expectancy <= 0.0 and pf <= 1.0 and ci_upper < 0.0:
         decision_class = "NO_EDGE"
     elif not reasons:
