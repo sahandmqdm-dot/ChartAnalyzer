@@ -209,6 +209,78 @@ def test_collector_run_gracefully_closes_both_markets_on_operator_stop(tmp_path)
     asyncio.run(scenario())
 
 
+def test_collector_reconnects_into_a_new_auditable_session(tmp_path):
+    async def scenario():
+        stop = asyncio.Event()
+        connections = []
+
+        class OneTradeWebSocket:
+            def __init__(self, should_stop):
+                self.should_stop = should_stop
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            def __aiter__(self):
+                async def messages():
+                    yield json.dumps({
+                        "stream": "btcusdt@trade",
+                        "data": {
+                            "e": "trade", "E": 1795176000000,
+                            "T": 1795176000000, "s": "BTCUSDT",
+                            "t": 1, "p": "100", "q": "1", "m": False,
+                        },
+                    })
+                    if self.should_stop:
+                        stop.set()
+
+                return messages()
+
+        sockets = [OneTradeWebSocket(False), OneTradeWebSocket(True)]
+
+        def connector(uri, **options):
+            socket = sockets.pop(0)
+            connections.append(socket)
+            return socket
+
+        store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+        collector = BinanceDualMarketCollector(
+            tmp_path,
+            store=store,
+            connector=connector,
+            reconnect_min=0.001,
+            reconnect_max=0.002,
+        )
+        await asyncio.wait_for(
+            collector.run_market(MarketSpec.spot("BTCUSDT"), stop),
+            timeout=2,
+        )
+        store.close()
+
+        records = [
+            json.loads(line)
+            for path in tmp_path.rglob("*.jsonl")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        trades = [r for r in records if r["stream"] == "trades"]
+        terminals = [
+            r for r in records
+            if r["stream"] == "session_manifest" and r["payload"].get("state") == "ended"
+        ]
+        assert len(connections) == 2
+        assert len(trades) == 2
+        assert len({r["session_id"] for r in trades}) == 2
+        assert len(terminals) == 2
+        assert {r["payload"]["termination"] for r in terminals} == {
+            "stream_ended", "operator_stop",
+        }
+
+    asyncio.run(scenario())
+
+
 def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
     stop = asyncio.Event()
 
