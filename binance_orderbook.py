@@ -192,6 +192,7 @@ class AsyncOrderBookCapture:
         self.sequence_gap_count = 0
         self.buffer_overflow_count = 0
         self.dropped_buffered_events = 0
+        self.dropped_on_close_events = 0
         self.snapshot_attempt_count = 0
         self.snapshot_failure_count = 0
         self.max_buffer_observed = 0
@@ -305,6 +306,7 @@ class AsyncOrderBookCapture:
             "sequence_gap_count": self.sequence_gap_count,
             "buffer_overflow_count": self.buffer_overflow_count,
             "dropped_buffered_events": self.dropped_buffered_events,
+            "dropped_on_close_events": self.dropped_on_close_events,
             "snapshot_attempt_count": self.snapshot_attempt_count,
             "snapshot_failure_count": self.snapshot_failure_count,
             "max_buffer_observed": self.max_buffer_observed,
@@ -319,6 +321,17 @@ class AsyncOrderBookCapture:
             self._snapshot_task.cancel()
             await asyncio.gather(self._snapshot_task, return_exceptions=True)
             self._snapshot_task = None
+        if self._buffer:
+            dropped = len(self._buffer)
+            self.dropped_on_close_events += dropped
+            self.dropped_buffered_events += dropped
+            self._state(
+                "buffer_discarded_on_close",
+                dropped_events=dropped,
+                cumulative_dropped_events=self.dropped_buffered_events,
+                dropped_on_close_events=self.dropped_on_close_events,
+            )
+            self._buffer.clear()
 
 
 __all__ = ["AsyncOrderBookCapture", "DepthSnapshot", "LocalOrderBook", "OrderBookError",
