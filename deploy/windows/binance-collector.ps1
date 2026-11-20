@@ -2,7 +2,7 @@
 param(
     [ValidateSet("Start", "Stop", "Status")]
     [string]$Action = "Status",
-    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path,
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path,
     [string]$PythonPath = "",
     [string]$DataDir = "",
     [int]$FsyncEveryEvents = 100,
@@ -12,11 +12,11 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $ProjectRoot = [System.IO.Path]::GetFullPath($ProjectRoot)
-if (-not $PythonPath) { $PythonPath = Join-Path $ProjectRoot ".venv\\Scripts\\python.exe" }
-if (-not $DataDir) { $DataDir = Join-Path $ProjectRoot "data\\binance_raw" }
+if (-not $PythonPath) { $PythonPath = Join-Path $ProjectRoot ".venv\Scripts\python.exe" }
+if (-not $DataDir) { $DataDir = Join-Path $ProjectRoot "data\binance_raw" }
 $PythonPath = [System.IO.Path]::GetFullPath($PythonPath)
 $DataDir = [System.IO.Path]::GetFullPath($DataDir)
-$RuntimeDir = Join-Path $ProjectRoot "runtime\\binance_collector"
+$RuntimeDir = Join-Path $ProjectRoot "runtime\binance_collector"
 $PidFile = Join-Path $RuntimeDir "collector.pid.json"
 $StopFile = Join-Path $RuntimeDir "STOP"
 $StdoutLog = Join-Path $RuntimeDir "collector.stdout.log"
@@ -43,7 +43,7 @@ switch ($Action) {
         if ($LASTEXITCODE -ne 0) { throw "Python dependency check failed. Install requirements.txt in this virtual environment." }
         $argsList = @($CollectorScript, "--data-dir", $DataDir, "--symbol", "BTCUSDT", "--fsync-every-events", "$FsyncEveryEvents", "--health-every-events", "$HealthEveryEvents", "--stop-file", $StopFile)
         if ($FsyncEachEvent) { $argsList += "--fsync-each-event" }
-        $quoted = $argsList | ForEach-Object { '"' + ($_ -replace '"', '\\"') + '"' }
+        $quoted = $argsList | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }
         $proc = Start-Process -FilePath $PythonPath -ArgumentList ($quoted -join " ") -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog
         $meta = [ordered]@{ pid = $proc.Id; started_at_utc = [DateTime]::UtcNow.ToString("o"); project_root = $ProjectRoot; python = $PythonPath; collector_script = $CollectorScript; data_dir = $DataDir; fsync_every_events = $FsyncEveryEvents; fsync_each_event = [bool]$FsyncEachEvent; health_every_events = $HealthEveryEvents }
         $tmp = "$PidFile.tmp"
