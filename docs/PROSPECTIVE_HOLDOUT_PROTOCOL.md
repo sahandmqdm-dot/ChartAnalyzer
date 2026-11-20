@@ -128,6 +128,14 @@ The first integrated collector supports **Spot** data from Ramzinex or CCXT. It 
 
 Example one-time registration for Ramzinex USDT/IRR, 1-hour candles and a 4-bar horizon:
 
+A ready-to-run Windows helper uses these defaults (USDTIRR, 1h, 4 bars, 3,000 bootstrap paths, 1,200 history bars, 45-day collection and 200 forecasts):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File ".\\tools\\Register-ProspectiveHoldout.ps1"
+```
+
+You can override the symbol, timeframe, horizon, collection days and sample thresholds with script parameters. The equivalent manual API request is shown below:
+
 ```powershell
 $Base = "http://127.0.0.1:8765"
 $Start = [DateTime]::UtcNow.AddMinutes(2).ToString("o")
