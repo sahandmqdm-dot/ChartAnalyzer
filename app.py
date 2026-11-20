@@ -2539,7 +2539,7 @@ def api_prospective_holdout_tick(payload: dict):
                                     exchange, "", "")
                 _audit_research_frame(frame, source, timeframe)
                 target_open = target.timestamp() - bar_seconds
-                matched = frame.loc[np.isclose(frame["time"].to_numpy(dtype=float), target_open, atol=1.0)]
+                matched = frame.loc[np.isclose(frame["time"].to_numpy(dtype=float), target_open, atol=1.0, rtol=0.0)]
                 if len(matched) != 1:
                     unresolved_data.append({"forecast_id": item["forecast_id"], "reason": "exact target candle unavailable"})
                     continue
