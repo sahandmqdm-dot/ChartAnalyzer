@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 import agent_core as AC
 
 
@@ -27,7 +29,7 @@ def test_resolved_prediction_journal_bridges_frozen_decision_metadata(tmp_path, 
     assert report["status"] == "DESCRIPTIVE_ONLY"
     assert report["resolved_rows_seen"] == 1
     assert report["metrics"]["sample"]["acted"] == 1
-    assert report["metrics"]["policy"]["unit_notional_net_return_sum"] == 0.018
+    assert report["metrics"]["policy"]["unit_notional_net_return_sum"] == pytest.approx(0.018)
     assert report["metrics"]["evaluation_contract"]["causal_claim"] is False
     assert "not stop/target execution PnL" in report["limitations"][0]
 
