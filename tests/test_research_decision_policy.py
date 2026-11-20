@@ -41,6 +41,14 @@ def test_evidence_decision_class_distinguishes_no_edge_from_insufficient_sample(
     decision = evaluate_evidence(record, now=1001)
     assert decision["decision_class"] == "INSUFFICIENT_EVIDENCE"
 
+    stale = evaluate_evidence(
+        build_evidence_record(_result() | {"net_expectancy_pct": -0.1, "net_profit_factor": 0.8},
+                              source="ramzinex", symbol="USDTIRR", timeframe="1h",
+                              config_hash="f" * 64, created_at=1000),
+        now=1000 + 25 * 3600,
+    )
+    assert stale["decision_class"] == "UNVERIFIED"
+
 
 def test_invalid_data_has_precedence_over_performance_classification():
     result = _result()
@@ -52,7 +60,7 @@ def test_invalid_data_has_precedence_over_performance_classification():
 
 def _bad_window(start):
     return {
-        "start_at": start, "end_at": start + 100,
+        "start_at": start, "end_at": start + 100, "config_fingerprint": "same-frozen-config",
         "oos_trades": 240, "net_expectancy_pct": -0.12,
         "net_profit_factor": 0.82, "bootstrap_ci_95_pct": [-0.20, -0.04],
         "data_integrity_valid": True, "cohort_integrity": "PASS",
