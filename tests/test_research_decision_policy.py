@@ -27,12 +27,23 @@ def _result():
 def test_evidence_decision_class_distinguishes_no_edge_from_insufficient_sample():
     result = _result()
     result.update(net_expectancy_pct=-0.02, net_profit_factor=0.98)
-    result["research_inference"]["bootstrap_ci_95_pct"] = [-0.08, 0.01]
+    result["research_inference"]["bootstrap_ci_95_pct"] = [-0.08, -0.01]
     record = build_evidence_record(result, source="ramzinex", symbol="USDTIRR",
                                    timeframe="1h", config_hash="a" * 64, created_at=1000)
     decision = evaluate_evidence(record, now=1001)
     assert decision["decision_class"] == "NO_EDGE"
     assert decision["eligible"] is False
+
+    # Negative point estimates without a fully negative confidence interval
+    # are inconclusive, not proof that the strategy has no edge.
+    uncertain = _result()
+    uncertain.update(net_expectancy_pct=-0.02, net_profit_factor=0.98)
+    uncertain["research_inference"]["bootstrap_ci_95_pct"] = [-0.08, 0.01]
+    uncertain_record = build_evidence_record(
+        uncertain, source="ramzinex", symbol="USDTIRR", timeframe="1h",
+        config_hash="e" * 64, created_at=1000,
+    )
+    assert evaluate_evidence(uncertain_record, now=1001)["decision_class"] == "UNVERIFIED"
 
     result = _result()
     result["trades"] = 42
