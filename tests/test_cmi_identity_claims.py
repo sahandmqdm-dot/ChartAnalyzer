@@ -2,13 +2,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from evidence_contracts import EvidenceRecord, EvidenceType
-from multi_asset import AssetClass, Instrument, MarketRegistry, MarketType
 from cmi_identity_claims import (
     ClaimModality, ClaimRecord, ClaimRegistry, ClaimStance, EntityAlias,
     EntityRecord, EntityResolver, EntityType, IdentityContractError,
     ResolutionMethod, ResolutionStatus,
 )
+from evidence_contracts import EvidenceRecord, EvidenceType
+from multi_asset import AssetClass, Instrument, MarketRegistry, MarketType
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -32,10 +32,10 @@ def evidence(available_at=T0):
 
 
 def claim(record, **kw):
-    values = dict(subject_entity_id="crypto:BTC", predicate="has_observation",
-                  object_text="price observed", modality=ClaimModality.FACT,
-                  stance=ClaimStance.NEUTRAL, available_at=record.available_at,
-                  evidence_ids=(record.evidence_id,), confidence=0.9)
+    values = {"subject_entity_id": "crypto:BTC", "predicate": "has_observation",
+              "object_text": "price observed", "modality": ClaimModality.FACT,
+              "stance": ClaimStance.NEUTRAL, "available_at": record.available_at,
+              "evidence_ids": (record.evidence_id,), "confidence": 0.9}
     values.update(kw)
     return ClaimRecord(**values)
 
