@@ -209,6 +209,8 @@ class EvidenceRecord:
         if self.valid_time_start and self.valid_time_end and self.valid_time_end < self.valid_time_start:
             raise EvidenceContractError("valid_time_end cannot precede valid_time_start")
         ids = tuple(_required_text(item, "entity_id", max_length=256) for item in self.entity_ids)
+        if not ids:
+            raise EvidenceContractError("evidence requires one or more resolved entity_ids")
         if len(ids) != len(set(ids)):
             raise EvidenceContractError("entity_ids cannot contain duplicates")
         object.__setattr__(self, "entity_ids", ids)
@@ -263,10 +265,14 @@ def validate_source_links(
 ) -> tuple[EvidenceRecord, ...]:
     """Fail closed when evidence references an absent or temporally impossible source."""
     source_rows = tuple(sources)
+    if any(not isinstance(source, SourceReference) for source in source_rows):
+        raise EvidenceContractError("sources must contain SourceReference instances only")
     source_map = {source.source_id: source for source in source_rows}
     if len(source_map) != len(source_rows):
         raise EvidenceContractError("duplicate source_id values")
     validated = tuple(records)
+    if any(not isinstance(record, EvidenceRecord) for record in validated):
+        raise EvidenceContractError("records must contain EvidenceRecord instances only")
     for record in validated:
         source = source_map.get(record.source_reference_id)
         if source is None:
