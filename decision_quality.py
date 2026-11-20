@@ -8,6 +8,7 @@ impact, capacity constraints, or portfolio interactions.
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 from collections import Counter
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -109,7 +110,6 @@ def evaluate_decision_quality(records: Iterable[dict[str, Any]]) -> dict[str, An
         })
 
     normalized.sort(key=lambda x: x["decision_at"])
-    from itertools import pairwise
     for previous, current in pairwise(normalized):
         if current["decision_at"] < previous["horizon_end"]:
             raise DecisionQualityError(
