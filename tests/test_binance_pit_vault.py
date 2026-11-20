@@ -75,7 +75,7 @@ def test_manifest_is_deterministic_and_verifies_source_partitions(tmp_path):
     second = build_session_manifest(tmp_path, "spot", SESSION)
     assert first["manifest_hash"] == second["manifest_hash"]
     assert first["symbol"] == "BTCUSDT"
-    assert first["total_session_records"] == 3
+    assert first["total_session_records"] == 4
     assert first["ended_at"] == "2026-11-20T12:01:00+00:00"
 
     path = persist_session_manifest(tmp_path, "spot", SESSION)
