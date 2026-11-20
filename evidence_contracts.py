@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import Enum
+from threading import RLock
 from typing import Any
 
 
@@ -144,7 +145,10 @@ class SourceReference:
         object.__setattr__(self, "first_seen_at", first_seen)
         object.__setattr__(self, "retrieved_at", retrieved)
         if self.published_at is not None:
-            object.__setattr__(self, "published_at", _utc(self.published_at, "published_at"))
+            published = _utc(self.published_at, "published_at")
+            if published > retrieved:
+                raise EvidenceContractError("published_at cannot be later than retrieved_at")
+            object.__setattr__(self, "published_at", published)
         object.__setattr__(self, "publisher", _optional_text(self.publisher, "publisher"))
         object.__setattr__(self, "author", _optional_text(self.author, "author"))
         if self.content_hash is not None:
@@ -269,8 +273,8 @@ def validate_source_links(
             raise EvidenceContractError(f"missing source reference: {record.source_reference_id}")
         if record.first_seen_at < source.first_seen_at:
             raise EvidenceContractError("evidence first_seen_at precedes its source first_seen_at")
-        if record.available_at < source.first_seen_at:
-            raise EvidenceContractError("evidence available_at precedes source availability")
+        if record.available_at < source.retrieved_at:
+            raise EvidenceContractError("evidence available_at precedes source retrieval")
         if (record.published_at is not None and source.published_at is not None
                 and record.published_at != source.published_at):
             raise EvidenceContractError("evidence publication timestamp conflicts with source reference")
@@ -287,6 +291,7 @@ class SourceRegistry:
     """
 
     def __init__(self, sources: Iterable[SourceReference] = ()) -> None:
+        self._lock = RLock()
         self._sources: dict[str, SourceReference] = {}
         self.register_many(sources)
 
@@ -297,28 +302,34 @@ class SourceRegistry:
         self, sources: Iterable[SourceReference]
     ) -> tuple[SourceReference, ...]:
         rows = tuple(sources)
-        staged = dict(self._sources)
-        registered: list[SourceReference] = []
-        for source in rows:
-            if not isinstance(source, SourceReference):
-                raise EvidenceContractError("registry accepts SourceReference instances only")
-            existing = staged.get(source.source_id)
-            if existing is not None and existing.fingerprint != source.fingerprint:
-                raise EvidenceContractError(
-                    f"source_id collision with different immutable metadata: {source.source_id}"
-                )
-            staged[source.source_id] = source
-            registered.append(existing or source)
-        self._sources = staged
-        return tuple(registered)
+        with self._lock:
+            staged = dict(self._sources)
+            registered: list[SourceReference] = []
+            for source in rows:
+                if not isinstance(source, SourceReference):
+                    raise EvidenceContractError("registry accepts SourceReference instances only")
+                existing = staged.get(source.source_id)
+                if existing is not None and existing.fingerprint != source.fingerprint:
+                    raise EvidenceContractError(
+                        f"source_id collision with different immutable metadata: {source.source_id}"
+                    )
+                staged[source.source_id] = source
+                registered.append(existing or source)
+            self._sources = staged
+            return tuple(registered)
 
     def get(self, source_id: str) -> SourceReference | None:
-        return self._sources.get(_required_text(source_id, "source_id"))
+        key = _required_text(source_id, "source_id")
+        with self._lock:
+            return self._sources.get(key)
 
     def all(self) -> tuple[SourceReference, ...]:
-        return tuple(self._sources[key] for key in sorted(self._sources))
+        with self._lock:
+            return tuple(self._sources[key] for key in sorted(self._sources))
 
     def validate_evidence(
         self, records: Iterable[EvidenceRecord]
     ) -> tuple[EvidenceRecord, ...]:
-        return validate_source_links(records, self._sources.values())
+        with self._lock:
+            sources = tuple(self._sources.values())
+        return validate_source_links(records, sources)
