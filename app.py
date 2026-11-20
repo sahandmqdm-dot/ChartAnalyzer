@@ -1,5 +1,5 @@
 """
-ChartAnalyzer V7.2.0 - Reproducible Research & OOS Integrity.
+ChartAnalyzer V7.3.0 - Quantitative Market Intelligence & Futures Research.
 Requires only:  pip install pandas numpy requests      (ccxt optional)
 
 PC / local only :  python app.py                 ->  http://127.0.0.1:8765
@@ -24,6 +24,8 @@ import pandas as pd
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
+from version import APP_VERSION
+
 import agent_core as AC
 import trend_engine as TE
 import predictive_intelligence as PMI
@@ -1040,7 +1042,7 @@ def backtest(df, tf, fee=None, start=None, symbol=""):
         "engine": "MarketRegimeIntelligence V1.0", "status": "RESEARCH_ONLY",
         "note": "Causal labels sampled at signal close; no signal filtering or parameter fitting."
     }
-    result["version"] = "7.2.0"
+    result["version"] = APP_VERSION
     result["evaluation_scope"] = "full_window_descriptive_not_out_of_sample"
     result["configured_start"] = configured_start
     result["required_indicator_warmup_bars"] = required_warmup
@@ -1184,7 +1186,7 @@ def walk_forward_backtest(df, tf, symbol="", n_splits=None, warmup_bars=None, ga
         "engine": "MarketRegimeIntelligence V1.0", "status": "RESEARCH_ONLY",
         "note": "Causal labels sampled at signal close; no signal filtering or parameter fitting."
     }
-    result["version"] = "7.2.0"
+    result["version"] = APP_VERSION
     result["evaluation_scope"] = "sequential_out_of_sample"
     return result
 
@@ -2252,11 +2254,24 @@ def api_research_random_entry(source: str = "ramzinex", symbol: str = "USDTIRR",
     except Exception as e: raise HTTPException(400,redact(f"{type(e).__name__}: {e}"))
 
 
+@app.get("/api/version")
+def api_version():
+    """Return the canonical runtime version for support and deployment diagnostics."""
+    return {
+        "application": "ChartAnalyzer",
+        "version": APP_VERSION,
+        "release_line": "7.x",
+        "version_source": "version.py",
+        "release_sha": os.getenv("CHARTANALYZER_RELEASE_SHA") or None,
+        "research_engine_revision": getattr(__import__("research_provenance"), "RESEARCH_ENGINE_REVISION", None),
+    }
+
+
 @app.get("/api/research-lab")
 def api_research_lab():
     from research_registry import ResearchRegistry
     from holdout_vault import HoldoutVault
-    return {"engine": "ChartAnalyzer Quant Research Engine 7.2.0",
+    return {"engine": f"ChartAnalyzer Quant Research Engine {APP_VERSION}",
             "registry": ResearchRegistry(RESEARCH_REGISTRY_PATH).summary(),
             "hypotheses": ResearchRegistry(RESEARCH_REGISTRY_PATH).list_hypotheses(100),
             "holdout": HoldoutVault(HOLDOUT_VAULT_PATH).status(),
@@ -2470,7 +2485,7 @@ def api_margin(market_type: str = "futures", side: str = "long",
             warning_distance_pct=float(mc.get("warning_distance_pct", 5.0)),
             critical_distance_pct=float(mc.get("critical_distance_pct", 2.0)),
         )
-        result["version"] = "7.2.0"
+        result["version"] = APP_VERSION
         return result
     except Exception as e:
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
@@ -2599,7 +2614,7 @@ def _prospective_identity(payload):
     identity = {
         "release_sha": os.getenv("CHARTANALYZER_RELEASE_SHA", "unversioned"),
         "research_engine_revision": research_provenance.RESEARCH_ENGINE_REVISION,
-        "app_version": "7.2.0",
+        "app_version": APP_VERSION,
         "model_id": model_id,
         "model_version": model_version,
         "code_sha256": code_hashes,

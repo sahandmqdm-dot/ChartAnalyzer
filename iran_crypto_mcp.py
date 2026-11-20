@@ -14,6 +14,8 @@ import threading
 from collections import deque
 from typing import Any
 
+from version import APP_VERSION
+
 
 class MCPError(RuntimeError):
     pass
@@ -177,7 +179,7 @@ class StdioMCPClient:
             self._request("initialize", {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "ChartAnalyzer", "version": "7.2.0"},
+                "clientInfo": {"name": "ChartAnalyzer", "version": APP_VERSION},
             })
             self.notify("notifications/initialized")
             listed = self._request("tools/list", {})

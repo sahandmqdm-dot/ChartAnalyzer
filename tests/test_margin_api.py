@@ -6,6 +6,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import app
+from version import APP_VERSION
 
 
 def test_margin_api_uses_configured_defaults_and_returns_version(monkeypatch):
@@ -18,7 +19,7 @@ def test_margin_api_uses_configured_defaults_and_returns_version(monkeypatch):
         "backtest": {"futures_leverage": 8},
     })
     out = app.api_margin(entry_price=100, quantity=2)
-    assert out["version"] == "7.2.0"
+    assert out["version"] == APP_VERSION
     assert out["leverage"] == pytest.approx(8)
     assert out["maintenance_margin_rate"] == pytest.approx(0.006)
     assert out["liquidation_fee_rate"] == pytest.approx(0.004)

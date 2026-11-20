@@ -11,6 +11,8 @@ from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 
+from version import APP_VERSION
+
 
 def _f(value: Any) -> Optional[float]:
     try:
@@ -117,11 +119,11 @@ def analyze_trade_failures(
         lows = np.asarray(df["low"], dtype=float)
         closes = np.asarray(df["close"], dtype=float)
     except Exception as exc:
-        return {"version": "7.2.0", "status": "unavailable", "reason": f"OHLC unavailable: {exc}"}
+        return {"version": APP_VERSION, "status": "unavailable", "reason": f"OHLC unavailable: {exc}"}
     n = min(len(opens), len(highs), len(lows), len(closes))
     if n < 2 or not (np.isfinite(opens[:n]).all() and np.isfinite(highs[:n]).all()
                      and np.isfinite(lows[:n]).all() and np.isfinite(closes[:n]).all()):
-        return {"version": "7.2.0", "status": "unavailable", "reason": "OHLC contains insufficient or non-finite data."}
+        return {"version": APP_VERSION, "status": "unavailable", "reason": "OHLC contains insufficient or non-finite data."}
 
     sig = None if signal is None else np.asarray(signal, dtype=float)
     regimes = None if entry_regime is None else np.asarray(entry_regime, dtype=object)
@@ -298,7 +300,7 @@ def analyze_trade_failures(
         }
 
     return {
-        "version": "7.2.0", "status": "descriptive_and_counterfactual", "trades_analyzed": valid_trade_count,
+        "version": APP_VERSION, "status": "descriptive_and_counterfactual", "trades_analyzed": valid_trade_count,
         "trades_invalid": len(rows) - valid_trade_count,
         "by_exit_reason": dict(exit_counts), "failure_tag_counts": dict(tags_count),
         "early_time_exit_scenarios": horizon_summary, "trades": rows,

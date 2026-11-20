@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 
 import numpy as np
+
+from version import APP_VERSION
 import pandas as pd
 import pytest
 
@@ -31,7 +33,7 @@ def test_walk_forward_creates_non_overlapping_oos_folds():
     assert all(spans[i][1] <= spans[i + 1][0] for i in range(len(spans) - 1))
     assert out["strategy_frozen"] is True
     assert out["parameter_optimization"] is False
-    assert out["version"] == "7.2.0"
+    assert out["version"] == APP_VERSION
     assert out["exit_policy_research"]["status"] in {"RESEARCH_ONLY", "NO_COUNTERFACTUAL_SAMPLES"}
     assert out["trade_failure_intelligence"]["status"] == "descriptive_and_counterfactual"
     assert out["trade_failure_intelligence"]["trades_analyzed"] == out["trades"]

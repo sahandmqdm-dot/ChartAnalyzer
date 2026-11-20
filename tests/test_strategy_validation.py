@@ -1,5 +1,7 @@
 import json
 
+from version import APP_VERSION
+
 from strategy_validation import (
     build_evidence_record,
     deployment_status,
@@ -196,7 +198,7 @@ def test_research_lab_dashboard_api_returns_registry_and_holdout_status(monkeypa
     monkeypatch.setattr(app,'RESEARCH_REGISTRY_PATH',str(tmp_path/'registry.db'))
     monkeypatch.setattr(app,'HOLDOUT_VAULT_PATH',str(tmp_path/'vault.json'))
     out=app.api_research_lab()
-    assert out['engine']=='ChartAnalyzer Quant Research Engine 7.2.0'
+    assert out['engine']==f"ChartAnalyzer Quant Research Engine {APP_VERSION}"
     assert out['registry']['experiments']==0
     assert out['holdout']['status']=='UNCONFIGURED'
     assert out['controls']['fdr'] is True

@@ -1,4 +1,4 @@
-"""ChartAnalyzer V7.2.0 walk-forward out-of-sample validation.
+"""ChartAnalyzer V7.3.0 walk-forward out-of-sample validation.
 
 This module evaluates a frozen, already-generated signal series on sequential,
 non-overlapping test windows. It does not tune parameters or claim that a
@@ -11,6 +11,8 @@ import math
 from typing import Any, Dict, Optional
 
 import numpy as np
+
+from version import APP_VERSION
 
 from backtest_engine import run_backtest
 
@@ -288,7 +290,7 @@ def run_walk_forward(
 
     if not include_diagnostics:
         return {
-            "version": "7.2.0", "evaluation_scope": "sequential_out_of_sample_cost_stress",
+            "version": APP_VERSION, "evaluation_scope": "sequential_out_of_sample_cost_stress",
             "folds": [{k:v for k,v in f.items() if k!="result"} for f in folds],
             "trades": len(all_trades), "trades_log": all_trades,
             "oos_bars": int(used), "strategy_pct": round((equity_scale-1.0)*100.0,4),
@@ -343,7 +345,7 @@ def run_walk_forward(
         entry_edge_research=entry_edge_research,
     )
     return {
-        "version": "7.2.0",
+        "version": APP_VERSION,
         "evaluation_scope": "sequential_out_of_sample",
         "oos_ranges": [
             {"fold": f["fold"], "start_index": f["test_start_index"],

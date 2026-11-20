@@ -1,8 +1,17 @@
-# ChartAnalyzer V7.2.0
+# ChartAnalyzer V7.3.0
+
+## V7.3.0 | هوشمندی بازار Futures
+
+- موتور تحقیقاتی سناریوهای LONG و SHORT برای قراردادهای دائمی Binance USD-M.
+- دریافت Funding Rate، Mark/Index و Open Interest به‌صورت فقط‌خواندنی.
+- نمایش Snapshot دفتر سفارش و نمونه محدود معاملات اخیر در لایه Microstructure.
+- API تحلیل Futures: `GET /api/futures/scenarios`.
+- سطوح Entry/Stop/Target فقط WATCH هستند و مجوز ثبت سفارش محسوب نمی‌شوند.
+- نسخه واحد برنامه از `version.py` خوانده می‌شود و در `GET /api/version` قابل بررسی است.
 
 ## موتور تحقیقاتی کمّی (QRE)
 
-V7.2.0 ادامه مستقیم V7.1.0 است و Research Lab را به داشبورد اضافه می‌کند: ثبت فرضیه و آزمایش، Bootstrap بلوکی، کنترل Permutation، تصحیح FDR، هزینه اثر بازار و تأخیر اجرا، ابزارهای Purged/Embargo CV، تحلیل پایداری و Holdout یک‌بارمصرف.
+V7.2.0 ادامه مستقیم V7.1.0 بود و Research Lab را به داشبورد اضافه می‌کند: ثبت فرضیه و آزمایش، Bootstrap بلوکی، کنترل Permutation، تصحیح FDR، هزینه اثر بازار و تأخیر اجرا، ابزارهای Purged/Embargo CV، تحلیل پایداری و Holdout یک‌بارمصرف.
 
 - اجرای Walk-Forward اکنون به‌صورت خودکار در Registry ثبت می‌شود.
 - آزمایش‌های منفی حذف نمی‌شوند و تعداد آزمون‌ها گزارش می‌شود.

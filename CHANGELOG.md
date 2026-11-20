@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.3.0 - 2026-11-20
+- Added a canonical application version source in `version.py`; runtime reports, walk-forward output, trade diagnostics, research provenance and MCP client identity now share it.
+- Added `GET /api/version` for runtime/version diagnostics.
+- Added research-only Binance USD-M LONG/SHORT scenarios and dashboard integration.
+- Added read-only funding, mark/index, open-interest, order-book snapshot and bounded aggregate-trade context.
+- Explicitly label directional levels as WATCH ONLY; no order placement or Futures deployment authorization.
+- Clarified that the `v7.0.2` text formerly visible in CI was the pinned upload-artifact GitHub Action version, not ChartAnalyzer's product version.
+
+
 ## 7.2.0 - 2026-11-16
 - Added Quant Research Engine: immutable hypothesis/experiment registry, dataset/config lineage and multiple-testing controls.
 - Added circular moving-block bootstrap inference and block signal-permutation controls.
