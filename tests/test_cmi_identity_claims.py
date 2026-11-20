@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+import datetime
 
 import pytest
 
@@ -19,7 +19,7 @@ from evidence_contracts import EvidenceRecord, EvidenceType
 from multi_asset import AssetClass, Instrument, MarketRegistry, MarketType
 
 
-T0 = datetime(2026, 1, 1, tzinfo=UTC)
+T0 = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
 
 def entity(entity_id="crypto:BTC", **kw):
@@ -75,8 +75,8 @@ def test_provider_scoped_alias_disambiguates():
 
 
 def test_expired_alias_is_not_resolved():
-    resolver = EntityResolver([entity()], [alias("crypto:BTC", "BTC", valid_to=T0 + timedelta(days=1))])
-    assert resolver.resolve("BTC", namespace="ticker", as_of=T0 + timedelta(days=1)).status is ResolutionStatus.UNRESOLVED
+    resolver = EntityResolver([entity()], [alias("crypto:BTC", "BTC", valid_to=T0 + datetime.timedelta(days=1))])
+    assert resolver.resolve("BTC", namespace="ticker", as_of=T0 + datetime.timedelta(days=1)).status is ResolutionStatus.UNRESOLVED
 
 
 def test_unknown_alias_is_unresolved():
@@ -93,14 +93,14 @@ def test_alias_must_reference_known_entity_and_batch_is_atomic():
 
 
 def test_entity_validity_window():
-    item = entity(valid_from=T0 + timedelta(days=1))
+    item = entity(valid_from=T0 + datetime.timedelta(days=1))
     assert not item.is_valid_at(T0)
-    assert item.is_valid_at(T0 + timedelta(days=1))
+    assert item.is_valid_at(T0 + datetime.timedelta(days=1))
 
 
 def test_naive_timestamp_rejected():
     with pytest.raises(IdentityContractError, match="timezone-aware"):
-        entity(recorded_at=datetime(2026, 1, 1))
+        entity(recorded_at=datetime.datetime(2026, 1, 1))
 
 
 def test_claim_requires_evidence_and_stable_id():
@@ -122,7 +122,7 @@ def test_claim_registry_validates_evidence_and_subject():
 
 
 def test_claim_rejects_future_evidence_leakage():
-    record = evidence(T0 + timedelta(hours=1))
+    record = evidence(T0 + datetime.timedelta(hours=1))
     item = claim(record, available_at=T0)
     with pytest.raises(IdentityContractError, match="precedes cited evidence"):
         ClaimRegistry().register_many([item], entities=[entity()], evidence=[record])
@@ -171,15 +171,15 @@ def test_venue_instrument_resolution_fails_closed_without_registry_match():
 
 def test_alias_key_collision_with_changed_validity_is_rejected_atomically():
     resolver = EntityResolver([entity()], [alias("crypto:BTC", "BTC")])
-    changed = alias("crypto:BTC", "BTC", valid_to=T0 + timedelta(days=5))
+    changed = alias("crypto:BTC", "BTC", valid_to=T0 + datetime.timedelta(days=5))
     with pytest.raises(IdentityContractError, match="alias key collision"):
         resolver.register_many([], [changed])
     assert resolver.resolve("BTC", namespace="ticker", as_of=T0).status is ResolutionStatus.RESOLVED
 
 
 def test_future_recorded_entity_and_alias_are_not_visible_in_past():
-    future = entity(recorded_at=T0 + timedelta(days=1))
-    future_alias = alias("crypto:BTC", "BTC", recorded_at=T0 + timedelta(days=1))
+    future = entity(recorded_at=T0 + datetime.timedelta(days=1))
+    future_alias = alias("crypto:BTC", "BTC", recorded_at=T0 + datetime.timedelta(days=1))
     resolver = EntityResolver([future], [future_alias])
     assert resolver.resolve("crypto:BTC", namespace="id", as_of=T0).status is ResolutionStatus.UNRESOLVED
     assert resolver.resolve("BTC", namespace="ticker", as_of=T0).status is ResolutionStatus.UNRESOLVED
@@ -188,7 +188,7 @@ def test_future_recorded_entity_and_alias_are_not_visible_in_past():
 def test_claim_subject_must_be_point_in_time_valid():
     record = evidence()
     item = claim(record)
-    future_subject = entity(recorded_at=T0 + timedelta(seconds=1))
+    future_subject = entity(recorded_at=T0 + datetime.timedelta(seconds=1))
     with pytest.raises(IdentityContractError, match="point-in-time valid"):
         ClaimRegistry().register_many([item], entities=[future_subject], evidence=[record])
 
