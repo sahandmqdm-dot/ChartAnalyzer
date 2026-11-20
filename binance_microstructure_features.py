@@ -354,6 +354,9 @@ def build_pit_microstructure_features(
     pending_record = next(record_iterator, None)
 
     for decision in decisions:
+        for seconds, state in window_state.items():
+            _expire_window(state, decision - timedelta(seconds=seconds))
+
         while pending_record is not None:
             received = _timestamp(pending_record.get("received_at"), "received_at")
             if received > decision:
@@ -370,8 +373,9 @@ def build_pit_microstructure_features(
             elif stream == "trades":
                 event = _trade_event(pending_record)
                 if event is not None:
-                    for state in window_state.values():
-                        _add_trade(state, event)
+                    for seconds, state in window_state.items():
+                        if event[0] > decision - timedelta(seconds=seconds):
+                            _add_trade(state, event)
                     max_received = max(max_received, received) if max_received else received
                     processed_counts["trades"] += 1
             elif stream == "liquidations":
@@ -379,7 +383,9 @@ def build_pit_microstructure_features(
                 if event is not None:
                     event_received, price, quantity, side = event
                     notional = price * quantity
-                    for state in window_state.values():
+                    for seconds, state in window_state.items():
+                        if event_received <= decision - timedelta(seconds=seconds):
+                            continue
                         state["liquidations"].append((event_received, notional, side))
                         state["liquidation_count"] += 1
                         if side == "SELL":
@@ -392,7 +398,6 @@ def build_pit_microstructure_features(
 
         windows: dict[str, Any] = {}
         for seconds, state in window_state.items():
-            _expire_window(state, decision - timedelta(seconds=seconds))
             windows[str(seconds)] = _window_output(state, seconds)
 
         feature = {
