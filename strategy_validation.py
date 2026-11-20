@@ -262,6 +262,8 @@ def evaluate_strategy_lifecycle(
 
     ordered = windows[-required_bad_windows:]
     previous_end = None
+    previous_sequence = None
+    seen_window_ids = set()
     expected_config = ordered[0].get("config_fingerprint") if isinstance(ordered[0], dict) else None
     if not expected_config:
         return {"lifecycle": "WATCH", "reason": "Strategy configuration identity is missing."}
@@ -274,18 +276,27 @@ def evaluate_strategy_lifecycle(
         expectancy = _finite(item.get("net_expectancy_pct"))
         pf = _finite(item.get("net_profit_factor"))
         ci = item.get("bootstrap_ci_95_pct")
+        ci_lower = _finite(ci[0]) if isinstance(ci, (list, tuple)) and len(ci) >= 2 else None
         ci_upper = _finite(ci[1]) if isinstance(ci, (list, tuple)) and len(ci) >= 2 else None
-        if (start is None or end is None or start >= end or
-                (previous_end is not None and start < previous_end)):
-            return {"lifecycle": "WATCH", "reason": "OOS windows are not valid and disjoint."}
+        sequence = _finite(item.get("window_sequence"))
+        window_id = str(item.get("window_id") or "")
+        if (start is None or end is None or start >= end or sequence is None
+                or sequence < 0 or not sequence.is_integer() or not window_id
+                or window_id in seen_window_ids
+                or (previous_end is not None and start < previous_end)
+                or (previous_sequence is not None and sequence != previous_sequence + 1)):
+            return {"lifecycle": "WATCH", "reason": "OOS windows are not valid, unique, sequential and disjoint."}
         previous_end = end
+        previous_sequence = int(sequence)
+        seen_window_ids.add(window_id)
         if (item.get("config_fingerprint") != expected_config
                 or item.get("data_integrity_valid") is not True
                 or item.get("cohort_integrity") != "PASS"
                 or item.get("strategy_frozen") is not True
                 or item.get("parameter_optimization") is not False
                 or n is None or n < min_trades_per_window
-                or expectancy is None or pf is None or ci_upper is None):
+                or expectancy is None or pf is None or ci_lower is None or ci_upper is None
+                or ci_lower > ci_upper):
             return {"lifecycle": "WATCH", "reason": "A window lacks sufficient trusted evidence."}
         if not (expectancy < 0.0 and pf < 1.0 and ci_upper < 0.0):
             return {"lifecycle": "ACTIVE_REVIEW", "reason": "Consecutive negative-edge retirement condition not met."}
