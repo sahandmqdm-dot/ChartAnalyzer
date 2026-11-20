@@ -253,6 +253,7 @@ def test_collector_reconnects_into_a_new_auditable_session(tmp_path):
             connector=connector,
             reconnect_min=0.001,
             reconnect_max=0.002,
+            health_interval_events=1,
         )
         await asyncio.wait_for(
             collector.run_market(MarketSpec.spot("BTCUSDT"), stop),
@@ -270,11 +271,18 @@ def test_collector_reconnects_into_a_new_auditable_session(tmp_path):
             r for r in records
             if r["stream"] == "session_manifest" and r["payload"].get("state") == "ended"
         ]
+        health = [r for r in records if r["stream"] == "collector_health"]
         assert len(connections) == 2
         assert len(trades) == 2
         assert len({r["session_id"] for r in trades}) == 2
         assert len(terminals) == 2
         assert all(r["payload"]["raw_frame_count"] == 1 for r in terminals)
+        assert all("persistence_failure_count" in r["payload"] for r in terminals)
+        assert any(r["payload"].get("state") == "running" for r in health)
+        running = next(r for r in health if r["payload"].get("state") == "running")
+        assert running["payload"]["raw_frame_count"] == 1
+        assert running["payload"]["typed_event_count"] == 1
+        assert running["payload"]["write_pipeline_latency_ms"]["p95"] is not None
         assert {r["payload"]["termination"] for r in terminals} == {
             "stream_ended", "operator_stop",
         }
