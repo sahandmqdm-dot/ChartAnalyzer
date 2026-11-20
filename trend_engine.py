@@ -267,6 +267,13 @@ def fib_levels(piv, cfg):
 def series(df, tf, user=None):
     """All per-bar arrays (causal). Used by analyse() and by history_check.py to measure the score's real edge."""
     C = tcfg(tf, user)
+    required = {"time", "open", "high", "low", "close"}
+    missing = required.difference(df.columns)
+    if missing:
+        raise ValueError(f"trend series missing required columns: {', '.join(sorted(missing))}")
+    timestamps = df["time"].to_numpy(dtype=float)
+    if not np.isfinite(timestamps).all() or np.any(np.diff(timestamps) <= 0):
+        raise ValueError("trend series time values must be finite, unique and strictly increasing")
     o, h, l, c = (df[k].to_numpy(dtype=float) for k in ("open", "high", "low", "close"))
     n = len(c)
     if n < 80:
