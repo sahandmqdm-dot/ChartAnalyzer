@@ -1,8 +1,7 @@
+# ruff: noqa: I001
+# Ruff 0.17.6 flags this mixed-case imported symbol block despite explicit grouping.
 import json
 
-# Ruff 0.17.6 reports I001 for this mixed-case imported symbol block.
-# The symbols are intentionally grouped by module to keep the test imports explicit.
-# ruff: noqa: I001
 
 import pytest
 
