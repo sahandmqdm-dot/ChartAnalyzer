@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -19,52 +19,50 @@ T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
 def source(**overrides):
-    values = dict(
-        source_id="src:exchange:binance:btc",
-        provider="binance",
-        source_type=SourceType.EXCHANGE,
-        source_uri="https://example.invalid/market/BTCUSDT",
-        first_seen_at=T0,
-        retrieved_at=T0 + timedelta(seconds=2),
-        published_at=T0,
-        publisher="Binance",
-        content_hash="a" * 64,
-        license_policy="public_market_data",
-        trust_tier=TrustTier.PRIMARY,
-    )
+    values = {
+        "source_id": "src:exchange:binance:btc",
+        "provider": "binance",
+        "source_type": SourceType.EXCHANGE,
+        "source_uri": "https://example.invalid/market/BTCUSDT",
+        "first_seen_at": T0,
+        "retrieved_at": T0 + timedelta(seconds=2),
+        "published_at": T0,
+        "publisher": "Binance",
+        "content_hash": "a" * 64,
+        "license_policy": "public_market_data",
+        "trust_tier": TrustTier.PRIMARY,
+    }
     values.update(overrides)
     return SourceReference(**values)
 
 
 def evidence(**overrides):
-    values = dict(
-        evidence_type=EvidenceType.OBSERVATION,
-        claim="BTC reference price observed",
-        source_reference_id="src:exchange:binance:btc",
-        first_seen_at=T0 + timedelta(seconds=1),
-        available_at=T0 + timedelta(seconds=2),
-        published_at=T0,
-        entity_ids=("crypto:BTC",),
-        instrument_id="binance:spot:BTCUSDT",
-        value=65000.0,
-        unit="USD/BTC",
-        currency="USD",
-    )
+    values = {
+        "evidence_type": EvidenceType.OBSERVATION,
+        "claim": "BTC reference price observed",
+        "source_reference_id": "src:exchange:binance:btc",
+        "first_seen_at": T0 + timedelta(seconds=1),
+        "available_at": T0 + timedelta(seconds=2),
+        "published_at": T0,
+        "entity_ids": ("crypto:BTC",),
+        "instrument_id": "binance:spot:BTCUSDT",
+        "value": 65000.0,
+        "unit": "USD/BTC",
+        "currency": "USD",
+    }
     values.update(overrides)
     return EvidenceRecord(**values)
 
 
 def test_source_normalizes_timezone_to_utc():
-    local = datetime(2026, 1, 1, 15, 30, tzinfo=__import__("datetime").timezone(
-        timedelta(hours=3, minutes=30)
-    ))
+    local = datetime(2026, 1, 1, 15, 30, tzinfo=timezone(timedelta(hours=3, minutes=30)))
     item = source(first_seen_at=local, retrieved_at=local + timedelta(seconds=1))
     assert item.first_seen_at == datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("field", ["first_seen_at", "retrieved_at"])
 def test_source_rejects_naive_timestamps(field):
-    values = dict(first_seen_at=T0, retrieved_at=T0 + timedelta(seconds=1))
+    values = {"first_seen_at": T0, "retrieved_at": T0 + timedelta(seconds=1)}
     values[field] = datetime(2026, 1, 1)
     with pytest.raises(EvidenceContractError, match="timezone-aware"):
         source(**values)
