@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from binance_live_microstructure import (
     build_active_session_snapshot,
@@ -7,7 +7,7 @@ from binance_live_microstructure import (
 from binance_stream_collector import HashChainJSONLStore
 
 
-BASE = datetime(2026, 11, 20, 12, 0, tzinfo=__import__("datetime").UTC)
+BASE = datetime(2020, 1, 1, 12, 0, tzinfo=UTC)
 SESSION = "active-pit-snapshot"
 
 
