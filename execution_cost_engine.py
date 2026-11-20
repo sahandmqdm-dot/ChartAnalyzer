@@ -3,7 +3,7 @@
 Accounting-first: no limit-fill prediction, maker inference, or live execution.
 Every supplied fill carries an explicit liquidity role and provenance.
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import datetime
 import hashlib
@@ -240,7 +240,7 @@ def market_sweep_fills(
     age_limit = _number(max_age_ms, "max_age_ms", minimum=0.0)
     try:
         received = datetime.datetime.fromisoformat(book_received_at)
-        decision = datetime.fromisoformat(decision_at)
+        decision = datetime.datetime.fromisoformat(decision_at)
     except (AttributeError, TypeError, ValueError) as exc:
         raise ValueError("book and decision times must be ISO-8601") from exc
     if received.tzinfo is None or decision.tzinfo is None:
