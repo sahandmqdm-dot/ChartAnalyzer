@@ -1,74 +1,93 @@
-# ChartAnalyzer | Security and Repository Validation Snapshot
+# ChartAnalyzer | Security, Integrity and Validation Audit
 
 **Audit date:** 2026-11-20  
-**Validated baseline:** validated PR head `1dad684ab7d195c098366f82d73f50ec1fe79f1e` (proposed for main)  
-**CI evidence:** GitHub Actions run `44713908209` for the validated PR head.  
-**Nature of review:** repository-level automated validation and targeted source review. This is not an independent penetration test or a certification.
+**Validated main commit:** `8772da1ea0d8d1797bccc123c94ad8418163603a`  
+**GitHub Actions run:** `44722080675`  
+**Review type:** automated CI evidence plus targeted source/contract review. This is not an independent penetration test, exchange certification or production-readiness certificate.
 
 ## Executive result
 
-The required automated test and security jobs passed on the validated source tree. The repository is **not yet a clean, production-certified release**: the advisory Ruff job still reports legacy findings, coverage is 83%, and Windows/live-provider runtime behavior has not been verified in this environment.
+The latest mainline passes both Python test matrices, compilation, dependency auditing and Bandit medium/high gates. The prospective future-holdout collector and baseline comparison pipeline are now implemented, but **no prospective cohort has been registered and no future performance sample has been collected**. The Windows runner has not yet been smoke-tested on the user's machine.
+
+The repository is suitable for controlled research use and further validation. It is not yet a production-certified financial decision system.
 
 ## Automated validation
 
-| Check | Result |
+| Check | Latest result |
 |---|---|
-| Python 3.12 test suite | **489 passed** |
-| Python 3.13 test suite | **489 passed** |
-| Coverage | **83%** on both Python versions |
-| Python compilation | Passed (`python -m compileall -q .`) |
+| Python 3.12 test suite | **527 passed** |
+| Python 3.13 test suite | **527 passed** |
+| Coverage | **84%** on both Python versions |
+| Python compilation | Passed on both Python versions |
 | Dependency audit | `pip-audit`: no known vulnerabilities found |
-| Bandit | **0 medium / 0 high** severity findings; 827 low-severity findings in the scan summary |
-| SQLite resource lifecycle | The 23 Python 3.13 `ResourceWarning: unclosed database` warnings seen before the fix are no longer present |
-| Ruff | Advisory job still fails with **103 findings**: 74 I001, 18 F401, 6 F841, 4 C408 and 1 S110 |
+| Bandit | **0 medium / 0 high**; 888 low-severity findings remain |
+| SQLite resource lifecycle | Previously observed Python 3.13 unclosed-database warnings are resolved |
+| Ruff | Advisory job remains non-blocking and reports **437 repository-wide diagnostics** |
 
-Ruff is configured as advisory in CI, so its failure does not fail the overall workflow. This must not be described as a clean lint result. The findings are repository-wide technical debt and should be addressed incrementally, starting with unused imports/locals and exception handling, then import formatting.
+The Ruff breakdown is UP006 (105), I001 (75), UP035 (53), BLE001 (49), UP045 (39), RUF046 (22), F401 (18), UP017 (15), TRY004 (10), RUF022 (9), RUF059 (5), F841 (6), C408 (4), SIM115 (4), SIM102 (3), RUF012 (3), UP031 (2), EXE001 (2), RUF007 (2), UP012 (2), PIE807 (2), FURB188 (1), FURB167 (1), FURB157 (1), RUF034 (1), S110 (1).
+
+Ruff is not a clean result. Its current advisory configuration means these diagnostics do not fail the overall workflow. They must be addressed in controlled batches; do not apply a blind repository-wide rewrite to security-sensitive or financial logic.
+
+## Prospective future-holdout capability
+
+The following components are now present:
+
+- `prospective_holdout.py`: append-only cohort, forecast and outcome ledger; frozen cohort settings; non-overlapping forecast horizons; hash-chain integrity; one-time final evaluation.
+- `prospective_baselines.py`: zero-return, historical-unconditional and EWMA-Gaussian baselines, scored on the exact same realized outcomes as the candidate.
+- `app.py`: register, status, tick and evaluate endpoints for the local collector.
+- `tools/Register-ProspectiveHoldout.ps1`: Windows cohort registration helper.
+- `tools/Invoke-ProspectiveHoldoutTick.ps1`: Windows collector tick for Task Scheduler.
+- `docs/PROSPECTIVE_HOLDOUT_PROTOCOL.md`: protocol, timestamp semantics and operator instructions.
+
+Integrity safeguards include server-computed configuration fingerprints, code hashes for the PMI, forecast-validation, research-provenance, market-data adapter, ledger and baseline components, the research-engine revision, closed-candle-only inputs, exact target-candle resolution, and fail-closed handling of invalid, gapped or off-grid OHLCV.
+
+Three baselines are frozen at each forecast cutoff. Candidate-minus-baseline differences for quantile pinball loss, median MAE, central-80 coverage and interval width are evaluated with paired moving-block-bootstrap confidence intervals. Negative loss deltas favor the candidate; positive coverage deltas favor it. Interval width must be interpreted together with coverage.
+
+### Important limits
+
+1. The initial collector is **Spot-only** and supports Ramzinex or CCXT input.
+2. The first outcome resolver uses the **same provider** as the input feed. This is future-only in time, but not independently sourced. A second provider must not be introduced until instrument identity, contract, quote currency, price basis and candle boundaries are proven equivalent.
+3. No cohort has been registered, no future outcomes have been resolved, and no predictive edge or profitability is demonstrated.
+4. The current PMI does not provide a calibrated directional probability; directional Brier scoring is therefore unavailable.
+5. The Windows PowerShell scripts have not yet been executed on the user's Windows environment. The first run must be treated as a smoke test, not as validation evidence.
+6. A cohort can become incomplete if the app or PC is offline, provider data is missing, or scheduled ticks are missed. Missing outcomes remain unresolved; the system must not fill them with nearby candles or synthetic prices.
+7. The final report is descriptive and does not automatically promote a model. Any model change requires a new frozen cohort.
 
 ## Security controls reviewed
 
-- Default application mode is loopback-only; LAN mode is explicit and requires a token.
+- The application defaults to loopback-only operation; LAN mode is explicit and requires a token.
 - Host/origin checks, constant-time token comparison, bounded request handling and restrictive response headers are present.
 - User-supplied UDF URLs are checked against configured allowlists; upstream redirects are disabled.
 - CSV ingestion and research payload sizes are bounded.
-- SQLite files and sidecars receive restrictive POSIX permissions; symlink paths are rejected.
+- SQLite files and sidecars receive restrictive POSIX permissions; symlink database paths are rejected.
 - MCP starts without a shell, uses a reduced child environment and does not inherit application provider secrets or the LAN token.
 - MCP integration is read-only and does not expose order placement.
-- Holdout evaluation is serialized and one-time at the application layer.
-- Dependency scanning found no known vulnerable dependency versions in the current requirements set.
+- The prospective collector uses read-only public market data and has no order-placement path.
+- Holdout evaluation is one-time and integrity-checked before and after report creation.
 
-See [SECURITY.md](SECURITY.md) for the detailed threat model, operational guidance and remaining security limitations.
+See `SECURITY.md` for the threat model and operational guidance.
 
-## Important limitations and residual risk
+## Residual risk and production prerequisites
 
 1. **No TLS in the built-in server.** LAN mode uses plain HTTP. Do not expose it directly to the public Internet; use a trusted network and an HTTPS reverse proxy with authentication and network controls.
 2. **Shared LAN token.** There are no per-user roles or server-side session revocation. Loopback clients are trusted by design.
 3. **No independent DAST or penetration test.** Bandit and pip-audit are automated checks, not proof that the application is vulnerability-free.
-4. **No Windows runtime certification in this audit.** CI runs on Ubuntu. A local Windows 11 smoke test is still required.
-5. **No live exchange/provider certification.** Network reachability, provider rate limits, symbol coverage, data entitlements and current upstream payload behavior must be tested from the deployment environment.
-6. **No profitability claim.** Backtests are bar-level approximations. They do not fully model order-book depth, queue position, partial fills, market impact, exchange liquidation or all historical funding mechanics.
-7. **Coverage gap.** 83% line coverage leaves 17% unexecuted by the current suite; high-risk orchestration, failure and platform-specific paths need more targeted tests.
-8. **Static-analysis debt.** The 103 Ruff findings remain open. The advisory configuration means they are visible but non-blocking.
+4. **No Windows runtime certification.** CI runs on Ubuntu. A Windows 11 smoke test is still required.
+5. **No live provider certification.** Rate limits, symbol coverage, data entitlements, payload changes, missing candles and provider outages must be tested from the deployment environment.
+6. **No profitability claim.** Bar-level forecasts and backtests do not fully model order-book depth, queue position, partial fills, market impact, exchange liquidation or every historical funding mechanic.
+7. **Coverage gap.** 84% line coverage leaves 16% unexecuted by the current suite. High-risk orchestration, failure and platform-specific paths need further targeted tests.
+8. **Static-analysis debt.** The 441 Ruff diagnostics and 888 Bandit low-severity findings require triage. They are not all confirmed vulnerabilities, but must not be silently ignored.
+9. **CMI remains incomplete.** CMI-01/02 and the prospective evaluation infrastructure are present. Fundamental/macro, news research, human sentiment, knowledge graph, event impact and full scenario intelligence remain roadmap work.
 
-## Project completeness
+## Required next steps
 
-The current mainline is ChartAnalyzer V7.2.0 plus the merged CMI-01/CMI-02 evidence, source, entity and claim contracts. The later CMI stages are roadmap work, not completed functionality:
+1. Run the Windows registration and collector scripts against the local app, initially with a small non-production test cohort.
+2. Verify Ramzinex symbol mapping, closed-candle boundaries, data freshness, gaps, off-grid intervals and exact outcome resolution on the actual machine.
+3. Register a future cohort only after that smoke test; keep the PMI and baseline fingerprints frozen for the entire collection.
+4. Collect the pre-registered non-overlapping sample, resolve every target outcome and consume the report once.
+5. Review candidate-versus-baseline paired confidence intervals without tuning on the holdout. If the result is inconclusive or weak, do not claim edge.
+6. Add a genuinely independent outcome feed only after exact instrument and price-basis equivalence is validated.
+7. Complete CMI-03 through CMI-08 with point-in-time provenance and out-of-sample acceptance tests.
+8. Run an independent security review and Windows deployment test before production exposure.
 
-- CMI-03: Fundamental and Macro Intelligence
-- CMI-04: News/research ingestion and source-linked claim extraction
-- CMI-05: Human sentiment and narrative lifecycle
-- CMI-06: Knowledge graph and contradiction engine
-- CMI-07: Event impact and cross-asset hypotheses
-- CMI-08: Scenario synthesis and forecast evaluation
-
-The separate `feature/news-service` branch is not part of main and must not be treated as an integrated or validated production capability. Its news ingestion should be reconsidered as part of CMI-04, using the canonical evidence/source contracts and prompt-injection safeguards.
-
-## Required follow-up before a production release
-
-1. Eliminate the Ruff baseline and make linting of changed files blocking.
-2. Increase coverage of security-sensitive and data-integrity paths, with particular attention to exception paths and Windows behavior.
-3. Run the full test and smoke-test sequence on Windows 11 with the intended Python version.
-4. Validate each live data adapter against its provider, including stale data, rate limits, malformed payloads and symbol/market identity.
-5. Complete CMI-03 through CMI-08 with point-in-time, provenance and out-of-sample acceptance tests.
-6. Collect a genuinely independent, sealed future holdout before making any predictive-performance claim.
-
-**Conclusion:** the current code passes the automated test, dependency and medium/high Bandit gates on the recorded CI baseline. It is suitable for continued controlled development and research validation, but the findings and limitations above must be closed or explicitly accepted before production deployment.
+**Conclusion:** current CI supports controlled development and a first local prospective-collection smoke test. It does not yet support a claim that ChartAnalyzer has demonstrated predictive edge, independent-source validation or production readiness.

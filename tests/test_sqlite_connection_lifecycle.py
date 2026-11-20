@@ -1,4 +1,3 @@
-# ruff: noqa: I001
 import sqlite3
 
 import pytest
@@ -27,8 +26,7 @@ def test_research_registry_connection_closes_after_context(tmp_path):
 def test_connection_closes_when_context_body_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_core, "DB_PATH", str(tmp_path / "agent-journal-error.db"))
     connection = agent_core._db()
-    with pytest.raises(RuntimeError, match="expected test failure"):
-        with connection:
-            raise RuntimeError("expected test failure")
+    with pytest.raises(RuntimeError, match="expected test failure"), connection:
+        raise RuntimeError("expected test failure")
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         connection.execute("SELECT 1")
