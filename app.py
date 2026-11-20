@@ -2863,13 +2863,21 @@ def api_prospective_holdout_tick(payload: dict):
             q10, q50, q90 = (math.log1p(value) for value in q_values)
             bar_seconds = TF_MIN[identity["timeframe"]] * 60
             data_cutoff = float(frame["time"].iloc[-1]) + bar_seconds
-            issued_at = _prospective_now()
-            data_cutoff_at = datetime.fromtimestamp(data_cutoff, tz=issued_at.tzinfo)
+            clock_now = _prospective_now()
+            data_cutoff_at = datetime.fromtimestamp(data_cutoff, tz=clock_now.tzinfo)
             target_at = data_cutoff_at + timedelta(seconds=bar_seconds * identity["horizon_bars"])
             fingerprint = dataset_fingerprint(
                 frame, source=source, symbol=identity["symbol"], timeframe=identity["timeframe"])
             baseline_quantiles = build_baseline_quantiles(
                 frame["close"].to_numpy(dtype=float), identity["horizon_bars"])
+            microstructure_provenance = None
+            if identity["microstructure_evidence_required"]:
+                # Build and archive the auxiliary feature evidence before setting
+                # issued_at, so the forecast timestamp follows all input collection.
+                microstructure_provenance = _prospective_binance_microstructure_provenance(
+                    identity, data_cutoff_at
+                )
+            issued_at = _prospective_now()
             forecast = create_forecast_record(
                 instrument_id=identity["symbol"], market_type=identity["market_type"],
                 timeframe=identity["timeframe"], horizon_bars=identity["horizon_bars"],
@@ -2885,10 +2893,23 @@ def api_prospective_holdout_tick(payload: dict):
                 forecast, config_fingerprint=config_hash, input_source=input_source,
                 reference_price=float(frame["close"].iloc[-1]),
                 baseline_quantiles=baseline_quantiles, recorded_at=recorded_at,
+                microstructure_provenance=microstructure_provenance,
             )
-            issued = {"forecast_id": forecast.forecast_id, "issued_at": forecast.issued_at.isoformat(),
-                      "data_cutoff_at": forecast.data_cutoff_at.isoformat(),
-                      "target_at": forecast.target_at.isoformat()}
+            issued = {
+                "forecast_id": forecast.forecast_id,
+                "issued_at": forecast.issued_at.isoformat(),
+                "data_cutoff_at": forecast.data_cutoff_at.isoformat(),
+                "target_at": forecast.target_at.isoformat(),
+                "microstructure_evidence": (
+                    {
+                        "dataset_hash": microstructure_provenance["dataset_hash"],
+                        "feature_hash": microstructure_provenance["feature_hash"],
+                        "artifact_path": microstructure_provenance["artifact_path"],
+                        "book_valid": microstructure_provenance["book_valid"],
+                    }
+                    if microstructure_provenance else None
+                ),
+            }
         return {
             "cohort": ledger.status(),
             "resolved_this_tick": resolved_count,
