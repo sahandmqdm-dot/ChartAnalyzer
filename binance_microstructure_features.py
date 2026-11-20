@@ -73,8 +73,12 @@ def _load_verified_session(
 class _ReferenceBook:
     """Small Decimal L2 state machine, independent of the live book class."""
 
-    def __init__(self, symbol: str) -> None:
+    def __init__(self, symbol: str, max_buffered_events: int = 10000) -> None:
+        if max_buffered_events < 1:
+            raise ValueError("max_buffered_events must be >= 1")
         self.symbol = symbol.upper()
+        self.max_buffered_events = max_buffered_events
+        self.buffer_overflows = 0
         self.bids: dict[Decimal, Decimal] = {}
         self.asks: dict[Decimal, Decimal] = {}
         self.last_update_id: int | None = None
@@ -121,6 +125,9 @@ class _ReferenceBook:
 
     def ingest_depth(self, event: dict[str, Any]) -> None:
         if not self.valid:
+            if len(self.buffer) >= self.max_buffered_events:
+                self.buffer.clear()
+                self.buffer_overflows += 1
             self.buffer.append(event)
             return
         try:
@@ -240,6 +247,8 @@ def _new_window_state() -> dict[str, Any]:
         "sell_notional": Decimal(0),
         "liquidations": deque(),
         "liquidation_count": 0,
+        "long_liquidation_count": 0,
+        "short_liquidation_count": 0,
         "long_liquidation_notional": Decimal(0),
         "short_liquidation_notional": Decimal(0),
     }
@@ -276,8 +285,10 @@ def _expire_window(state: dict[str, Any], cutoff: datetime) -> None:
         _, notional, side = state["liquidations"].popleft()
         state["liquidation_count"] -= 1
         if side == "SELL":
+            state["long_liquidation_count"] -= 1
             state["long_liquidation_notional"] -= notional
         else:
+            state["short_liquidation_count"] -= 1
             state["short_liquidation_notional"] -= notional
 
 
@@ -305,6 +316,8 @@ def _window_output(state: dict[str, Any], seconds: int) -> dict[str, Any]:
             Decimal(state["trade_count"]) / Decimal(seconds)
         ),
         "liquidation_event_count": state["liquidation_count"],
+        "long_liquidation_count": state["long_liquidation_count"],
+        "short_liquidation_count": state["short_liquidation_count"],
         "long_liquidation_notional": str(state["long_liquidation_notional"]),
         "short_liquidation_notional": str(state["short_liquidation_notional"]),
     }
@@ -319,6 +332,7 @@ def build_pit_microstructure_features(
     window_seconds: tuple[int, ...] = (5, 60, 300),
     book_depth: int = 10,
     allow_incomplete: bool = False,
+    max_buffered_depth_events: int = 10000,
 ) -> dict[str, Any]:
     """Build causal feature snapshots using only events received by each decision time."""
     if not decision_times:
@@ -330,6 +344,8 @@ def build_pit_microstructure_features(
         raise ValueError("window_seconds must contain positive integers")
     if book_depth < 1:
         raise ValueError("book_depth must be >= 1")
+    if max_buffered_depth_events < 1:
+        raise ValueError("max_buffered_depth_events must be >= 1")
 
     manifest = _load_verified_session(
         data_root, market, session_id, allow_incomplete=allow_incomplete
@@ -342,7 +358,7 @@ def build_pit_microstructure_features(
     if any(value < started or value > ended for value in decisions):
         raise PITFeatureError("decision_time_outside_capture_session")
 
-    book = _ReferenceBook(str(manifest["symbol"]))
+    book = _ReferenceBook(str(manifest["symbol"]), max_buffered_depth_events)
     window_state = {seconds: _new_window_state() for seconds in sorted(set(window_seconds))}
     snapshots: list[dict[str, Any]] = []
     processed_counts = {
@@ -389,8 +405,10 @@ def build_pit_microstructure_features(
                         state["liquidations"].append((event_received, notional, side))
                         state["liquidation_count"] += 1
                         if side == "SELL":
+                            state["long_liquidation_count"] += 1
                             state["long_liquidation_notional"] += notional
                         else:
+                            state["short_liquidation_count"] += 1
                             state["short_liquidation_notional"] += notional
                     max_received = max(max_received, event_received) if max_received else event_received
                     processed_counts["liquidations"] += 1
@@ -413,6 +431,7 @@ def build_pit_microstructure_features(
             "source_event_watermark": max_received.isoformat() if max_received else None,
             "book": book.metrics(book_depth),
             "book_sequence_gaps": book.sequence_gaps,
+            "book_buffer_overflows": book.buffer_overflows,
             "windows": windows,
             "processed_event_counts": dict(processed_counts),
             "session_complete": manifest["session_complete"],
