@@ -5,11 +5,12 @@ Every supplied fill carries an explicit liquidity role and provenance.
 """
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
 import hashlib
 import json
 import math
-from datetime import datetime
-from typing import Any
 
 
 ENGINE_VERSION = "ExecutionCostEngine 1.0"
@@ -230,7 +231,7 @@ def market_sweep_fills(
     if not book.get("market") or not book.get("symbol"):
         raise ValueError("book market and symbol identity are required")
     if isinstance(book.get("last_update_id"), bool) or not isinstance(book.get("last_update_id"), int):
-        raise ValueError("book last_update_id must be an integer")
+        raise TypeError("book last_update_id must be an integer")
     side = str(side).lower()
     if side not in {"buy", "sell"}:
         raise ValueError("side must be buy or sell")
