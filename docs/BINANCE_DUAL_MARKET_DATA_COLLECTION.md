@@ -37,7 +37,7 @@ Leave the proxy variable unset for the library's default environment proxy behav
 
 - Each received provider payload is appended to a daily JSONL partition before downstream interpretation.
 - Each partition has a SHA-256 hash chain. Verification detects payload edits, deletions in the middle, and broken ordering.
-- Each append is flushed and fsynced by default. This favors durability over peak throughput; throughput and disk latency must be benchmarked on the target machine.
+- Each append is flushed to the OS on receipt; fsync is batched every 100 events by default and forced on clean shutdown. Set `fsync_each_event=True` when constructing the store for stricter per-event power-loss durability at a throughput cost. Benchmark write throughput and disk latency on the target machine.
 - Spot and USD-M use independent WebSocket sessions and independent reconnect loops with exponential backoff.
 - Connection transitions and collector parse errors are written as events.
 - Reconnect does not fabricate missing trades or historical depth updates. A collection gap is part of the dataset and must remain visible.
