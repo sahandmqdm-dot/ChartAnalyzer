@@ -143,6 +143,63 @@ def test_hash_chain_persists_provenance_fields(tmp_path):
 
 
 
+def test_collector_run_gracefully_closes_both_markets_on_operator_stop(tmp_path):
+    async def scenario():
+        stop = asyncio.Event()
+        sockets = []
+
+        class IdleWebSocket:
+            def __init__(self):
+                self.closed = asyncio.Event()
+                sockets.append(self)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            def __aiter__(self):
+                async def messages():
+                    await self.closed.wait()
+                    if False:
+                        yield ""
+                return messages()
+
+            async def close(self):
+                self.closed.set()
+
+        store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+        collector = BinanceDualMarketCollector(
+            tmp_path,
+            store=store,
+            connector=lambda uri, **options: IdleWebSocket(),
+        )
+        task = asyncio.create_task(collector.run(stop, symbol="BTCUSDT"))
+        for _ in range(200):
+            if len(sockets) == 2:
+                break
+            await asyncio.sleep(0.001)
+        assert len(sockets) == 2
+        stop.set()
+        await asyncio.wait_for(task, timeout=2)
+
+        records = [
+            json.loads(line)
+            for path in tmp_path.rglob("*.jsonl")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        terminals = [
+            r for r in records
+            if r["stream"] == "session_manifest" and r["payload"].get("state") == "ended"
+        ]
+        assert len(terminals) == 2
+        assert {r["market"] for r in terminals} == {"spot", "usdm"}
+        assert all(r["payload"]["termination"] == "operator_stop" for r in terminals)
+
+    asyncio.run(scenario())
+
+
 def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
     stop = asyncio.Event()
 
