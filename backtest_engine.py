@@ -14,6 +14,50 @@ def _as_float_array(x) -> np.ndarray:
     return np.asarray(x, dtype=float)
 
 
+def _extract_time_axis(df):
+    """Return a validated source-native time axis, or None when none is supplied.
+
+    Numeric timestamps retain their provider-native unit. Datetime values are
+    serialized as ISO-8601 strings. We never infer seconds vs milliseconds.
+    """
+    if "time" in getattr(df, "columns", ()):
+        raw = np.asarray(df["time"])
+        source = "time_column"
+    else:
+        index = getattr(df, "index", None)
+        dtype = getattr(index, "dtype", None)
+        if dtype is None or not np.issubdtype(dtype, np.datetime64):
+            return None, None
+        raw = np.asarray(index)
+        source = "datetime_index"
+    if raw.ndim != 1 or len(raw) != len(df) or len(raw) < 2:
+        raise ValueError("time axis must be one-dimensional and match candle rows")
+    try:
+        numeric = np.asarray(raw, dtype=float)
+        if not np.isfinite(numeric).all() or np.any(np.diff(numeric) <= 0):
+            raise ValueError("numeric timestamps must be finite, unique, and strictly increasing")
+        return raw, source
+    except (TypeError, ValueError):
+        try:
+            parsed = np.asarray(raw, dtype="datetime64[ns]")
+            ticks = parsed.astype("int64")
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("time column must contain numeric timestamps or datetimes") from None
+        if np.isnat(parsed).any() or np.any(np.diff(ticks) <= 0):
+            raise ValueError("datetime timestamps must be valid, unique, and strictly increasing")
+        return parsed, source
+
+
+def _serialize_time_value(value):
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+
+
 
 def _buy_hold_benchmark(
     open_prices: np.ndarray, *, start: int, exposure: float,
@@ -186,6 +230,7 @@ def run_backtest(
     equity = peak = 1.0
     max_dd = 0.0
     equity_curve: List[float] = []
+    equity_bar_indices: List[int] = []
     trades: List[Dict[str, Any]] = []
     fees_paid = spread_paid = slippage_paid = impact_paid = funding_paid = 0.0
     turnover_sides = 0
@@ -348,6 +393,8 @@ def run_backtest(
                 peak = max(peak, equity)
                 max_dd = min(max_dd, equity / peak - 1.0 if peak > 0 else -1.0)
                 equity_curve.append(float(equity))
+        equity_bar_indices.append(int(i + 2))
+                equity_bar_indices.append(int(i + 2))
                 continue
             bar_ret = (next_open / fill_px - 1.0) * pos
             multiplier = 1.0 + exposure_notional * bar_ret
@@ -398,6 +445,12 @@ def run_backtest(
         max_dd = min(max_dd, equity / peak - 1.0 if peak > 0 else -1.0)
         if equity_curve:
             equity_curve[-1] = float(equity)
+
+    time_axis, time_axis_source = _extract_time_axis(df)
+    equity_timestamps = (
+        [_serialize_time_value(time_axis[idx]) for idx in equity_bar_indices]
+        if time_axis is not None else None
+    )
 
     gross = np.asarray([t["gross_ret"] for t in trades], dtype=float)
     net = np.asarray([t["net_ret"] for t in trades], dtype=float)
@@ -493,6 +546,10 @@ def run_backtest(
         "entry_hours_filter_applied": entry_allowed is not None,
         "liquidation_modelled": False,
         "trades_log": trades, "equity_curve": equity_curve,
+        "equity_bar_indices": equity_bar_indices,
+        "equity_timestamps": equity_timestamps,
+        "equity_timestamp_source": time_axis_source,
+        "equity_timeline_semantics": "equity marked at next open; bar index i+2 for each loop iteration",
         "warning": (
             "Next-open execution with OHLC-based ATR exits; exact intrabar path/order is unknown, and same-bar dual touches assume stop-first. "
             "Futures leverage is synthetic: margin calls, liquidation prices and historical funding schedules "
