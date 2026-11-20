@@ -257,8 +257,9 @@ def validate_source_links(
     records: Iterable[EvidenceRecord], sources: Iterable[SourceReference]
 ) -> tuple[EvidenceRecord, ...]:
     """Fail closed when evidence references an absent or temporally impossible source."""
-    source_map = {source.source_id: source for source in sources}
-    if len(source_map) != len(tuple(sources)) if not isinstance(sources, (list, tuple)) else False:
+    source_rows = tuple(sources)
+    source_map = {source.source_id: source for source in source_rows}
+    if len(source_map) != len(source_rows):
         raise EvidenceContractError("duplicate source_id values")
     validated = tuple(records)
     for record in validated:
