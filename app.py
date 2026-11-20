@@ -2397,16 +2397,6 @@ def _prospective_require_clean_frame(frame, source, timeframe):
     return audit
 
 
-def _prospective_require_clean_frame(frame, source, timeframe):
-    """Fail closed when point-in-time forecast inputs or outcome candles are incomplete."""
-    audit = _audit_research_frame(frame, source, timeframe)
-    if not isinstance(audit, dict) or not audit.get("valid", False):
-        raise ValueError("prospective holdout blocked: OHLCV integrity audit did not pass")
-    if int(audit.get("gap_count", 0) or 0) != 0:
-        raise ValueError("prospective holdout blocked: OHLCV contains missing candle intervals")
-    return audit
-
-
 # ------------------------------------------------ prospective future holdout
 def _prospective_now():
     from datetime import UTC, datetime
