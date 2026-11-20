@@ -7,6 +7,8 @@ an actionable gate can be returned. It does not tune or modify signals.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import math
 import os
@@ -19,7 +21,9 @@ from typing import Any, Dict, Optional
 from research_provenance import config_fingerprint
 
 _LOCK = threading.RLock()
-ENGINE_VERSION = "StrategyValidationGate V1.0"
+ENGINE_VERSION = "StrategyValidationGate V1.1"
+SIGNATURE_ENV = "CHARTANALYZER_EVIDENCE_SIGNING_KEY"
+SIGNATURE_ALGORITHM = "HMAC-SHA256"
 
 DEFAULT_POLICY = {
     "validation_max_age_hours": 24.0,
@@ -110,11 +114,18 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
     if isinstance(policy, dict):
         p.update(policy)
     # A local config may make the gate stricter, never weaker than the research policy.
+    # Production policy is a hard floor/ceiling. User configuration may only
+    # make these constraints stricter; it cannot disable a mandatory control.
+    p["validation_max_age_hours"] = min(float(DEFAULT_POLICY["validation_max_age_hours"]), float(p["validation_max_age_hours"]))
     p["min_oos_trades"] = max(int(DEFAULT_POLICY["min_oos_trades"]), int(p["min_oos_trades"]))
+    p["min_validation_folds"] = max(int(DEFAULT_POLICY["min_validation_folds"]), int(p["min_validation_folds"]))
     p["min_oos_net_profit_factor"] = max(float(DEFAULT_POLICY["min_oos_net_profit_factor"]), float(p["min_oos_net_profit_factor"]))
+    p["min_oos_net_expectancy_pct"] = max(float(DEFAULT_POLICY["min_oos_net_expectancy_pct"]), float(p["min_oos_net_expectancy_pct"]))
     p["min_positive_fold_ratio"] = max(float(DEFAULT_POLICY["min_positive_fold_ratio"]), float(p["min_positive_fold_ratio"]))
-    p["max_oos_drawdown_pct"] = min(float(DEFAULT_POLICY["max_oos_drawdown_pct"]), float(p.get("max_oos_drawdown_pct", DEFAULT_POLICY["max_oos_drawdown_pct"])))
-    p["max_adjusted_p_value"] = min(float(DEFAULT_POLICY["max_adjusted_p_value"]), float(p.get("max_adjusted_p_value", DEFAULT_POLICY["max_adjusted_p_value"])))
+    p["max_oos_drawdown_pct"] = min(float(DEFAULT_POLICY["max_oos_drawdown_pct"]), float(p["max_oos_drawdown_pct"]))
+    p["max_adjusted_p_value"] = min(float(DEFAULT_POLICY["max_adjusted_p_value"]), float(p["max_adjusted_p_value"]))
+    for mandatory in ("require_positive_cost_stress_1_5x", "require_positive_oos_ci", "require_gap_free_data"):
+        p[mandatory] = True
     current = float(now if now is not None else time.time())
     if not isinstance(record, dict):
         return {
@@ -193,10 +204,42 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
     }
 
 
+def _signing_key() -> Optional[bytes]:
+    raw = os.environ.get(SIGNATURE_ENV, "")
+    key = raw.encode("utf-8")
+    return key if len(key) >= 32 else None
+
+
+def _canonical_record(record: Dict[str, Any]) -> bytes:
+    payload = {k: v for k, v in record.items() if k != "integrity_signature"}
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _signature(record: Dict[str, Any], key: bytes) -> str:
+    return hmac.new(key, _canonical_record(record), hashlib.sha256).hexdigest()
+
+
+def verify_evidence_signature(record: Dict[str, Any], key: Optional[bytes] = None) -> bool:
+    key = key or _signing_key()
+    signature = record.get("integrity_signature")
+    if not key or not isinstance(signature, dict):
+        return False
+    if signature.get("algorithm") != SIGNATURE_ALGORITHM:
+        return False
+    expected = _signature(record, key)
+    return hmac.compare_digest(str(signature.get("value", "")), expected)
+
+
 def save_evidence(path: str | os.PathLike[str], record: Dict[str, Any]) -> None:
-    """Atomically replace this key's latest evidence; failures never corrupt prior JSON."""
+    """Atomically persist signed evidence; unsigned records are never deployable."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    signed = dict(record)
+    key = _signing_key()
+    signed.pop("integrity_signature", None)
+    if key:
+        signed["integrity_signature"] = {"algorithm": SIGNATURE_ALGORITHM, "value": _signature(signed, key)}
     with _LOCK:
         store = {}
         if target.exists():
@@ -208,7 +251,7 @@ def save_evidence(path: str | os.PathLike[str], record: Dict[str, Any]) -> None:
                 # A damaged evidence store is not trusted. Start a clean store;
                 # absence of evidence causes the live gate to fail closed.
                 store = {}
-        store[str(record["key"])] = record
+        store[str(signed["key"])] = signed
         fd, temp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent))
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -245,6 +288,8 @@ def load_evidence(path: str | os.PathLike[str], *, source: str, symbol: str,
             or str(record.get("symbol", "")).upper() != str(symbol).upper()
             or record.get("timeframe") != str(timeframe)):
         return None
+    if not verify_evidence_signature(record):
+        return None
     return record
 
 
@@ -257,4 +302,4 @@ def deployment_status(path: str | os.PathLike[str], *, source: str, symbol: str,
 
 
 __all__ = ["ENGINE_VERSION", "DEFAULT_POLICY", "evidence_key", "build_evidence_record",
-           "evaluate_evidence", "save_evidence", "load_evidence", "deployment_status"]
+           "evaluate_evidence", "save_evidence", "load_evidence", "deployment_status", "verify_evidence_signature"]
