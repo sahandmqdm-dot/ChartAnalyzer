@@ -301,7 +301,23 @@ def deployment_status(path: str | os.PathLike[str], *, source: str, symbol: str,
                       now: Optional[float] = None) -> Dict[str, Any]:
     record = load_evidence(path, source=source, symbol=symbol, timeframe=timeframe,
                            config_hash=config_hash)
-    return evaluate_evidence(record, policy, now=now)
+    if record is not None:
+        return evaluate_evidence(record, policy, now=now)
+
+    # Distinguish absent evidence from a present-but-untrusted record without
+    # ever evaluating the unverified metrics themselves.
+    key = evidence_key(source, symbol, timeframe, config_hash)
+    try:
+        store = json.loads(Path(path).read_text(encoding="utf-8"))
+        rejected = isinstance(store, dict) and isinstance(store.get(key), dict)
+    except (OSError, json.JSONDecodeError):
+        rejected = False
+    if rejected:
+        blocked = evaluate_evidence(None, policy, now=now)
+        blocked.update(status="BLOCKED", eligible=False,
+                       reasons=["Evidence signature is missing or invalid; the stored record was rejected."])
+        return blocked
+    return evaluate_evidence(None, policy, now=now)
 
 
 __all__ = ["ENGINE_VERSION", "DEFAULT_POLICY", "evidence_key", "build_evidence_record",
