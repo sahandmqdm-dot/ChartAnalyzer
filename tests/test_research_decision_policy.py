@@ -71,7 +71,7 @@ def test_invalid_data_has_precedence_over_performance_classification():
 
 def _bad_window(start):
     return {
-        "start_at": start, "end_at": start + 100, "config_fingerprint": "same-frozen-config",
+        "start_at": start, "end_at": start + 100, "window_sequence": int(start / 100) + 1,\n        "window_id": f"window-{int(start / 100) + 1}", "config_fingerprint": "same-frozen-config",
         "oos_trades": 240, "net_expectancy_pct": -0.12,
         "net_profit_factor": 0.82, "bootstrap_ci_95_pct": [-0.20, -0.04],
         "data_integrity_valid": True, "cohort_integrity": "PASS",
@@ -93,4 +93,4 @@ def test_strategy_is_not_retired_on_one_positive_or_overlapping_window():
     positive.update(net_expectancy_pct=0.1, net_profit_factor=1.1,
                     bootstrap_ci_95_pct=[0.01, 0.2])
     assert evaluate_strategy_lifecycle([_bad_window(0), positive])["lifecycle"] == "ACTIVE_REVIEW"
-    assert evaluate_strategy_lifecycle([_bad_window(0), _bad_window(90)])["lifecycle"] == "WATCH"
+    assert evaluate_strategy_lifecycle([_bad_window(0), _bad_window(90)])["lifecycle"] == "WATCH"\n    skipped = _bad_window(200)\n    assert evaluate_strategy_lifecycle([_bad_window(0), skipped])["lifecycle"] == "WATCH"
