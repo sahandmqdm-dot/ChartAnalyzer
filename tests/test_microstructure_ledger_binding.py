@@ -128,6 +128,7 @@ def test_forecast_ledger_persists_microstructure_hash_lineage(tmp_path):
         ({"decision_time": (START + datetime.timedelta(seconds=2)).isoformat()}, "decision_time must match"),
         ({"available_at": (START + datetime.timedelta(seconds=2)).isoformat()}, "not available by"),
         ({"source_event_watermark": (START + datetime.timedelta(seconds=2)).isoformat()}, "watermark exceeds"),
+        ({"source_event_watermark": (START - datetime.timedelta(seconds=301)).isoformat()}, "too stale"),
         ({"book_sequence_gaps": -1}, "non-negative integer"),
         ({"feature_hash": "not-a-hash"}, "SHA-256"),
     ],
