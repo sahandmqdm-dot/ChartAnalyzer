@@ -76,7 +76,8 @@ def test_evidence_expires_and_gap_or_cohort_errors_fail_closed():
     assert any("cohort" in x.lower() for x in decision["reasons"])
 
 
-def test_evidence_store_is_keyed_by_exact_config_and_writes_atomically(tmp_path):
+def test_evidence_store_is_keyed_by_exact_config_and_writes_atomically(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHARTANALYZER_EVIDENCE_SIGNING_KEY", "test-signing-key-" + "x" * 40)
     record = build_evidence_record(
         passing_result(), source="csv", symbol="BTCUSDT", timeframe="1h",
         config_hash="b" * 64, created_at=1_700_000_000,
@@ -94,6 +95,7 @@ def test_evidence_store_is_keyed_by_exact_config_and_writes_atomically(tmp_path)
 
 
 def test_live_gate_still_requires_matching_oos_validation_and_existing_ev_checks(monkeypatch, tmp_path):
+    monkeypatch.setenv("CHARTANALYZER_EVIDENCE_SIGNING_KEY", "test-signing-key-" + "x" * 40)
     import app
     from research_provenance import config_fingerprint
 
@@ -181,6 +183,12 @@ def test_user_config_cannot_weaken_mandatory_research_gate_floors():
     assert decision['policy']['min_oos_net_profit_factor']==1.2
     assert decision['policy']['max_oos_drawdown_pct']==15
     assert decision['policy']['max_adjusted_p_value']==.05
+    assert decision['policy']['min_validation_folds'] >= 5
+    assert decision['policy']['validation_max_age_hours'] <= 24
+    assert decision['policy']['min_oos_net_expectancy_pct'] >= 0
+    assert decision['policy']['require_positive_cost_stress_1_5x'] is True
+    assert decision['policy']['require_positive_oos_ci'] is True
+    assert decision['policy']['require_gap_free_data'] is True
 
 
 def test_research_lab_dashboard_api_returns_registry_and_holdout_status(monkeypatch,tmp_path):
@@ -216,3 +224,49 @@ def test_nonpositive_1_5x_cost_stress_blocks_deployment():
     decision=evaluate_evidence(record,now=1_700_000_001)
     assert not decision['eligible']
     assert any('1.5x' in x for x in decision['reasons'])
+
+
+
+def test_signed_evidence_detects_post_save_metric_tampering(tmp_path, monkeypatch):
+    from strategy_validation import load_evidence
+    monkeypatch.setenv("CHARTANALYZER_EVIDENCE_SIGNING_KEY", "tamper-test-key-" + "z" * 40)
+    record = build_evidence_record(
+        passing_result(), source="csv", symbol="BTCUSDT", timeframe="1h",
+        config_hash="c" * 64, created_at=1_700_000_000,
+    )
+    path = tmp_path / "signed.json"
+    save_evidence(path, record)
+    assert load_evidence(path, source="csv", symbol="BTCUSDT", timeframe="1h",
+                         config_hash="c" * 64) is not None
+
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored[record["key"]]["net_profit_factor"] = 99.0
+    path.write_text(json.dumps(stored), encoding="utf-8")
+    assert load_evidence(path, source="csv", symbol="BTCUSDT", timeframe="1h",
+                         config_hash="c" * 64) is None
+
+
+def test_unsigned_evidence_is_not_deployable(tmp_path, monkeypatch):
+    from strategy_validation import load_evidence
+    monkeypatch.delenv("CHARTANALYZER_EVIDENCE_SIGNING_KEY", raising=False)
+    record = build_evidence_record(
+        passing_result(), source="csv", symbol="BTCUSDT", timeframe="1h",
+        config_hash="d" * 64, created_at=1_700_000_000,
+    )
+    path = tmp_path / "unsigned.json"
+    save_evidence(path, record)
+    assert load_evidence(path, source="csv", symbol="BTCUSDT", timeframe="1h",
+                         config_hash="d" * 64) is None
+
+
+def test_production_gate_cannot_be_disabled_by_user_config(monkeypatch, tmp_path):
+    import app
+    monkeypatch.delenv("CHARTANALYZER_EVIDENCE_SIGNING_KEY", raising=False)
+    monkeypatch.setattr(app, "VALIDATION_EVIDENCE_PATH", str(tmp_path / "missing.json"))
+    C = app._merge(app.DEFAULTS, {"gate": {"require_oos_validation": False}})
+    summary = {"tf": "1h", "edge": {"aggregate": {"t_eff": 3.0, "n": 100}},
+               "plan_hit": {"t1_first_pct": 80.0, "stop_first_pct": 10.0}}
+    decision = app.make_gate(summary, {"stop": 95.0, "t1": 115.0}, 100.0, C,
+                             symbol="BTCUSDT", source="csv")
+    assert decision["state"] == "NO_TRADE"
+    assert decision["deployment_validation"]["eligible"] is False
