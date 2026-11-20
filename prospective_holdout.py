@@ -136,6 +136,72 @@ def _baseline_payload(value: dict[str, Any]) -> dict[str, dict[str, float]]:
     return normalized
 
 
+def _microstructure_provenance(
+    value: dict[str, Any] | None, forecast: ForecastRecord
+) -> dict[str, Any] | None:
+    """Validate and normalize the PIT feature evidence bound to one forecast."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("microstructure_provenance must be an object")
+    required_hashes = ("manifest_hash", "feature_hash", "dataset_hash")
+    hashes = {name: _sha(value.get(name), f"microstructure_{name}") for name in required_hashes}
+    if value.get("schema") != "chartanalyzer_pit_microstructure_features_v1":
+        raise ValueError("unsupported microstructure feature schema")
+    market = str(value.get("market") or "").lower()
+    if market != "spot" or forecast.market_type != "spot":
+        raise ValueError("microstructure market identity does not match the Spot forecast")
+    symbol = str(value.get("symbol") or "").upper()
+    if symbol != forecast.instrument_id.upper():
+        raise ValueError("microstructure symbol does not match forecast instrument")
+    if value.get("snapshot_mode") != "verified_active_partition_copy":
+        raise ValueError("microstructure snapshot must come from a verified active-session copy")
+    if value.get("point_in_time_valid") is not True:
+        raise ValueError("microstructure snapshot is not point-in-time valid")
+    if not isinstance(value.get("session_id"), str) or not value["session_id"].strip():
+        raise ValueError("microstructure session_id is required")
+    decision = _utc(datetime.fromisoformat(str(value.get("decision_time"))), "microstructure_decision_time")
+    available = _utc(datetime.fromisoformat(str(value.get("available_at"))), "microstructure_available_at")
+    if abs((decision - forecast.data_cutoff_at).total_seconds()) > 1.0:
+        raise ValueError("microstructure decision_time must match forecast data_cutoff_at")
+    if available > forecast.data_cutoff_at:
+        raise ValueError("microstructure features were not available by the forecast cutoff")
+    watermark_raw = value.get("source_event_watermark")
+    watermark = _utc(datetime.fromisoformat(str(watermark_raw)), "microstructure_source_event_watermark") if watermark_raw else None
+    if watermark is not None and watermark > forecast.data_cutoff_at:
+        raise ValueError("microstructure source watermark exceeds forecast cutoff")
+    created_raw = value.get("snapshot_created_at")
+    created = _utc(datetime.fromisoformat(str(created_raw)), "microstructure_snapshot_created_at") if created_raw else None
+    if created is not None and created < decision:
+        raise ValueError("microstructure snapshot creation predates its decision time")
+    for field in ("book_valid", "session_complete", "session_closed"):
+        if not isinstance(value.get(field), bool):
+            raise ValueError(f"microstructure {field} must be boolean")
+    counters = {}
+    for field in ("book_sequence_gaps", "book_buffer_overflows"):
+        item = value.get(field)
+        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+            raise ValueError(f"microstructure {field} must be a non-negative integer")
+        counters[field] = item
+    return {
+        "schema": value["schema"],
+        "snapshot_mode": value["snapshot_mode"],
+        "market": market,
+        "symbol": symbol,
+        "session_id": value["session_id"].strip(),
+        **hashes,
+        "decision_time": _iso(decision),
+        "available_at": _iso(available),
+        "source_event_watermark": _iso(watermark) if watermark else None,
+        "snapshot_created_at": _iso(created) if created else None,
+        "point_in_time_valid": True,
+        "book_valid": value["book_valid"],
+        "session_complete": value["session_complete"],
+        "session_closed": value["session_closed"],
+        **counters,
+    }
+
+
 def _forecast_payload(forecast: ForecastRecord) -> dict[str, Any]:
     payload = asdict(forecast)
     for key in ("issued_at", "target_at", "data_cutoff_at"):
@@ -259,6 +325,7 @@ class ProspectiveHoldoutLedger:
         input_source: str, reference_price: float,
         baseline_quantiles: dict[str, Any],
         recorded_at: datetime | None = None,
+        microstructure_provenance: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Append a forecast before its target time; never overwrite a prior forecast."""
         if not isinstance(forecast, ForecastRecord):
@@ -273,6 +340,7 @@ class ProspectiveHoldoutLedger:
         if not math.isfinite(reference) or reference <= 0:
             raise ValueError("reference_price must be finite and positive")
         baselines = _baseline_payload(baseline_quantiles)
+        microstructure = _microstructure_provenance(microstructure_provenance, forecast)
         if current < forecast.issued_at or current >= forecast.target_at:
             raise ValueError("forecast must be recorded at/after issuance and strictly before its target")
         if (current - forecast.issued_at).total_seconds() > 60:
@@ -286,6 +354,7 @@ class ProspectiveHoldoutLedger:
             "input_source": input_source.strip(),
             "reference_price": reference,
             "baseline_quantiles": baselines,
+            "microstructure_provenance": microstructure,
             "recorded_at": _iso(current),
         }
         connection = self._connect()
