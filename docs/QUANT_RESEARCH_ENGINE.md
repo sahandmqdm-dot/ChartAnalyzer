@@ -32,7 +32,7 @@ The live gate and OOS evidence use `_research_execution_config(tf, symbol, None,
 5. `/api/research-lab/holdout/evaluate` checks the exact dataset and strategy fingerprint and consumes the single-use claim before computing results.
 6. Never tune against the returned holdout result. A changed strategy requires a new future holdout.
 
-The vault is a local logical control, not a cryptographic boundary against a user with filesystem access.
+The historical vault is a local logical control, not a cryptographic boundary against a user with filesystem access. It does not itself produce an untouched future sample. For prospective evidence, use the separate append-only ledger described in `docs/PROSPECTIVE_HOLDOUT_PROTOCOL.md`.
 
 ## Non-goals
 
@@ -40,6 +40,7 @@ The vault is a local logical control, not a cryptographic boundary against a use
 - No autonomous strategy promotion.
 - No order placement or exchange write access.
 - No claim that current Ramzinex history is sufficient for final statistical acceptance.
+- No claim of prospective future validation until a frozen cohort has been registered before its start time, collected, resolved and evaluated once through `prospective_holdout.py`.
 - No use of Monte Carlo path frequencies as calibrated real-world probabilities.
 
 ## Dashboard/API access
@@ -81,3 +82,17 @@ Register the rule first with `POST /api/research-lab/hypotheses`, then execute t
 ```
 
 Supported features depend on the configured indicator groups. Unknown feature names and arbitrary code expressions are rejected. The rule is evaluated at candle close and executed at the next open plus configured extra delay.
+
+
+## Prospective future holdout (separate from historical holdout)
+
+The historical API endpoints above protect a final segment of an existing dataset. A dataset fingerprint and one-time claim do not prove that the data was unseen during prior development. Genuine future validation requires forward collection after the model/configuration has been frozen.
+
+- Register the cohort before its future collection start.
+- Record every forecast with its exact model/config identity, point-in-time data cutoff and input dataset fingerprint before the target horizon.
+- Resolve each outcome only after the target time and outcome-data availability.
+- Enforce non-overlapping forecast horizons within a cohort and preserve every forecast/outcome event append-only.
+- Keep aggregate scores hidden until collection closes and all forecasts resolve.
+- Evaluate once; never tune on the resulting report.
+
+The tested implementation primitive is `prospective_holdout.py`. It is not yet connected to live forecast issuance, a dashboard/API endpoint or an automated provider resolver. The operational rollout checklist is in `docs/PROSPECTIVE_HOLDOUT_PROTOCOL.md`.
