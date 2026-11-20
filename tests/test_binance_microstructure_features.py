@@ -136,6 +136,47 @@ def test_features_use_receive_time_and_keep_orderbook_state_point_in_time(tmp_pa
     assert result["dataset_hash"]
 
 
+def test_l2_bootstrap_buffer_is_bounded_and_reports_overflow(tmp_path):
+    store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+    store.append(
+        "spot", "session_manifest",
+        {"state": "started", "streams": ["btcusdt@depth@100ms"], "started_at": BASE},
+        received_at=_received(0), session_id=SESSION,
+    )
+    for update_id in (101, 102):
+        store.append(
+            "spot", "orderbook_depth",
+            {"U": update_id, "u": update_id, "b": [], "a": []},
+            received_at=_received(update_id - 100),
+            stream_name="btcusdt@depth@100ms",
+            sequence={"U": update_id, "u": update_id},
+            session_id=SESSION,
+        )
+    store.append(
+        "spot", "orderbook_snapshots",
+        {
+            "symbol": "BTCUSDT", "lastUpdateId": 101,
+            "bids": [["100", "2"]], "asks": [["101", "2"]],
+        },
+        received_at=_received(3), session_id=SESSION,
+    )
+    store.append(
+        "spot", "session_manifest",
+        {"state": "ended", "ended_at": _received(4), "termination": "operator_stop"},
+        received_at=_received(4), session_id=SESSION,
+    )
+    store.close()
+
+    result = build_pit_microstructure_features(
+        tmp_path, "spot", SESSION, [_received(4)],
+        max_buffered_depth_events=1,
+    )
+    feature = result["snapshots"][0]
+    assert feature["book_buffer_overflows"] == 1
+    assert feature["book"]["valid"] is True
+    assert feature["book"]["last_update_id"] == 102
+
+
 def test_feature_builder_rejects_incomplete_capture_by_default(tmp_path):
     _create_session(tmp_path, terminal_state="interrupted")
     with pytest.raises(PITFeatureError, match="incomplete_capture"):
