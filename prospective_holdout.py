@@ -179,6 +179,8 @@ def _microstructure_provenance(
     created = _utc(datetime.fromisoformat(str(created_raw)), "microstructure_snapshot_created_at") if created_raw else None
     if created is not None and created < decision:
         raise ValueError("microstructure snapshot creation predates its decision time")
+    if created is not None and created > forecast.issued_at:
+        raise ValueError("microstructure snapshot must be created before forecast issuance")
     for field in ("book_valid", "session_complete", "session_closed"):
         if not isinstance(value.get(field), bool):
             raise ValueError(f"microstructure {field} must be boolean")
