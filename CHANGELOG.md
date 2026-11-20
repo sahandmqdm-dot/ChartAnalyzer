@@ -1,5 +1,15 @@
 # Changelog
 
+
+## Unreleased - gate diagnostics and dashboard honesty fixes
+
+- Fix: every Walk-Forward evidence record was saved unsigned when `CHARTANALYZER_EVIDENCE_SIGNING_KEY` was not set, then rejected on read with "Evidence signature is missing or invalid". `app.py` now provisions a key at start-up (environment variable first, otherwise a git-ignored 0600 key file under `data/`, overridable with `CHARTANALYZER_EVIDENCE_KEY_FILE`). The library itself still never creates a key implicitly, so "no key => never deployable" is unchanged.
+- Gate status now reports `reason_code` (`NO_EVIDENCE`, `NO_SIGNING_KEY`, `UNSIGNED_RECORD`, `SIGNATURE_MISMATCH`, `KEY_MISMATCH`), `evidence_trusted` and `signing_key_source`; the dashboard shows "n/a" instead of fake zero metrics when evidence is untrusted.
+- Fix: winner-only MFE capture headline is the median with n and outlier count (the mean produced values such as 1711%).
+- Dashboard: verdict no longer shows "confidence high" under NO TRADE; regime labels say which classifier produced them; the Data-integrity line says it covers the loaded chart window only; the margin form validates input before the API call; request time-outs name the endpoint.
+- No change to signal formula, weights, costs or gate thresholds.
+
+
 ## 7.3.0 - 2026-11-20
 - Added a canonical application version source in `version.py`; runtime reports, walk-forward output, trade diagnostics, research provenance and MCP client identity now share it.
 - Added `GET /api/version` for runtime/version diagnostics.

@@ -31,3 +31,17 @@ def test_rejected_signal_research_uses_positive_subthreshold_scores():
 def test_rejected_signal_research_handles_missing_columns():
     out = analyze_rejected_bullish_candidates(pd.DataFrame(), [], .2)
     assert out["status"] == "unavailable"
+
+
+def test_capture_headline_is_median_and_outliers_are_counted():
+    from trade_research import analyze_trade_quality
+    trades = [
+        {"gross_ret": 0.004, "net_ret": 0.0035, "mfe": 0.005, "mae": -0.001, "entry_signal_score": 0.6, "exit_reason": "take_profit"},
+        {"gross_ret": 0.003, "net_ret": 0.0025, "mfe": 0.004, "mae": -0.001, "entry_signal_score": 0.6, "exit_reason": "take_profit"},
+        {"gross_ret": 0.002, "net_ret": 0.0015, "mfe": 0.00001, "mae": 0.0, "entry_signal_score": 0.6, "exit_reason": "signal"},
+    ]
+    ec = analyze_trade_quality(trades)["exit_capture"]
+    assert ec["mean_gross_mfe_capture_pct"] > 1000          # the old, misleading headline
+    assert ec["median_gross_mfe_capture_pct"] < 100          # the robust headline
+    assert ec["gross_mfe_capture_n"] == 3
+    assert ec["gross_mfe_capture_over_100pct_n"] == 1

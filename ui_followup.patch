@@ -1,0 +1,22 @@
+diff --git a/app.py b/app.py
+index 40f34b8..77c69be 100644
+--- a/app.py
++++ b/app.py
+@@ -3383,7 +3383,7 @@ async function backtest(){
+   Object.entries(tr.entry_score_cohorts||{}).forEach(([k,v])=>h+='<tr><td>'+esc(k)+'</td><td>'+v.samples+'</td><td>'+pctResearch(v.mean_return_pct)+'</td><td>'+pctResearch(v.median_return_pct)+'</td><td>'+pctResearch(v.positive_pct)+'</td></tr>');
+   h+='</tbody></table>';
+   const ec=tr.exit_capture||{};
+-  h+='<b>Exit capture</b><p>Trades with MFE: '+(ec.trades_with_mfe||0)+' | winner-only median gross MFE capture: '+pctResearch(ec.median_gross_mfe_capture_pct)+' (n='+(ec.gross_mfe_capture_n??0)+', '+(ec.gross_mfe_capture_over_100pct_n??0)+' above 100% from tiny-MFE denominators; the mean is not shown because outliers dominate it)'+' | losing trades with positive MFE: '+(ec.losing_trades_with_positive_mfe??0)+' | mean unused favorable excursion: '+pctResearch(ec.mean_unused_favorable_excursion_pct)+'</p>';
++  h+='<b>Exit capture</b><p>Trades with MFE: '+(ec.trades_with_mfe||0)+' | winner-only median gross MFE capture: '+pctResearch(ec.median_gross_mfe_capture_pct)+' (n='+(ec.gross_mfe_capture_n??0)+', '+(ec.gross_mfe_capture_over_100pct_n??0)+' above 100%). Values above 100% are an artifact: the numerator uses the real exit price while MFE is open-to-open. Do not use this number; use the consistent capture ratio in Exit Path Intelligence)'+' | losing trades with positive MFE: '+(ec.losing_trades_with_positive_mfe??0)+' | mean unused favorable excursion: '+pctResearch(ec.mean_unused_favorable_excursion_pct)+'</p>';
+   if(ec.records?.length){h+='<details><summary>Per-trade exit capture records</summary><table><thead><tr><th>Bars</th><th>Gross</th><th>Net</th><th>MFE</th><th>Gross/MFE capture</th><th>Unused MFE</th><th>Exit</th></tr></thead><tbody>';ec.records.forEach(x=>h+='<tr><td>'+esc(x.bars_held)+'</td><td>'+pctResearch(x.gross_return_pct)+'</td><td>'+pctResearch(x.net_return_pct)+'</td><td>'+pctResearch(x.mfe_pct)+'</td><td>'+pctResearch(x.gross_mfe_capture_pct)+'</td><td>'+pctResearch(x.unused_favorable_excursion_pct)+'</td><td>'+esc(x.exit_reason)+'</td></tr>');h+='</tbody></table></details>';}
+   h+='<p class=scenario-note>'+esc(ec.method_note||'')+' '+esc(tr.guardrail||'')+'</p></div>';
+  }
+@@ -3527,7 +3527,7 @@ async function dataIntegrity(){
+  const el=$('di');el.textContent='checking candles...';
+  const {ok,j}=await api('/api/data-integrity',qs());
+  if(!ok){el.textContent=j.detail;return;}
+- el.innerHTML='<b>Data integrity of the loaded chart window: '+esc(j.state)+'</b> | candles in this window '+j.candles+' (Backtest/Walk-Forward integrity is reported inside their own reports, with their own candle count)'+' | candles '+j.candles+' | gaps '+j.gap_count+' | off-grid '+j.off_grid_interval_count+
++ el.innerHTML='<b>Data integrity of the loaded chart window: '+esc(j.state)+'</b> | candles in this window '+j.candles+' (Backtest/Walk-Forward integrity is reported inside their own reports, with their own candle count) | gaps '+j.gap_count+' | off-grid '+j.off_grid_interval_count+
+   '<br>'+((j.errors||[]).map(esc).join('<br>'))+
+   ((j.warnings||[]).length?'<br>'+j.warnings.map(esc).join('<br>'):'<br>No warnings');
+ }

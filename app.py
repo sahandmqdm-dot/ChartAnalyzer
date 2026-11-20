@@ -60,6 +60,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_HOST = "127.0.0.1"
 CFG_PATH = os.path.join(BASE_DIR, "config.json")
 VALIDATION_EVIDENCE_PATH = os.path.join(BASE_DIR, "strategy_validation_evidence.json")
+# Evidence is HMAC-signed. Without a key every record used to be saved unsigned and
+# then rejected as "invalid". Provision one at start-up (env var wins; otherwise a
+# local 0600 key file under data/ that is git-ignored).
+try:
+    from strategy_validation import provision_signing_key as _provision_signing_key
+    EVIDENCE_KEY_SOURCE = _provision_signing_key()
+except Exception:  # never prevent the dashboard from starting
+    EVIDENCE_KEY_SOURCE = "none"
 RESEARCH_REGISTRY_PATH = os.path.join(BASE_DIR, "research_registry.db")
 HOLDOUT_VAULT_PATH = os.path.join(BASE_DIR, "holdout_vault.json")
 
@@ -3187,7 +3195,7 @@ function researchComparisonHtml(){
  if(b.run_id===w.run_id)return '<div class=box><b class=b>Sample match PASS:</b> Backtest and Walk-Forward use the same candles and strategy/execution configuration. Full-window statistics are still descriptive, not OOS.</div>';
  return '<div class=box><b class=s>Sample mismatch:</b> Backtest and Walk-Forward run IDs differ. Do not compare their headline metrics as if they came from the same experiment. Rerun both without changing data or configuration.</div>';
 }
-async function api(path,p){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),60000);try{const r=await fetch(path+(p?'?'+p:''),{signal:controller.signal});let j={};try{j=await r.json()}catch(e){j={detail:'HTTP '+r.status+' (invalid JSON response)'}}return {ok:r.ok,j}}catch(e){return {ok:false,j:{detail:e.name==='AbortError'?'درخواست پس از ۶۰ ثانیه متوقف شد. سرور یا منبع داده پاسخ نداده است.':('Network error: '+(e.message||e))}}}finally{clearTimeout(timer)}}
+async function api(path,p){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),60000);try{const r=await fetch(path+(p?'?'+p:''),{signal:controller.signal});let j={};try{j=await r.json()}catch(e){j={detail:'HTTP '+r.status+' (invalid JSON response)'}}return {ok:r.ok,j}}catch(e){return {ok:false,j:{detail:e.name==='AbortError'?'درخواست '+path+' پس از ۶۰ ثانیه متوقف شد. سرور یا منبع داده (شبکه/پروکسی/تحریم) پاسخ نداده است؛ دوباره تلاش کنید.':('Network error: '+(e.message||e))}}}finally{clearTimeout(timer)}}
 function NT(){return D.length+((FC&&SF)?FC.h:0)}
 async function run(){
  $('v').textContent='analyzing...';
@@ -3200,9 +3208,9 @@ function showAll(j){
  showCtx(j);showGroups(j);}
 function showCtx(j){
  const p=j.plan||{};
- let h='<div>Regime: <b>'+esc(j.regime)+'</b> (ADX '+j.adx+') &nbsp; ATR '+j.atr_pct+'% &nbsp; BB-width pct '+j.bw_pct+(j.squeeze?' <span class=w>squeeze: low volatility, breakout risk</span>':'')+'</div>';
+ let h='<div>Trend-strength regime (ADX): <b>'+esc(j.regime)+'</b> (ADX '+j.adx+') &nbsp; ATR '+j.atr_pct+'% &nbsp; BB-width pct '+j.bw_pct+(j.squeeze?' <span class=w>squeeze: low volatility, breakout risk</span>':'')+'</div>';
  const mr=j.market_regime_intelligence||{};
- if(mr.regime)h+='<div class=n>Market Regime Intelligence: <b>'+esc(mr.regime)+'</b>'+(mr.transition?' &nbsp; <span class=w>transition '+esc(mr.transition_from||'?')+' → '+esc(mr.transition_to||'?')+'</span>':'')+' &nbsp; | ER '+(mr.efficiency_ratio??'n/a')+' | ATR rank '+(mr.atr_pct_rank??'n/a')+' | BB rank '+(mr.bb_width_rank??'n/a')+' <span class=w>(research only)</span></div>';
+ if(mr.regime)h+='<div class=n>Volatility/efficiency regime (research only, a different classifier from the ADX label): <b>'+esc(mr.regime)+'</b>'+(mr.transition?' &nbsp; <span class=w>transition '+esc(mr.transition_from||'?')+' → '+esc(mr.transition_to||'?')+'</span>':'')+' &nbsp; | ER '+(mr.efficiency_ratio??'n/a')+' | ATR rank '+(mr.atr_pct_rank??'n/a')+' | BB rank '+(mr.bb_width_rank??'n/a')+' <span class=w>(research only)</span></div>';
  h+='<div style="margin:6px 0"><b>Plan:</b> '+esc(p.action||'');
  if(p.entry){h+=' | entry '+fmt(p.entry[0])+' - '+fmt(p.entry[1])+' | stop '+fmt(p.stop)+' | T1 '+fmt(p.t1)+' | T2 '+fmt(p.t2)+' | R:R '+p.rr;}
  h+=(p.note?'<br><span class=n>'+esc(p.note)+'</span>':'')+'</div>';
@@ -3264,6 +3272,7 @@ function showGate(g){
  const el=$('gate');if(!g){el.innerHTML='';return;}
  const no=g.state!='ALLOWED',e=g.ev||{};
  $('v').style.opacity=no?0.5:1;
+ if(no){const vv=$('v');vv.innerHTML=vv.innerHTML.replace(/confidence <b>[^<]*<\/b>/,'confidence <b>capped: '+esc(g.confidence_cap||'low')+'</b> <span class=w>(descriptive only - NO TRADE, not a signal)</span>');}
  let h='<div class=box style="border-left:4px solid '+(no?'#f87171':'#4ade80')+'"><b class='+(no?'s':'b')+' style="font-size:18px">'+(no?'NO TRADE':'TRADE ALLOWED')+'</b> &nbsp; confidence cap: '+esc(g.confidence_cap);
  if(g.reasons&&g.reasons.length)h+='<ul style="margin:6px 0">'+g.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')+'</ul>';
  if(e.ev!=null)h+='<div>EV after costs: <b class='+(e.ev>0?'b':'s')+'>'+(e.ev*100).toFixed(2)+'%</b> | gross R:R '+(e.rr_gross==null?'n/a':e.rr_gross.toFixed(2))+' | net R:R '+(e.rr_net==null?'n/a':e.rr_net.toFixed(2))+' | breakeven win rate '+(e.breakeven_winrate==null?'n/a':(e.breakeven_winrate*100).toFixed(1)+'%')+' | round-trip fee '+(g.fee_rt*100).toFixed(2)+'% | spread/slippage '+((g.spread_slippage_rt||0)*100).toFixed(2)+'%</div>';
@@ -3374,7 +3383,7 @@ async function backtest(){
   Object.entries(tr.entry_score_cohorts||{}).forEach(([k,v])=>h+='<tr><td>'+esc(k)+'</td><td>'+v.samples+'</td><td>'+pctResearch(v.mean_return_pct)+'</td><td>'+pctResearch(v.median_return_pct)+'</td><td>'+pctResearch(v.positive_pct)+'</td></tr>');
   h+='</tbody></table>';
   const ec=tr.exit_capture||{};
-  h+='<b>Exit capture</b><p>Trades with MFE: '+(ec.trades_with_mfe||0)+' | winner-only gross MFE capture: '+pctResearch(ec.mean_gross_mfe_capture_pct)+' | losing trades with positive MFE: '+(ec.losing_trades_with_positive_mfe??0)+' | mean unused favorable excursion: '+pctResearch(ec.mean_unused_favorable_excursion_pct)+'</p>';
+  h+='<b>Exit capture</b><p>Trades with MFE: '+(ec.trades_with_mfe||0)+' | winner-only median gross MFE capture: '+pctResearch(ec.median_gross_mfe_capture_pct)+' (n='+(ec.gross_mfe_capture_n??0)+', '+(ec.gross_mfe_capture_over_100pct_n??0)+' above 100%). Values above 100% are an artifact: the numerator uses the real exit price while MFE is open-to-open. Do not use this number; use the consistent capture ratio in Exit Path Intelligence)'+' | losing trades with positive MFE: '+(ec.losing_trades_with_positive_mfe??0)+' | mean unused favorable excursion: '+pctResearch(ec.mean_unused_favorable_excursion_pct)+'</p>';
   if(ec.records?.length){h+='<details><summary>Per-trade exit capture records</summary><table><thead><tr><th>Bars</th><th>Gross</th><th>Net</th><th>MFE</th><th>Gross/MFE capture</th><th>Unused MFE</th><th>Exit</th></tr></thead><tbody>';ec.records.forEach(x=>h+='<tr><td>'+esc(x.bars_held)+'</td><td>'+pctResearch(x.gross_return_pct)+'</td><td>'+pctResearch(x.net_return_pct)+'</td><td>'+pctResearch(x.mfe_pct)+'</td><td>'+pctResearch(x.gross_mfe_capture_pct)+'</td><td>'+pctResearch(x.unused_favorable_excursion_pct)+'</td><td>'+esc(x.exit_reason)+'</td></tr>');h+='</tbody></table></details>';}
   h+='<p class=scenario-note>'+esc(ec.method_note||'')+' '+esc(tr.guardrail||'')+'</p></div>';
  }
@@ -3413,7 +3422,7 @@ async function walkForward(){
  h+='</tbody></table></div>';
  const dv=j.deployment_eligibility||{};
  if(dv.status){
-  h+='<div class=box><h3>Strategy Deployment Eligibility | <span class='+(dv.eligible?'b':'s')+'>'+esc(dv.status)+'</span></h3>'+   'OOS trades '+(dv.oos_trades??0)+' | net expectancy '+pct(dv.net_expectancy_pct)+' | PF '+num(dv.net_profit_factor)+   ' | OOS DD '+pct(dv.max_oos_drawdown_pct)+' | FDR q '+num(dv.adjusted_p_value)+' | 1.5x cost stress '+(dv.cost_stress_1_5x_positive?'PASS':'FAIL')+   ' | positive folds '+(dv.positive_folds??0)+'/'+(dv.fold_count??0)+' | positive-fold ratio '+pct((dv.positive_fold_ratio??0)*100)+   ' | block-bootstrap 95% CI '+(dv.bootstrap_ci_95_pct?pct(dv.bootstrap_ci_95_pct[0])+' to '+pct(dv.bootstrap_ci_95_pct[1]):'n/a')+   (dv.reasons?.length?'<ul class=w>'+dv.reasons.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p class=b>All configured OOS evidence requirements passed. The evidence is time-limited and tied to this exact market/configuration.</p>')+   '<p class=scenario-note>Passing this gate is necessary, not a promise of profitability. Live plan EV, fees, risk/reward, and restricted-hour checks still apply.</p></div>';
+  h+='<div class=box><h3>Strategy Deployment Eligibility | <span class='+(dv.eligible?'b':'s')+'>'+esc(dv.status)+'</span></h3>'+   (dv.evidence_trusted===false?'<p class=w>No verified evidence for this run (reason: '+esc(dv.reason_code||'NO_EVIDENCE')+(dv.untrusted_run_id?'; stored run '+esc(dv.untrusted_run_id):'')+'; signing key: '+esc(dv.signing_key_source||'none')+'). The metrics below are placeholders, not results - see the Walk-Forward numbers above for this run.</p>':'')+'OOS trades '+(dv.evidence_trusted===false?'n/a':(dv.oos_trades??0))+' | net expectancy '+pct(dv.net_expectancy_pct)+' | PF '+num(dv.net_profit_factor)+   ' | OOS DD '+pct(dv.max_oos_drawdown_pct)+' | FDR q '+num(dv.adjusted_p_value)+' | 1.5x cost stress '+(dv.cost_stress_1_5x_positive?'PASS':'FAIL')+   ' | positive folds '+(dv.positive_folds??0)+'/'+(dv.fold_count??0)+' | positive-fold ratio '+pct((dv.positive_fold_ratio??0)*100)+   ' | block-bootstrap 95% CI '+(dv.bootstrap_ci_95_pct?pct(dv.bootstrap_ci_95_pct[0])+' to '+pct(dv.bootstrap_ci_95_pct[1]):'n/a')+   (dv.reasons?.length?'<ul class=w>'+dv.reasons.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p class=b>All configured OOS evidence requirements passed. The evidence is time-limited and tied to this exact market/configuration.</p>')+   '<p class=scenario-note>Passing this gate is necessary, not a promise of profitability. Live plan EV, fees, risk/reward, and restricted-hour checks still apply.</p></div>';
  }
  const er=j.entry_edge_research||{};
  if(er.status){
@@ -3486,7 +3495,11 @@ async function walkForward(){
  $('wfo').innerHTML=h;
 }
 async function marginCalc(){
- const el=$('margout');el.textContent='calculating...';
+ const el=$('margout');
+ const need=[['m_entry','Entry price'],['m_qty','Quantity']];
+ for(const [id,label] of need){const v=Number($(id).value);if(!isFinite(v)||v<=0){el.innerHTML='<b class=w>'+label+' must be a number greater than 0.</b>';return;}}
+ const lev=Number($('m_lev').value);if(!isFinite(lev)||lev<1){el.innerHTML='<b class=w>Leverage must be at least 1.</b>';return;}
+ el.textContent='calculating...';
  const p=new URLSearchParams({market_type:'futures',side:$('m_side').value,
   entry_price:$('m_entry').value,quantity:$('m_qty').value,leverage:$('m_lev').value,
   maintenance_margin_rate:(Number($('m_mmr').value)/100).toString(),
@@ -3514,7 +3527,7 @@ async function dataIntegrity(){
  const el=$('di');el.textContent='checking candles...';
  const {ok,j}=await api('/api/data-integrity',qs());
  if(!ok){el.textContent=j.detail;return;}
- el.innerHTML='<b>Data integrity: '+esc(j.state)+'</b> | candles '+j.candles+' | gaps '+j.gap_count+' | off-grid '+j.off_grid_interval_count+
+ el.innerHTML='<b>Data integrity of the loaded chart window: '+esc(j.state)+'</b> | candles in this window '+j.candles+' (Backtest/Walk-Forward integrity is reported inside their own reports, with their own candle count) | gaps '+j.gap_count+' | off-grid '+j.off_grid_interval_count+
   '<br>'+((j.errors||[]).map(esc).join('<br>'))+
   ((j.warnings||[]).length?'<br>'+j.warnings.map(esc).join('<br>'):'<br>No warnings');
 }

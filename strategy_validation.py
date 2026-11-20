@@ -203,6 +203,78 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
     }
 
 
+KEY_FILE_ENV = "CHARTANALYZER_EVIDENCE_KEY_FILE"
+_KEY_CACHE: Dict[str, Any] = {"path": None, "key": None}
+
+
+def _default_key_path() -> Path:
+    override = os.environ.get(KEY_FILE_ENV, "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent / "data" / ".evidence_signing_key"
+
+
+def _load_or_create_key_file(path: Path) -> Optional[bytes]:
+    """Return a persistent local signing key, creating it once (mode 0600).
+
+    The environment variable remains the preferred source. The key file only
+    prevents the previous silent failure where every record was saved unsigned
+    and then rejected on read. It protects against accidental or casual edits
+    of the evidence store, not against an attacker who can already read this
+    user's files; use the environment variable for stronger separation.
+    """
+    with _LOCK:
+        try:
+            if path.exists():
+                raw = path.read_text(encoding="utf-8").strip().encode("utf-8")
+                return raw if len(raw) >= 32 else None
+            path.parent.mkdir(parents=True, exist_ok=True)
+            token = os.urandom(48).hex()
+            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(token)
+            return token.encode("utf-8")
+        except FileExistsError:
+            try:
+                raw = path.read_text(encoding="utf-8").strip().encode("utf-8")
+                return raw if len(raw) >= 32 else None
+            except OSError:
+                return None
+        except OSError:
+            return None
+
+
+def signing_key_source() -> str:
+    """'env', 'key_file' or 'none' - what is active in this process now."""
+    raw = os.environ.get(SIGNATURE_ENV, "")
+    if len(raw.encode("utf-8")) < 32:
+        return "none"
+    path = _default_key_path()
+    try:
+        if path.exists() and path.read_text(encoding="utf-8").strip() == raw:
+            return "key_file"
+    except OSError:
+        pass
+    return "env"
+
+
+def provision_signing_key() -> str:
+    """Make a signing key available to this process; returns its source.
+
+    Called once by the application at start-up (NOT implicitly by the library,
+    so the library contract "no configured key => evidence is never deployable"
+    stays intact). Order: environment variable, else a persistent local key
+    file that is created on first use. Returns 'env', 'key_file' or 'none'.
+    """
+    if len(os.environ.get(SIGNATURE_ENV, "").encode("utf-8")) >= 32:
+        return "env"
+    key = _load_or_create_key_file(_default_key_path())
+    if key:
+        os.environ[SIGNATURE_ENV] = key.decode("utf-8")
+        return "key_file"
+    return "none"
+
+
 def _signing_key() -> Optional[bytes]:
     raw = os.environ.get(SIGNATURE_ENV, "")
     key = raw.encode("utf-8")
@@ -295,29 +367,66 @@ def load_evidence(path: str | os.PathLike[str], *, source: str, symbol: str,
     return record
 
 
+def _classify_untrusted(record: Dict[str, Any], *, source: str, symbol: str,
+                        timeframe: str, config_hash: str) -> str:
+    """Why a stored record was not trusted - never evaluates its metrics."""
+    if (record.get("key") != evidence_key(source, symbol, timeframe, config_hash)
+            or record.get("config_fingerprint") != str(config_hash)):
+        return "KEY_MISMATCH"
+    sig = record.get("integrity_signature")
+    if not isinstance(sig, dict):
+        return "UNSIGNED_RECORD"
+    if sig.get("algorithm") != SIGNATURE_ALGORITHM:
+        return "BAD_ALGORITHM"
+    return "SIGNATURE_MISMATCH"
+
+
+_UNTRUSTED_TEXT = {
+    "UNSIGNED_RECORD": "The stored evidence record has no signature (it was written while no signing key was available). It was not trusted; re-run Walk-Forward to regenerate it.",
+    "SIGNATURE_MISMATCH": "The stored evidence record signature does not match (record edited, or the signing key changed since it was written). It was not trusted; re-run Walk-Forward to regenerate it.",
+    "KEY_MISMATCH": "The stored evidence record does not match this market/configuration key; it was not trusted.",
+    "BAD_ALGORITHM": "The stored evidence record uses an unsupported signature algorithm; it was not trusted.",
+    "NO_SIGNING_KEY": "No evidence signing key is configured (set CHARTANALYZER_EVIDENCE_SIGNING_KEY to 32+ characters, or start the dashboard through app.py, which provisions a local key file). Evidence without a key can never be verified; re-run Walk-Forward after the key exists.",
+}
+
+
 def deployment_status(path: str | os.PathLike[str], *, source: str, symbol: str,
                       timeframe: str, config_hash: str, policy: Optional[Dict[str, Any]] = None,
                       now: Optional[float] = None) -> Dict[str, Any]:
     record = load_evidence(path, source=source, symbol=symbol, timeframe=timeframe,
                            config_hash=config_hash)
     if record is not None:
-        return evaluate_evidence(record, policy, now=now)
+        out = evaluate_evidence(record, policy, now=now)
+        out["evidence_trusted"] = True
+        out["signing_key_source"] = signing_key_source()
+        return out
 
     # Distinguish absent evidence from a present-but-untrusted record without
     # ever evaluating the unverified metrics themselves.
     key = evidence_key(source, symbol, timeframe, config_hash)
+    stored = None
     try:
         store = json.loads(Path(path).read_text(encoding="utf-8"))
-        rejected = isinstance(store, dict) and isinstance(store.get(key), dict)
+        if isinstance(store, dict) and isinstance(store.get(key), dict):
+            stored = store[key]
     except (OSError, json.JSONDecodeError):
-        rejected = False
-    if rejected:
-        blocked = evaluate_evidence(None, policy, now=now)
-        blocked.update(status="BLOCKED", eligible=False,
-                       reasons=["Evidence signature is missing or invalid; the stored record was rejected."])
-        return blocked
-    return evaluate_evidence(None, policy, now=now)
+        stored = None
+    out = evaluate_evidence(None, policy, now=now)
+    out["evidence_trusted"] = False
+    out["signing_key_source"] = signing_key_source()
+    if stored is not None:
+        code = _classify_untrusted(stored, source=source, symbol=symbol,
+                                   timeframe=timeframe, config_hash=config_hash)
+        if code in ("UNSIGNED_RECORD", "SIGNATURE_MISMATCH") and out["signing_key_source"] == "none":
+            code = "NO_SIGNING_KEY"
+        out.update(status="BLOCKED", eligible=False, reason_code=code,
+                   reasons=[_UNTRUSTED_TEXT[code]],
+                   untrusted_run_id=stored.get("run_id"))
+    else:
+        out.update(reason_code="NO_EVIDENCE")
+    return out
 
 
 __all__ = ["ENGINE_VERSION", "DEFAULT_POLICY", "evidence_key", "build_evidence_record",
-           "evaluate_evidence", "save_evidence", "load_evidence", "deployment_status", "verify_evidence_signature"]
+           "evaluate_evidence", "save_evidence", "load_evidence", "deployment_status", "verify_evidence_signature",
+           "signing_key_source", "provision_signing_key"]

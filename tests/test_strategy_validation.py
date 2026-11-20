@@ -272,3 +272,97 @@ def test_production_gate_cannot_be_disabled_by_user_config(monkeypatch, tmp_path
                              symbol="BTCUSDT", source="csv")
     assert decision["state"] == "NO_TRADE"
     assert decision["deployment_validation"]["eligible"] is False
+
+
+# ---- V7.3.x: signing-key provisioning and honest "untrusted evidence" diagnostics ----
+import importlib
+
+
+def _fresh_module(monkeypatch, tmp_path, env_key=None):
+    import strategy_validation as sv
+    monkeypatch.delenv(sv.SIGNATURE_ENV, raising=False)
+    if env_key:
+        monkeypatch.setenv(sv.SIGNATURE_ENV, env_key)
+    monkeypatch.setenv(sv.KEY_FILE_ENV, str(tmp_path / "key"))
+    return sv
+
+
+def test_library_never_creates_a_key_implicitly(monkeypatch, tmp_path):
+    sv = _fresh_module(monkeypatch, tmp_path)
+    record = sv.build_evidence_record(passing_result(), source="csv", symbol="BTCUSDT",
+                                      timeframe="1h", config_hash="a" * 64, created_at=1_700_000_000)
+    path = tmp_path / "e.json"
+    sv.save_evidence(path, record)
+    assert not (tmp_path / "key").exists()
+    status = sv.deployment_status(path, source="csv", symbol="BTCUSDT", timeframe="1h",
+                                  config_hash="a" * 64, now=1_700_000_001)
+    assert status["eligible"] is False
+    assert status["reason_code"] == "NO_SIGNING_KEY"
+    assert status["evidence_trusted"] is False
+
+
+def test_provisioned_key_signs_and_run_can_be_verified(monkeypatch, tmp_path):
+    sv = _fresh_module(monkeypatch, tmp_path)
+    assert sv.provision_signing_key() == "key_file"
+    assert (tmp_path / "key").exists()
+    first = (tmp_path / "key").read_text()
+    # idempotent and stable across restarts
+    monkeypatch.delenv(sv.SIGNATURE_ENV, raising=False)
+    assert sv.provision_signing_key() == "key_file"
+    assert (tmp_path / "key").read_text() == first
+    record = sv.build_evidence_record(passing_result(), source="csv", symbol="BTCUSDT",
+                                      timeframe="1h", config_hash="b" * 64, created_at=1_700_000_000)
+    path = tmp_path / "e.json"
+    sv.save_evidence(path, record)
+    status = sv.deployment_status(path, source="csv", symbol="BTCUSDT", timeframe="1h",
+                                  config_hash="b" * 64, now=1_700_000_001)
+    assert status["evidence_trusted"] is True
+    assert status["eligible"] is True
+    assert status["oos_trades"] == 240
+
+
+def test_negative_evidence_is_blocked_for_metrics_not_for_signature(monkeypatch, tmp_path):
+    sv = _fresh_module(monkeypatch, tmp_path)
+    sv.provision_signing_key()
+    result = passing_result()
+    result.update(net_expectancy_pct=-0.44, net_profit_factor=0.214, trades=319, max_dd_pct=-75.98)
+    result["research_inference"]["bootstrap_ci_95_pct"] = [-0.51, -0.37]
+    record = sv.build_evidence_record(result, source="ramzinex", symbol="USDTIRR", timeframe="1h",
+                                      config_hash="c" * 64, created_at=1_700_000_000)
+    path = tmp_path / "e.json"
+    sv.save_evidence(path, record)
+    status = sv.deployment_status(path, source="ramzinex", symbol="USDTIRR", timeframe="1h",
+                                  config_hash="c" * 64, now=1_700_000_001)
+    assert status["evidence_trusted"] is True
+    assert status["eligible"] is False
+    assert status["oos_trades"] == 319
+    assert not any("signature" in r.lower() for r in status["reasons"])
+
+
+def test_changed_key_is_reported_as_signature_mismatch(monkeypatch, tmp_path):
+    sv = _fresh_module(monkeypatch, tmp_path, env_key="k" * 40)
+    record = sv.build_evidence_record(passing_result(), source="csv", symbol="BTCUSDT",
+                                      timeframe="1h", config_hash="d" * 64, created_at=1_700_000_000)
+    path = tmp_path / "e.json"
+    sv.save_evidence(path, record)
+    monkeypatch.setenv(sv.SIGNATURE_ENV, "z" * 40)
+    status = sv.deployment_status(path, source="csv", symbol="BTCUSDT", timeframe="1h",
+                                  config_hash="d" * 64, now=1_700_000_001)
+    assert status["eligible"] is False
+    assert status["reason_code"] == "SIGNATURE_MISMATCH"
+
+
+def test_tampered_record_is_never_trusted(monkeypatch, tmp_path):
+    sv = _fresh_module(monkeypatch, tmp_path)
+    sv.provision_signing_key()
+    record = sv.build_evidence_record(passing_result(), source="csv", symbol="BTCUSDT",
+                                      timeframe="1h", config_hash="e" * 64, created_at=1_700_000_000)
+    path = tmp_path / "e.json"
+    sv.save_evidence(path, record)
+    store = json.loads(path.read_text())
+    key = next(iter(store))
+    store[key]["oos_trades"] = 9999
+    path.write_text(json.dumps(store))
+    status = sv.deployment_status(path, source="csv", symbol="BTCUSDT", timeframe="1h",
+                                  config_hash="e" * 64, now=1_700_000_001)
+    assert status["eligible"] is False and status["evidence_trusted"] is False

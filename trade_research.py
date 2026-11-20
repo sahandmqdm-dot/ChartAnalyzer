@@ -30,6 +30,12 @@ def _summary(rows):
             "positive_pct": round(sum(v > 0 for v in vals)/len(vals)*100, 2)}
 
 
+def _median(values):
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
 def analyze_trade_quality(trades: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     rows = [t for t in (trades or []) if isinstance(t, dict)]
     score_bins = defaultdict(list)
@@ -89,6 +95,11 @@ def analyze_trade_quality(trades: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
             "winning_trades_with_positive_mfe": winners_with_mfe,
             "losing_trades_with_positive_mfe": losers_with_mfe,
             "mean_gross_mfe_capture_pct": round(sum(captures) / len(captures), 2) if captures else None,
+            # The mean is dominated by tiny open-to-open MFE denominators (e.g. 1711%).
+            # The median is the headline statistic; outliers are counted explicitly.
+            "median_gross_mfe_capture_pct": (round(_median(captures), 2) if captures else None),
+            "gross_mfe_capture_n": len(captures),
+            "gross_mfe_capture_over_100pct_n": sum(1 for c in captures if c > 100.0),
             "mean_unused_favorable_excursion_pct": round(sum(x["unused_favorable_excursion_pct"] for x in exit_rows if x["unused_favorable_excursion_pct"] is not None) / max(1, sum(x["unused_favorable_excursion_pct"] is not None for x in exit_rows)), 4) if any(x["unused_favorable_excursion_pct"] is not None for x in exit_rows) else None,
             "mean_mfe_pct": round(sum(mfe_values) / len(mfe_values), 4) if mfe_values else None,
             "mean_mae_pct": round(sum(mae_values) / len(mae_values), 4) if mae_values else None,

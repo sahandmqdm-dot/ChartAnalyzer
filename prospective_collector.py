@@ -76,12 +76,15 @@ def _single_instance_lock(lock_path: Path):
     try:
         if os.name == "nt":
             import msvcrt
-            handle.seek(0)
-            if handle.read(1) == "":
-                handle.write(" ")
-                handle.flush()
-            handle.seek(0)
+            # On Windows the byte-range lock is mandatory: while another handle holds
+            # byte 0, even reading it raises PermissionError. That is the "already
+            # locked" signal, so it must be reported like a failed lock attempt.
             try:
+                handle.seek(0)
+                if handle.read(1) == "":
+                    handle.write(" ")
+                    handle.flush()
+                handle.seek(0)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
                 raise RuntimeError("another prospective collector already holds the lock") from exc
