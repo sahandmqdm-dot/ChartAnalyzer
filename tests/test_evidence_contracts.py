@@ -196,3 +196,18 @@ def test_source_registry_validates_evidence_links():
     registry = SourceRegistry([item])
     record = evidence()
     assert registry.validate_evidence([record]) == (record,)
+
+
+def test_evidence_cannot_be_available_before_source_retrieval():
+    src = source()
+    record = evidence(
+        first_seen_at=T0 + datetime.timedelta(seconds=1),
+        available_at=T0 + datetime.timedelta(seconds=1),
+    )
+    with pytest.raises(EvidenceContractError, match="precedes source retrieval"):
+        validate_source_links([record], [src])
+
+
+def test_source_publication_cannot_follow_its_retrieval():
+    with pytest.raises(EvidenceContractError, match="published_at cannot be later"):
+        source(published_at=T0 + datetime.timedelta(seconds=3))
