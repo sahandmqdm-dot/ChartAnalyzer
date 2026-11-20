@@ -69,10 +69,11 @@ def test_register_prospective_cohort_freezes_server_computed_identity(monkeypatc
 
 
 def test_tick_records_forecast_from_last_closed_candle_without_exposing_scores(monkeypatch, tmp_path):
-    clock = {"now": BASE_NOW + datetime.timedelta(minutes=2)}
+    clock = {"now": BASE_NOW}
     setup_app(monkeypatch, tmp_path, clock)
     payload = registration_payload()
     app.api_prospective_holdout_register(payload)
+    clock["now"] = BASE_NOW + datetime.timedelta(minutes=2)
     last_open = BASE_NOW.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
     frame = make_frame(last_open)
     monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
@@ -85,10 +86,11 @@ def test_tick_records_forecast_from_last_closed_candle_without_exposing_scores(m
 
 
 def test_tick_resolves_only_exact_future_target_candle_then_issues_next_nonoverlap(monkeypatch, tmp_path):
-    clock = {"now": BASE_NOW + datetime.timedelta(minutes=2)}
+    clock = {"now": BASE_NOW}
     setup_app(monkeypatch, tmp_path, clock)
     payload = registration_payload()
     app.api_prospective_holdout_register(payload)
+    clock["now"] = BASE_NOW + datetime.timedelta(minutes=2)
     first_last_open = BASE_NOW.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
     frame = make_frame(first_last_open)
     monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
