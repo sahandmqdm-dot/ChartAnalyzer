@@ -1592,8 +1592,8 @@ def api_journal(symbol: str = "ramzinex:USDTIRR", tf: str = "1h", horizon: float
 def api_futures_scenarios(symbol: str = "BTCUSDT", tf: str = "1h", limit: int = 240):
     """Read-only Binance USD-M context plus research-only LONG/SHORT watch scenarios."""
     from datetime import UTC, datetime, timedelta
-    from market_data_hub import BinanceUSDMPublicAdapter, ProviderConfig
     from futures_signal_engine import analyze_futures_scenarios
+    from market_data_hub import BinanceUSDMPublicAdapter, ProviderConfig
 
     symbol = str(symbol).strip().upper()
     intervals = {"5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
@@ -1602,12 +1602,12 @@ def api_futures_scenarios(symbol: str = "BTCUSDT", tf: str = "1h", limit: int = 
         raise HTTPException(400, "Futures symbol must be alphanumeric, e.g. BTCUSDT.")
     if tf not in intervals:
         raise HTTPException(400, "Unsupported futures timeframe.")
-    if isinstance(limit, bool) or not 80 <= int(limit) <= 1000:
+    if isinstance(limit, bool) or not 80 <= limit <= 1000:
         raise HTTPException(400, "Futures candle limit must be between 80 and 1000.")
     adapter = BinanceUSDMPublicAdapter(ProviderConfig(timeout_seconds=12, max_retries=1))
     try:
         now = datetime.now(UTC)
-        batch = adapter.fetch_ohlcv(symbol, tf, int(limit))
+        batch = adapter.fetch_ohlcv(symbol, tf, limit)
         closed = [bar for bar in batch.bars if bar.close_time < now]
         if len(closed) < 60:
             raise ValueError("Fewer than 60 completed Futures candles are available.")
@@ -1644,6 +1644,9 @@ def api_futures_scenarios(symbol: str = "BTCUSDT", tf: str = "1h", limit: int = 
             "latest_closed_candle": closed[-1].close_time.isoformat(),
             "warnings": list(batch.warnings),
         }
+        if not oi_rows:
+            result["derivatives_context"]["valid"] = False
+            result["derivatives_context"].setdefault("warnings", []).append("Open-interest history is unavailable.")
         result["derivatives_context"].update({
             "mark_price": premium["mark_price"],
             "index_price": premium["index_price"],
