@@ -70,3 +70,8 @@ The 42-day holdout clock is NOT started by running this collector. Start only af
 ```powershell
 python -m pytest tests/test_binance_stream_collector.py -q
 ```
+
+
+## Cloud archival
+
+The collector is not tied to a workstation path. CHARTANALYZER_DATA_DIR can point to a local directory or a persistent volume on a cloud VM/container. Optional S3-compatible archival is documented in docs/CLOUD_READY_DATA_ARCHITECTURE.md. It uploads only closed UTC-day partitions after hash-chain verification; it never deletes the local source and never merges Spot with USD-M.
