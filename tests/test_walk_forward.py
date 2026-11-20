@@ -187,3 +187,40 @@ def test_cost_stress_mode_returns_core_oos_metrics_without_diagnostic_payloads()
     assert out['trades']>0
     assert out['net_expectancy_pct'] is not None
     assert 'exit_path_intelligence' not in out
+
+def test_walk_forward_preserves_fold_timestamps_and_excludes_embargo_from_timeline():
+    df = market(400)
+    df["time"] = np.arange(len(df), dtype=np.int64) * 3600
+    out = run_walk_forward(
+        df, np.ones(len(df)), n_splits=3, warmup_bars=100, gap_bars=10,
+        engine_kwargs={"threshold": 0.5, "fee_per_side": 0.0},
+        include_diagnostics=False,
+    )
+    timeline = out["equity_timeline"]
+    metadata = out["equity_timeline_metadata"]
+    assert metadata["schema"] == "chartanalyzer_oos_equity_timeline_v1"
+    assert len(metadata["excluded_embargo_intervals"]) == 2
+    assert [x["excluded_bars"] for x in metadata["excluded_embargo_intervals"]] == [10, 10]
+    assert all(row["timestamp"] is not None for row in timeline)
+    assert all(row["included_in_cross_fold_ess"] is False for row in timeline)
+    assert out["folds"][0]["portfolio_time_series_ess"]["status"] == "DIAGNOSTIC_ONLY"
+    excluded = {
+        bar
+        for gap in metadata["excluded_embargo_intervals"]
+        for bar in range(gap["start_bar_index"], gap["end_bar_index_exclusive"])
+    }
+    assert not excluded.intersection({row["bar_index"] for row in timeline})
+    assert metadata["cross_fold_ess"]["status"] == "NOT_COMPUTED"
+
+
+def test_walk_forward_marks_time_series_ess_unavailable_without_real_timestamps():
+    df = market(400)
+    out = run_walk_forward(
+        df, np.ones(len(df)), n_splits=3, warmup_bars=100,
+        engine_kwargs={"threshold": 0.5, "fee_per_side": 0.0},
+        include_diagnostics=False,
+    )
+    assert all(row["timestamp"] is None for row in out["equity_timeline"])
+    assert all(fold["portfolio_time_series_ess"]["status"] == "UNAVAILABLE"
+               for fold in out["folds"])
+

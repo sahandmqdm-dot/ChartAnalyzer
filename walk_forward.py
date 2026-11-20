@@ -106,6 +106,7 @@ def run_walk_forward(
     folds = []
     all_trades = []
     combined_curve = []
+    combined_equity_timeline = []
     equity_scale = 1.0
     buyhold_net_scale = 1.0
     buyhold_gross_scale = 1.0
@@ -175,8 +176,40 @@ def run_walk_forward(
             if not (test_start <= trade["global_exit_bar"] < test_end):
                 raise RuntimeError("walk-forward integrity failure: trade exit escaped its OOS fold")
         all_trades.extend(fold_trades)
-        for value in result.get("equity_curve", []):
-            combined_curve.append(float(value) * equity_scale)
+        fold_curve = [float(value) for value in result.get("equity_curve", [])]
+        fold_bar_indices = [int(value) for value in result.get("equity_bar_indices", [])]
+        fold_timestamps = result.get("equity_timestamps")
+        timestamp_source = result.get("equity_timestamp_source")
+        if len(fold_bar_indices) != len(fold_curve):
+            raise RuntimeError("backtest equity curve and bar-index timeline are misaligned")
+        if fold_timestamps is not None and len(fold_timestamps) != len(fold_curve):
+            raise RuntimeError("backtest equity curve and timestamp timeline are misaligned")
+        fold_equity_scale = equity_scale
+        for point_no, value in enumerate(fold_curve):
+            combined_curve.append(value * fold_equity_scale)
+            combined_equity_timeline.append({
+                "fold": int(fold_no + 1),
+                "segment_id": f"oos_fold_{fold_no + 1}",
+                "bar_index": int(context_start + fold_bar_indices[point_no]),
+                "timestamp": fold_timestamps[point_no] if fold_timestamps is not None else None,
+                "timestamp_source": timestamp_source,
+                "equity": float(value * fold_equity_scale),
+                "included_in_cross_fold_ess": False,
+            })
+        fold_ess = {"status": "UNAVAILABLE",
+                    "reason": "no validated source timestamp axis was supplied by the candle frame"}
+        if fold_timestamps is not None and len(fold_timestamps) >= 4:
+            try:
+                from effective_sample_size import timestamped_portfolio_ess
+                fold_ess = timestamped_portfolio_ess(fold_timestamps, fold_curve)
+                fold_ess["status"] = "DIAGNOSTIC_ONLY"
+                fold_ess["scope"] = "single_oos_fold"
+            except (TypeError, ValueError) as exc:
+                fold_ess = {"status": "UNAVAILABLE_INVALID_TIMELINE",
+                            "reason": str(exc), "scope": "single_oos_fold"}
+        elif fold_timestamps is not None:
+            fold_ess = {"status": "INSUFFICIENT_OBSERVATIONS",
+                        "n_equity_points": len(fold_timestamps), "scope": "single_oos_fold"}
         equity_scale *= 1.0 + float(result.get("strategy_pct", 0.0)) / 100.0
         buyhold_net_scale *= 1.0 + float(result.get("buyhold_net_pct", result.get("buyhold_pct", 0.0))) / 100.0
         buyhold_gross_scale *= 1.0 + float(result.get("buyhold_gross_pct", result.get("buyhold_pct", 0.0))) / 100.0
@@ -192,6 +225,9 @@ def run_walk_forward(
             "net_profit_factor": result.get("net_profit_factor"),
             "net_win_rate_pct": result.get("net_win_rate_pct"),
             "max_dd_pct": result.get("max_dd_pct"),
+            "portfolio_time_series_ess": fold_ess,
+            "equity_timeline_points": len(fold_curve),
+            "equity_timestamp_source": timestamp_source,
             "buyhold_pct": result.get("buyhold_net_pct", result.get("buyhold_pct")),
             "buyhold_net_pct": result.get("buyhold_net_pct", result.get("buyhold_pct")),
             "buyhold_gross_pct": result.get("buyhold_gross_pct"),
@@ -226,6 +262,30 @@ def run_walk_forward(
     else:
         max_dd = None
 
+    excluded_embargo_intervals = []
+    for left, right in zip(folds, folds[1:]):
+        gap_start = int(left["test_end_index_exclusive"])
+        gap_end = int(right["test_start_index"])
+        if gap_end > gap_start:
+            excluded_embargo_intervals.append({
+                "start_bar_index": gap_start,
+                "end_bar_index_exclusive": gap_end,
+                "excluded_bars": gap_end - gap_start,
+                "reason": "walk_forward_embargo_not_part_of_scored_oos_return_series",
+            })
+    equity_timeline_metadata = {
+        "schema": "chartanalyzer_oos_equity_timeline_v1",
+        "timestamp_semantics": "source candle timestamp at the first executable fill open and each subsequent mark-to-market open; timestamps are preserved, not inferred",
+        "equity_semantics": "fold equity scaled by preceding completed fold returns; each fold is independently initialized and liquidated",
+        "segments": len(folds),
+        "observations": len(combined_equity_timeline),
+        "excluded_embargo_intervals": excluded_embargo_intervals,
+        "cross_fold_ess": {
+            "status": "NOT_COMPUTED",
+            "reason": "folds are independently reset and embargo intervals are excluded; concatenating segments would create false temporal adjacency",
+        },
+    }
+
     if not include_diagnostics:
         return {
             "version": "7.2.0", "evaluation_scope": "sequential_out_of_sample_cost_stress",
@@ -239,6 +299,8 @@ def run_walk_forward(
             "max_dd_pct": round(max_dd,4) if max_dd is not None else None,
             "strategy_frozen": True, "parameter_optimization": False,
             "diagnostics_skipped": True,
+            "equity_timeline": combined_equity_timeline,
+            "equity_timeline_metadata": equity_timeline_metadata,
         }
 
     from trade_intelligence import analyze_trade_intelligence
@@ -323,6 +385,8 @@ def run_walk_forward(
         "max_dd_pct": round(max_dd, 4) if max_dd is not None else None,
         "trades_log": all_trades,
         "equity_curve": combined_curve,
+        "equity_timeline": combined_equity_timeline,
+        "equity_timeline_metadata": equity_timeline_metadata,
         "warning": (
             "Out-of-sample evaluation of a frozen signal only. Each fold starts flat and is liquidated at its boundary; no position is carried across folds. "
             "No parameter fitting, no guarantee of edge, and no futures liquidation or historical funding model. "

@@ -257,3 +257,30 @@ def test_spread_and_slippage_can_be_configured_and_reported_separately():
     assert out['slippage_roundtrip']==pytest.approx(.002)
     assert out['spread_slippage_roundtrip']==pytest.approx(.003)
     assert trade['spread_drag_pct']>0 and trade['slippage_drag_pct']>0
+
+def test_backtest_emits_timestamped_equity_points_aligned_to_bar_indices():
+    df = market()
+    df["time"] = np.arange(len(df), dtype=np.int64) * 3600
+    out = run_backtest(df, np.zeros(len(df)), threshold=0.5, start=120)
+    assert len(out["equity_curve"]) == len(out["equity_bar_indices"])
+    assert len(out["equity_curve"]) == len(out["equity_timestamps"])
+    assert out["equity_timestamp_source"] == "time_column"
+    assert out["equity_bar_indices"][0] == 121
+    assert out["equity_timestamps"][0] == 121 * 3600
+    assert out["equity_bar_indices"][-1] == len(df) - 1
+
+
+def test_backtest_rejects_duplicate_or_non_monotonic_equity_timestamps():
+    df = market()
+    df["time"] = np.arange(len(df), dtype=np.int64) * 3600
+    df.loc[130, "time"] = df.loc[129, "time"]
+    with pytest.raises(ValueError, match="unique"):
+        run_backtest(df, np.zeros(len(df)), threshold=0.5, start=120)
+
+
+def test_backtest_serializes_datetime_equity_axis_as_iso_strings():
+    df = market()
+    df["time"] = pd.to_datetime(np.arange(len(df), dtype=np.int64), unit="h", utc=True)
+    out = run_backtest(df, np.zeros(len(df)), threshold=0.5, start=120)
+    assert isinstance(out["equity_timestamps"][0], str)
+    assert out["equity_timestamps"][0].startswith("1970-01-06T01:00:00")
