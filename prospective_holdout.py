@@ -21,7 +21,6 @@ from typing import Any
 
 from forecast_validation import (
     ForecastRecord,
-    ForecastValidationError,
     ResolvedForecast,
     evaluate_forecasts,
 )
@@ -448,14 +447,14 @@ class ProspectiveHoldoutLedger:
                 previous = event["event_hash"]
             event_by_hash = {row["event_hash"]: row for row in events}
             record_specs = (
-                ("cohort", "COHORT_REGISTERED", "cohort_id", "payload"),
-                ("forecasts", "FORECAST_RECORDED", "forecast_id", "payload"),
-                ("outcomes", "OUTCOME_RESOLVED", "forecast_id", "payload"),
-                ("evaluations", "HOLDOUT_EVALUATED", None, "payload"),
+                ("cohort", "COHORT_REGISTERED", "cohort_id", "payload", "SELECT * FROM cohort"),
+                ("forecasts", "FORECAST_RECORDED", "forecast_id", "payload", "SELECT * FROM forecasts"),
+                ("outcomes", "OUTCOME_RESOLVED", "forecast_id", "payload", "SELECT * FROM outcomes"),
+                ("evaluations", "HOLDOUT_EVALUATED", None, "payload", "SELECT * FROM evaluations"),
             )
             referenced = set()
-            for table, expected_type, id_column, payload_column in record_specs:
-                rows = connection.execute(f"SELECT * FROM {table}").fetchall()
+            for table, expected_type, id_column, payload_column, query in record_specs:
+                rows = connection.execute(query).fetchall()
                 for row in rows:
                     event = event_by_hash.get(row["event_hash"])
                     payload = json.loads(row[payload_column])
