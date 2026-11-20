@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import signal
-import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -33,7 +32,7 @@ def _load_config(path: str | Path) -> dict[str, Any]:
     with config_path.open("r", encoding="utf-8") as stream:
         config = json.load(stream)
     if not isinstance(config, dict):
-        raise ValueError("collector config must be a JSON object")
+        raise TypeError("collector config must be a JSON object")
     base_url = str(config.get("api_base_url", "http://127.0.0.1:8765")).rstrip("/")
     parsed = urlparse(base_url)
     if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "127.1.0.1", "localhost", "::1"):
@@ -42,7 +41,7 @@ def _load_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("api_base_url must contain only the loopback origin and optional port")
     payload = config.get("cohort_payload")
     if not isinstance(payload, dict):
-        raise ValueError("cohort_payload must be the frozen request object used to register the cohort")
+        raise TypeError("cohort_payload must be the frozen request object used to register the cohort")
     required = ("cohort_id", "source", "symbol", "tf", "horizon_bars", "paths", "n")
     missing = [key for key in required if key not in payload]
     if missing:
@@ -211,7 +210,7 @@ class ProspectiveCollector:
                 if result.get("terminal"):
                     LOG.info("cohort already evaluated; collector is stopping")
                     return
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.failures += 1
                 message = f"{type(exc).__name__}: {exc}"
                 self._write_state(success=False, error=message)
