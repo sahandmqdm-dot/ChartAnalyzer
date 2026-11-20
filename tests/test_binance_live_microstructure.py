@@ -1,4 +1,5 @@
-# ruff: noqa: I001  # Flat-layout import ordering differs across Ruff versions.\nfrom datetime import UTC, datetime, timedelta
+# ruff: noqa: I001  # Flat-layout import ordering differs across Ruff versions.
+from datetime import UTC, datetime, timedelta
 
 from binance_live_microstructure import (
     build_active_session_snapshot,
