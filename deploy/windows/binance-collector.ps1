@@ -43,7 +43,7 @@ switch ($Action) {
         if ($LASTEXITCODE -ne 0) { throw "Python dependency check failed. Install requirements.txt in this virtual environment." }
         $argsList = @($CollectorScript, "--data-dir", $DataDir, "--symbol", "BTCUSDT", "--fsync-every-events", "$FsyncEveryEvents", "--health-every-events", "$HealthEveryEvents", "--stop-file", $StopFile)
         if ($FsyncEachEvent) { $argsList += "--fsync-each-event" }
-        $quoted = $argsList | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }
+        $quoted = $argsList | ForEach-Object { '"' + $_ + '"' }
         $proc = Start-Process -FilePath $PythonPath -ArgumentList ($quoted -join " ") -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog
         $meta = [ordered]@{ pid = $proc.Id; started_at_utc = [DateTime]::UtcNow.ToString("o"); project_root = $ProjectRoot; python = $PythonPath; collector_script = $CollectorScript; data_dir = $DataDir; fsync_every_events = $FsyncEveryEvents; fsync_each_event = [bool]$FsyncEachEvent; health_every_events = $HealthEveryEvents }
         $tmp = "$PidFile.tmp"
