@@ -34,6 +34,7 @@ A cohort is registered before `collection_start` and fixes:
 - SHA-256 configuration fingerprint.
 - Future collection start/end timestamps.
 - Minimum forecast count (default operational target: 200).
+- Minimum per-segment calibration sample count (default: 30), frozen at registration.
 
 The configuration fingerprint supplied by the caller must cover the immutable release commit, model artifact or model version, feature/indicator pipeline, preprocessing, calibration parameters, strategy thresholds, market-data policy, and cost assumptions. A configuration change requires a new ledger and a new future collection window.
 
@@ -46,7 +47,7 @@ Each `ForecastRecord` must have:
 - Exact instrument, market type, timeframe and horizon.
 - Frozen model ID/version and dataset fingerprint.
 - Quantile distribution and optional directional probability.
-- A record-write timestamp at or after issuance and strictly before `target_at`.
+- A server-side record-write timestamp at or after issuance, within 60 seconds of issuance, and strictly before `target_at`.
 
 The ledger checks that `target_at = issued_at + horizon_bars × timeframe`. Forecast horizons in one cohort may not overlap. This deliberately reduces sample count to avoid pretending that highly overlapping forecasts are independent observations.
 
