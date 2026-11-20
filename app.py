@@ -2503,7 +2503,7 @@ def api_prospective_holdout_status(cohort_id: str):
     try:
         ledger = _prospective_ledger(cohort_id)
         return {"cohort": ledger.status(), "integrity": ledger.verify_integrity()}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
 
@@ -2617,7 +2617,7 @@ def api_prospective_holdout_tick(payload: dict):
             "next_issuance_due": None if ledger.next_issuance_due() is None else ledger.next_issuance_due().isoformat(),
             "report_available": False,
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
 
@@ -2631,7 +2631,7 @@ def api_prospective_holdout_evaluate(payload: dict):
             raise ValueError("prospective holdout integrity verification failed after evaluation")
         return {"report": report, "integrity": integrity,
                 "warning": "Final holdout was consumed once. Do not tune or retrain against this sample."}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(400, redact(f"{type(e).__name__}: {e}"))
 
 
