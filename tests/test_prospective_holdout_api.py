@@ -172,8 +172,7 @@ def test_tick_does_not_resolve_outcome_from_invalid_ohlcv(monkeypatch, tmp_path)
     monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: matured)
     monkeypatch.setattr(app, "_audit_research_frame", lambda *args, **kwargs: {
         "valid": False, "gap_count": 0, "state": "FAIL"})
-    second = app.api_prospective_holdout_tick(payload)
-    assert second["resolved_this_tick"] == 0
-    assert second["cohort"]["resolved_count"] == 0
-    assert len(second["unresolved_due"]) == 1
-    assert "integrity audit did not pass" in second["unresolved_due"][0]["reason"]
+    with pytest.raises(app.HTTPException, match="integrity audit did not pass"):
+        app.api_prospective_holdout_tick(payload)
+    status = app.api_prospective_holdout_status(payload["cohort_id"])
+    assert status["cohort"]["resolved_count"] == 0
