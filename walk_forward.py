@@ -275,7 +275,7 @@ def run_walk_forward(
             })
     equity_timeline_metadata = {
         "schema": "chartanalyzer_oos_equity_timeline_v1",
-        "timestamp_semantics": "source candle timestamp at the mark-to-market open; timestamps are preserved, not inferred",
+        "timestamp_semantics": "source candle timestamp at the first executable fill open and each subsequent mark-to-market open; timestamps are preserved, not inferred",
         "equity_semantics": "fold equity scaled by preceding completed fold returns; each fold is independently initialized and liquidated",
         "segments": len(folds),
         "observations": len(combined_equity_timeline),
