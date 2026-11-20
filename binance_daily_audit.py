@@ -90,15 +90,23 @@ def build_daily_manifest(data_root: str | Path, day: str, *, now: datetime | Non
                 markets.add(market)
                 session_id = record.get("session_id")
                 if session_id:
-                    state = sessions.setdefault(str(session_id), {"market": market, "started": False, "terminal": None})
+                    state = sessions.setdefault(str(session_id), {
+                        "market": market,
+                        "started_in_day": False,
+                        "terminal_in_day": None,
+                        "first_received_at": stamp,
+                        "last_received_at": stamp,
+                    })
                     if state["market"] != market:
                         raise DailyAuditError("session_id_reused_across_markets")
+                    state["first_received_at"] = min(state["first_received_at"], stamp)
+                    state["last_received_at"] = max(state["last_received_at"], stamp)
                     payload = record.get("payload", {})
                     if stream == "session_manifest" and isinstance(payload, dict):
                         if payload.get("state") == "started":
-                            state["started"] = True
+                            state["started_in_day"] = True
                         elif payload.get("state") in {"ended", "interrupted"}:
-                            state["terminal"] = payload["state"]
+                            state["terminal_in_day"] = payload["state"]
                             terminations[str(payload.get("termination") or payload["state"])] += 1
                     elif stream == "orderbook_state" and isinstance(payload, dict):
                         book_states[str(payload.get("state", "unknown"))] += 1
@@ -112,9 +120,15 @@ def build_daily_manifest(data_root: str | Path, day: str, *, now: datetime | Non
 
     if not files:
         raise DailyAuditError("no_partitions_found_for_day")
-    unsealed = sorted(key for key, value in sessions.items() if not value["started"] or value["terminal"] is None)
-    if unsealed:
-        raise DailyAuditError("day_contains_unsealed_sessions:" + ",".join(unsealed[:10]))
+    session_states = {
+        session_id: {
+            "started_in_day": item["started_in_day"],
+            "terminal_in_day": item["terminal_in_day"],
+            "first_received_at": item["first_received_at"],
+            "last_received_at": item["last_received_at"],
+        }
+        for session_id, item in sorted(sessions.items())
+    }
     body = {
         "schema": "chartanalyzer_binance_daily_audit_v1",
         "utc_day": target_day.isoformat(),
@@ -122,8 +136,11 @@ def build_daily_manifest(data_root: str | Path, day: str, *, now: datetime | Non
         "sealed_after_utc_day": datetime.combine(target_day + timedelta(days=1), time.min, tzinfo=UTC).isoformat(),
         "total_records": total,
         "session_count": len(sessions),
-        "complete_sessions": sum(item["terminal"] == "ended" for item in sessions.values()),
-        "interrupted_sessions": sum(item["terminal"] == "interrupted" for item in sessions.values()),
+        "sessions_started_in_day": sum(item["started_in_day"] for item in sessions.values()),
+        "sessions_open_at_day_boundary": sum(item["terminal_in_day"] is None for item in sessions.values()),
+        "complete_sessions": sum(item["terminal_in_day"] == "ended" for item in sessions.values()),
+        "interrupted_sessions": sum(item["terminal_in_day"] == "interrupted" for item in sessions.values()),
+        "session_states": session_states,
         "received_time_range": {"first": first, "last": last},
         "stream_counts": dict(sorted(streams.items())),
         "termination_counts": dict(sorted(terminations.items())),
