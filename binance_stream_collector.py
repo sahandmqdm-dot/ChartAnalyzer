@@ -67,11 +67,17 @@ def utc_now() -> str:
 class HashChainJSONLStore:
     """Append-only daily JSONL partitions with per-partition SHA-256 chaining."""
 
-    def __init__(self, root: str | Path, *, fsync_each_event: bool = True) -> None:
+    def __init__(self, root: str | Path, *, fsync_each_event: bool = False,
+                 fsync_every_events: int = 100) -> None:
+        if fsync_every_events < 1:
+            raise ValueError("fsync_every_events must be >= 1")
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.fsync_each_event = fsync_each_event
+        self.fsync_every_events = fsync_every_events
         self._heads: dict[Path, str] = {}
+        self._handles: dict[Path, Any] = {}
+        self._counts: dict[Path, int] = {}
 
     def append(self, market: str, stream: str, payload: dict[str, Any],
                *, received_at: str | None = None) -> dict[str, Any]:
@@ -94,13 +100,27 @@ class HashChainJSONLStore:
         canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         record = {**body, "event_hash": digest}
-        with path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n")
-            handle.flush()
-            if self.fsync_each_event:
-                os.fsync(handle.fileno())
+        handle = self._handles.get(path)
+        if handle is None or handle.closed:
+            handle = path.open("a", encoding="utf-8", newline="\n")
+            self._handles[path] = handle
+        handle.write(json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n")
+        handle.flush()  # process-crash visibility; fsync below bounds power-loss exposure
+        count = self._counts.get(path, 0) + 1
+        self._counts[path] = count
+        if self.fsync_each_event or count % self.fsync_every_events == 0:
+            os.fsync(handle.fileno())
         self._heads[path] = digest
         return record
+
+    def close(self) -> None:
+        """Flush and fsync every open partition before a clean shutdown."""
+        for handle in self._handles.values():
+            if not handle.closed:
+                handle.flush()
+                os.fsync(handle.fileno())
+                handle.close()
+        self._handles.clear()
 
     @staticmethod
     def _last_hash(path: Path) -> str | None:
@@ -254,6 +274,7 @@ class BinanceDualMarketCollector:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            self.store.close()
 
 
 def _stream_kind(stream: str) -> str:
