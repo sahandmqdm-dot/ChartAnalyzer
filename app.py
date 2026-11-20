@@ -2495,7 +2495,7 @@ def api_prospective_holdout_status(cohort_id: str):
 def api_prospective_holdout_tick(payload: dict):
     """Resolve matured outcomes, then issue at most one new non-overlapping forecast."""
     try:
-        from datetime import timedelta
+        from datetime import datetime, timedelta
         from research_provenance import dataset_fingerprint
         from forecast_validation import create_forecast_record
         cohort_id = str(payload.get("cohort_id") or "").strip()
