@@ -67,6 +67,25 @@ python -m binance_microstructure_features --data-dir $env:CHARTANALYZER_DATA_DIR
 
 The output contains per-decision feature hashes and a dataset hash. A trade with an old exchange timestamp but a receive time after the decision is excluded. These features are diagnostic research inputs only; they are not fed into the Futures directional score or treated as evidence of predictive edge.
 
+### Point-in-time snapshot during an active collection session
+
+The closed-session research builder above is useful for replay, but a live forecast cannot wait for the WebSocket session to terminate. For an active session, use the snapshot adapter. It copies the session's current raw partitions to a temporary workspace, verifies the copied hash chains, and computes one feature snapshot using only records whose local `received_at` is at or before the requested decision time:
+
+```powershell
+python -m binance_live_microstructure `
+  --data-dir $env:CHARTANALYZER_DATA_DIR `
+  --market spot `
+  --session-id "<ACTIVE_SESSION_ID>" `
+  --decision-time "2026-11-20T12:00:00+00:00" `
+  --windows 5,60,300 `
+  --book-depth 10 `
+  --output ".\\research\\live_pit_snapshot.json"
+```
+
+The adapter never writes to the collector's source partitions. If a copy catches a partial append or fails hash-chain verification, it retries from a fresh copy and fails closed after the configured retry limit. The output binds the copied-session manifest hash, source partition SHA-256 values, feature hash, receive-time watermark and dataset hash. Active-session snapshots are explicitly marked `session_complete=false`; they are point-in-time feature evidence, not proof of a complete capture. A sequence gap or invalid book remains visible and must not be interpreted as valid L2 liquidity.
+
+**Operational boundary:** this adapter is a snapshot/replay primitive, not yet a running feature daemon or an automatic link to the prospective forecast ledger. Before it is used for a frozen forecast cohort, the app must require exact symbol/market/timeframe identity, match the snapshot decision time to the forecast's closed-candle cutoff, bind its hashes into the ledger, and prove the snapshot process runs before issuance without future-data leakage. Do not start the 42-day clock on the basis of this CLI alone.
+
 ### Seal, verify and replay a closed session
 
 Find the session ID in the raw `session_manifest` JSONL records, then run:
