@@ -437,6 +437,9 @@ class BinanceDualMarketCollector:
                                        "event_count": sum(stream_counts.values()),
                                        "raw_frame_count": raw_frame_count,
                                        "stream_counts": stream_counts,
+                                       "collector_error_count": collector_error_count,
+                                       "persistence_failure_count": persistence_failure_count,
+                                       "reconnect_count": reconnect_count,
                                        "termination": "cancelled"},
                                       received_at=interrupted_at, session_id=session_id)
                 raise
@@ -545,13 +548,24 @@ async def _run_cli() -> None:
         action="store_true",
         help="fsync every record; strongest durability, potentially lower throughput",
     )
+    parser.add_argument(
+        "--health-every-events",
+        type=int,
+        default=int(os.environ.get("CHARTANALYZER_BINANCE_HEALTH_EVERY_EVENTS", "1000")),
+        help="append collector health telemetry after this many raw frames",
+    )
     args = parser.parse_args()
     store = HashChainJSONLStore(
         args.data_dir,
         fsync_each_event=args.fsync_each_event,
         fsync_every_events=args.fsync_every_events,
     )
-    collector = BinanceDualMarketCollector(args.data_dir, proxy=args.proxy, store=store)
+    collector = BinanceDualMarketCollector(
+        args.data_dir,
+        proxy=args.proxy,
+        store=store,
+        health_interval_events=args.health_every_events,
+    )
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
