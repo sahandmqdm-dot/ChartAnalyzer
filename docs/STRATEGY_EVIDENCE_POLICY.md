@@ -14,7 +14,7 @@ The strategy validation response now includes `decision_class` while preserving 
 |---|---|---|
 | `DATA_INVALID` | Data integrity, gaps, or OOS cohort provenance failed | Block; repair data/provenance before interpreting performance |
 | `INSUFFICIENT_EVIDENCE` | Minimum OOS trade/fold/sample requirements or essential inference fields are absent | Keep unverified; collect more independent evidence |
-| `NO_EDGE` | Adequately sampled net expectancy is <= 0 or net PF is <= 1 | Do not trade this frozen strategy/configuration |
+| `NO_EDGE` | Adequately sampled net expectancy <= 0, net PF <= 1, and the upper bound of the 95% OOS bootstrap interval is below 0 | Do not trade this frozen strategy/configuration |
 | `UNVERIFIED` | Evidence exists but does not satisfy all validation controls, including freshness, stability, cost stress or confidence bounds | Block; do not describe as profitable or validated |
 | `PAPER_CANDIDATE` | All current validation gates pass | Eligible for separately controlled paper evaluation only; not a claim of future profitability |
 
@@ -28,7 +28,7 @@ The user-supplied USDT/IRR observation of approximately 0.5% round-trip cost and
 
 ## Strategy lifecycle and retirement
 
-A single failed backtest, stale evidence record, invalid capture, or underpowered window must not retire a strategy. The new `evaluate_strategy_lifecycle` helper only returns `RETIRE_CANDIDATE` after at least two consecutive, non-overlapping, sufficiently sampled frozen OOS windows each show:
+A single failed backtest, stale evidence record, invalid capture, or underpowered window must not retire a strategy. The new `evaluate_strategy_lifecycle` helper only returns `RETIRE_CANDIDATE` after at least two consecutive, non-overlapping, uniquely identified and sequentially numbered, sufficiently sampled frozen OOS windows with the same configuration fingerprint each show:
 - net expectancy below zero;
 - net profit factor below 1;
 - the upper bound of the 95% block-bootstrap interval below zero;
