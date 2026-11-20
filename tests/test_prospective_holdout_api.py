@@ -102,7 +102,7 @@ def test_tick_resolves_only_exact_future_target_candle_then_issues_next_nonoverl
     matured = make_frame(matured_last_open)
     monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: matured)
     second = app.api_prospective_holdout_tick(payload)
-    assert second["resolved_this_tick"] == 1
+    assert second["resolved_this_tick"] == 1, second["unresolved_due"]
     assert second["cohort"]["resolved_count"] == 1
     assert second["issued_forecast"] is not None
     assert datetime.datetime.fromisoformat(second["issued_forecast"]["issued_at"]) >= target
