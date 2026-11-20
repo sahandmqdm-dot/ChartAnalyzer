@@ -175,6 +175,8 @@ def _microstructure_provenance(
     watermark = _utc(datetime.fromisoformat(str(watermark_raw)), "microstructure_source_event_watermark") if watermark_raw else None
     if watermark is not None and watermark > forecast.data_cutoff_at:
         raise ValueError("microstructure source watermark exceeds forecast cutoff")
+    if watermark is None or (forecast.data_cutoff_at - watermark).total_seconds() > 300:
+        raise ValueError("microstructure source watermark is missing or too stale for the 300-second feature window")
     created_raw = value.get("snapshot_created_at")
     created = _utc(datetime.fromisoformat(str(created_raw)), "microstructure_snapshot_created_at") if created_raw else None
     if created is not None and created < decision:
