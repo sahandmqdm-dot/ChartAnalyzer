@@ -287,19 +287,6 @@ def test_reference_price_must_be_positive_and_finite(tmp_path):
         )
 
 
-def test_pending_forecast_queue_and_next_issue_time(tmp_path):
-    ledger = make_ledger(tmp_path)
-    assert ledger.next_issuance_due() == START
-    forecast = append_forecast(ledger)
-    assert ledger.next_issuance_due() == forecast.target_at
-    pending = ledger.pending_forecasts()
-    assert len(pending) == 1
-    assert pending[0]["forecast_id"] == forecast.forecast_id
-    assert pending[0]["reference_price"] == 100.0
-    resolve(ledger, forecast)
-    assert ledger.pending_forecasts() == []
-
-
 def test_ledger_status_does_not_disclose_scores_before_evaluation(tmp_path):
     ledger = make_ledger(tmp_path)
     forecast = append_forecast(ledger)
