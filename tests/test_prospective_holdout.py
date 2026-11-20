@@ -121,7 +121,7 @@ def test_forecast_must_be_persisted_before_target(tmp_path):
     forecast = make_forecast()
     with pytest.raises(ValueError, match="strictly before its target"):
         ledger.record_forecast(
-            forecast, config_fingerprint=CONFIG, input_source="feed",
+            forecast, config_fingerprint=CONFIG, input_source="feed", reference_price=100.0,
             recorded_at=forecast.target_at,
         )
 
