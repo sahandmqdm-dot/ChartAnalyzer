@@ -319,10 +319,10 @@ class BinanceDualMarketCollector:
                     self._active_websockets[spec.market] = websocket
 
                     health_counters = {
-                        "raw_frame_count": _health_counters["raw_frame_count"],
-                        "typed_event_count": _health_counters["typed_event_count"],
-                        "collector_error_count": _health_counters["collector_error_count"],
-                        "persistence_failure_count": _health_counters["persistence_failure_count"],
+                        "raw_frame_count": raw_frame_count,
+                        "typed_event_count": typed_event_count,
+                        "collector_error_count": collector_error_count,
+                        "persistence_failure_count": persistence_failure_count,
                     }
 
                     def emit_health(
@@ -357,18 +357,18 @@ class BinanceDualMarketCollector:
                             or (disk["used_percent"] is not None and disk["used_percent"] >= 90.0)
                         ):
                             logging.getLogger(__name__).warning(
-                                "Low collector disk capacity for %s: %s", spec.market, disk
+                                "Low collector disk capacity for %s: %s", _spec.market, disk
                             )
                         self.store.append(
-                            spec.market,
+                            _spec.market,
                             "collector_health",
                             {
                                 "state": state,
                                 "disk": disk,
-                                "raw_frame_count": raw_frame_count,
-                                "typed_event_count": typed_event_count,
-                                "collector_error_count": collector_error_count,
-                                "persistence_failure_count": persistence_failure_count,
+                                "raw_frame_count": _health_counters["raw_frame_count"],
+                                "typed_event_count": _health_counters["typed_event_count"],
+                                "collector_error_count": _health_counters["collector_error_count"],
+                                "persistence_failure_count": _health_counters["persistence_failure_count"],
                                 "reconnect_count": _reconnect_count,
                                 "write_pipeline_latency_ms": {
                                     "sample_count": len(ordered),
