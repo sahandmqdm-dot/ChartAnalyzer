@@ -1950,7 +1950,12 @@ def api_walk_forward(source: str = "ramzinex", symbol: str = "USDTIRR", tf: str 
         record["adjusted_p_value"] = adjusted_p
         record["max_oos_drawdown_pct"] = result.get("max_dd_pct")
         save_evidence(VALIDATION_EVIDENCE_PATH, record)
-        result["deployment_eligibility"] = evaluate_evidence(record, C.get("gate") or {})
+        # Report the same signature-verified result the live decision gate will use.
+        from strategy_validation import deployment_status
+        result["deployment_eligibility"] = deployment_status(
+            VALIDATION_EVIDENCE_PATH, source=source, symbol=symbol, timeframe=tf,
+            config_hash=config_hash, policy=C.get("gate") or {},
+        )
         result["research_registry"] = registry_summary
         return result
     except Exception as e:
