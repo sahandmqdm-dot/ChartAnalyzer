@@ -6,6 +6,7 @@
 - Added research-only Binance USD-M LONG/SHORT scenarios and dashboard integration.
 - Added read-only funding, mark/index, open-interest, order-book snapshot and bounded aggregate-trade context.
 - Explicitly label directional levels as WATCH ONLY; no order placement or Futures deployment authorization.
+- Added independent Decimal-based L2 reference replay and automatic agreement checks against the production order-book reconstruction.
 
 
 ## 7.2.0 - 2026-11-16
