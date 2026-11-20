@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 from dataclasses import asdict
@@ -141,6 +142,17 @@ class ProspectiveHoldoutLedger:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if os.name == "posix":
+            if self.path.is_symlink():
+                raise OSError("prospective holdout database path must not be a symbolic link")
+            flags = os.O_CREAT | os.O_RDWR
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(str(self.path), flags, 0o600)
+            try:
+                os.fchmod(fd, 0o600)
+            finally:
+                os.close(fd)
         connection = sqlite3.connect(str(self.path), timeout=20, isolation_level=None)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=20000")
@@ -366,6 +378,9 @@ class ProspectiveHoldoutLedger:
         connection = self._connect()
         try:
             self._begin(connection)
+            integrity = self._verify_connection(connection)
+            if integrity["status"] != "PASS":
+                raise ValueError("prospective holdout ledger integrity check failed; evaluation is blocked")
             cohort_row = connection.execute("SELECT payload FROM cohort WHERE singleton=1").fetchone()
             if cohort_row is None:
                 raise ValueError("prospective holdout cohort has not been registered")
@@ -430,51 +445,56 @@ class ProspectiveHoldoutLedger:
         finally:
             connection.close()
 
+    @staticmethod
+    def _verify_connection(connection: sqlite3.Connection) -> dict[str, Any]:
+        """Verify the event chain and every stored payload using the current transaction."""
+        events = connection.execute("SELECT * FROM ledger_events ORDER BY seq").fetchall()
+        previous = "0" * 64
+        valid = True
+        for event in events:
+            expected = _hash(
+                f"{previous}|{event['event_type']}|{event['event_id']}|{event['payload_hash']}"
+            )
+            if event["previous_hash"] != previous or event["event_hash"] != expected:
+                valid = False
+                break
+            previous = event["event_hash"]
+        event_by_hash = {row["event_hash"]: row for row in events}
+        record_specs = (
+            ("cohort", "COHORT_REGISTERED", "cohort_id", "payload", "SELECT * FROM cohort"),
+            ("forecasts", "FORECAST_RECORDED", "forecast_id", "payload", "SELECT * FROM forecasts"),
+            ("outcomes", "OUTCOME_RESOLVED", "forecast_id", "payload", "SELECT * FROM outcomes"),
+            ("evaluations", "HOLDOUT_EVALUATED", None, "payload", "SELECT * FROM evaluations"),
+        )
+        referenced = set()
+        for table, expected_type, id_column, payload_column, query in record_specs:
+            rows = connection.execute(query).fetchall()
+            for row in rows:
+                event = event_by_hash.get(row["event_hash"])
+                payload = json.loads(row[payload_column])
+                event_id = (
+                    payload.get("cohort_id") if table == "cohort" else
+                    payload.get("forecast_id") if table == "outcomes" else
+                    (payload.get("report", {}).get("prospective_holdout", {}).get("cohort_id")
+                     if table == "evaluations" else row[id_column])
+                )
+                if (event is None or event["event_type"] != expected_type
+                        or event["event_id"] != str(event_id)
+                        or event["payload_hash"] != _hash(_json(payload))):
+                    valid = False
+                referenced.add(row["event_hash"])
+        event_hashes = set(event_by_hash)
+        valid = valid and len(referenced) == len(event_hashes) and referenced == event_hashes
+        return {
+            "status": "PASS" if valid else "BLOCKED",
+            "events": len(events), "last_event_hash": previous if events else None,
+            "policy": "Hash-chain tampering is detectable; this is not protection against an administrator who can rewrite the database and recompute the chain.",
+        }
+
     def verify_integrity(self) -> dict[str, Any]:
         """Verify the append-only event hash chain and event-to-record references."""
         connection = self._connect()
         try:
-            events = connection.execute("SELECT * FROM ledger_events ORDER BY seq").fetchall()
-            previous = "0" * 64
-            valid = True
-            for event in events:
-                expected = _hash(
-                    f"{previous}|{event['event_type']}|{event['event_id']}|{event['payload_hash']}"
-                )
-                if event["previous_hash"] != previous or event["event_hash"] != expected:
-                    valid = False
-                    break
-                previous = event["event_hash"]
-            event_by_hash = {row["event_hash"]: row for row in events}
-            record_specs = (
-                ("cohort", "COHORT_REGISTERED", "cohort_id", "payload", "SELECT * FROM cohort"),
-                ("forecasts", "FORECAST_RECORDED", "forecast_id", "payload", "SELECT * FROM forecasts"),
-                ("outcomes", "OUTCOME_RESOLVED", "forecast_id", "payload", "SELECT * FROM outcomes"),
-                ("evaluations", "HOLDOUT_EVALUATED", None, "payload", "SELECT * FROM evaluations"),
-            )
-            referenced = set()
-            for table, expected_type, id_column, payload_column, query in record_specs:
-                rows = connection.execute(query).fetchall()
-                for row in rows:
-                    event = event_by_hash.get(row["event_hash"])
-                    payload = json.loads(row[payload_column])
-                    event_id = (
-                        payload.get("cohort_id") if table == "cohort" else
-                        payload.get("forecast_id") if table == "outcomes" else
-                        (payload.get("report", {}).get("prospective_holdout", {}).get("cohort_id")
-                         if table == "evaluations" else row[id_column])
-                    )
-                    if (event is None or event["event_type"] != expected_type
-                            or event["event_id"] != str(event_id)
-                            or event["payload_hash"] != _hash(_json(payload))):
-                        valid = False
-                    referenced.add(row["event_hash"])
-            event_hashes = set(event_by_hash)
-            valid = valid and len(referenced) == len(event_hashes) and referenced == event_hashes
-            return {
-                "status": "PASS" if valid else "BLOCKED",
-                "events": len(events), "last_event_hash": previous if events else None,
-                "policy": "Hash-chain tampering is detectable; this is not protection against an administrator who can rewrite the database and recompute the chain.",
-            }
+            return self._verify_connection(connection)
         finally:
             connection.close()
