@@ -51,7 +51,7 @@ def _extract_time_axis(df):
             if numeric is not None:
                 if not np.isfinite(numeric).all() or np.any(np.diff(numeric) <= 0):
                     raise ValueError("numeric timestamps must be finite, unique, and strictly increasing")
-                return raw, source
+                return numeric, source
         try:
             parsed = np.asarray(raw, dtype="datetime64[ns]")
             ticks = parsed.astype("int64")
@@ -63,6 +63,8 @@ def _extract_time_axis(df):
 
 
 def _serialize_time_value(value):
+    if isinstance(value, np.datetime64):
+        return np.datetime_as_string(value, unit="auto")
     if hasattr(value, "isoformat"):
         return value.isoformat()
     if isinstance(value, np.generic):
