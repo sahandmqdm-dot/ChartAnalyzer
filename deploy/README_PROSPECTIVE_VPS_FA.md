@@ -308,7 +308,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\deploy\windows\binance-collector.ps1 -Action Stop
 ~~~
 
-اسکریپت Stop یک Stop Sentinel ایجاد می‌کند تا برنامه با مسیر عادی Shutdown، بافر Order Book را ثبت/تخلیه کند و Hash Chain را ببندد. اگر طی ۴۵ ثانیه متوقف نشود، اسکریپت آن را Force Kill نمی‌کند؛ علت را از runtime\binance_collector\collector.stderr.log بررسی کنید.
+اسکریپت Stop یک Stop Sentinel ایجاد می‌کند تا برنامه با مسیر عادی Shutdown، Diffهای باقی‌مانده در بافر را با شمارنده دقیق ثبت کند و Hash Chain را ببندد؛ این Diffها به‌عنوان داده اعمال‌شده در Book تلقی نمی‌شوند. اگر طی ۴۵ ثانیه متوقف نشود، اسکریپت آن را Force Kill نمی‌کند؛ علت را از runtime\binance_collector\collector.stderr.log بررسی کنید.
 
 تنظیمات اختیاری:
 
