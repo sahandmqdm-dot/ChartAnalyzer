@@ -7,9 +7,9 @@ instrument identities, ingest sources, invoke an LLM, or authorize trading.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from collections.abc import Iterable
 from enum import Enum
 from threading import RLock
 
