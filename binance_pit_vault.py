@@ -128,6 +128,11 @@ def iter_session_records(
                         record = json.loads(line)
                         if record.get("session_id") != session_id:
                             continue
+                        if record.get("stream") != source_path.parent.name:
+                            raise PITVaultError("partition_stream_identity_mismatch")
+                        expected_market = manifest.get("market")
+                        if expected_market and record.get("market") != expected_market:
+                            raise PITVaultError("partition_market_identity_mismatch")
                         key = _record_sort_key(record)
                         if previous_key is not None and key < previous_key:
                             raise PITVaultError(
@@ -167,7 +172,9 @@ def build_session_manifest(
     first_received = None
     last_received = None
 
-    for record in iter_session_records(root, {"source_files": files}, session_id):
+    for record in iter_session_records(
+        root, {"market": market, "source_files": files}, session_id
+    ):
         total_records += 1
         stream = str(record.get("stream", "unknown"))
         event_counts[stream] = event_counts.get(stream, 0) + 1
@@ -286,8 +293,14 @@ def verify_session_manifest(
     if expected_hash != actual_hash:
         raise PITVaultError("manifest_hash_mismatch")
 
+    expected_market = document.get("market")
     for source in document.get("source_files", []):
-        path = (root / source["path"]).resolve()
+        relative_path = Path(source["path"])
+        if expected_market and (
+            not relative_path.parts or relative_path.parts[0] != expected_market
+        ):
+            raise PITVaultError("manifest_market_path_mismatch")
+        path = (root / relative_path).resolve()
         if root not in path.parents:
             raise PITVaultError("manifest source path escapes data root")
         if not path.is_file() or _sha256_file(path) != source["sha256"]:
