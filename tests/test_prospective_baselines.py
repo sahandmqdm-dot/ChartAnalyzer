@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from prospective_baselines import build_baseline_quantiles, paired_block_bootstrap_mean_ci
 
 
