@@ -83,7 +83,7 @@ def test_active_snapshot_writes_atomic_artifact(tmp_path):
     )
     output = write_snapshot(result, tmp_path / "research" / "snapshot.json")
     assert output.is_file()
-    assert output.read_text(encoding="utf-8").endswith("\\n")
+    assert output.read_text(encoding="utf-8").endswith("\n")
 
 
 
