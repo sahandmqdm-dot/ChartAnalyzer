@@ -117,6 +117,16 @@ def test_status_and_evaluation_remain_separate_from_collection(monkeypatch, tmp_
         app.api_prospective_holdout_evaluate({"cohort_id": payload["cohort_id"]})
 
 
+def test_register_rejects_collection_window_too_short_for_sample_floor(monkeypatch, tmp_path):
+    clock = {"now": BASE_NOW}
+    setup_app(monkeypatch, tmp_path, clock)
+    payload = registration_payload()
+    payload["min_forecasts"] = 200
+    payload["collection_end"] = (BASE_NOW + datetime.timedelta(days=1)).isoformat()
+    with pytest.raises(app.HTTPException):
+        app.api_prospective_holdout_register(payload)
+
+
 def test_prospective_cohort_rejects_unsupported_csv_source(monkeypatch, tmp_path):
     clock = {"now": BASE_NOW}
     setup_app(monkeypatch, tmp_path, clock)
