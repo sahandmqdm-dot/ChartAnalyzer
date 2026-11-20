@@ -1,5 +1,6 @@
 """Idempotent cloud archival of verified, closed Binance JSONL partitions."""
 from __future__ import annotations
+
 import argparse
 import hashlib
 import json
