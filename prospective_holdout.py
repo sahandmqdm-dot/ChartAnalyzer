@@ -189,7 +189,11 @@ def _microstructure_provenance(
         if not isinstance(value.get(field), bool):
             raise TypeError(f"microstructure {field} must be boolean")
     counters = {}
-    for field in ("book_sequence_gaps", "book_buffer_overflows"):
+    for field in (
+        "book_sequence_gaps", "book_buffer_overflows",
+        "collector_sequence_gaps", "collector_buffer_overflows",
+        "collector_dropped_events", "collector_snapshot_failures",
+    ):
         item = value.get(field)
         if isinstance(item, bool) or not isinstance(item, int):
             raise TypeError(f"microstructure {field} must be an integer")
