@@ -151,6 +151,6 @@ def test_manifest_detects_source_file_tampering(tmp_path):
     depth_file = tmp_path / "spot" / "orderbook_depth" / "2026-11-20.jsonl"
     record = json.loads(depth_file.read_text(encoding="utf-8"))
     record["payload"]["u"] = 999
-    depth_file.write_text(json.dumps(record) + "\\n", encoding="utf-8")
+    depth_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
     with pytest.raises(PITVaultError, match="source_file_digest_mismatch"):
         verify_session_manifest(tmp_path, manifest)
