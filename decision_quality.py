@@ -8,10 +8,10 @@ impact, capacity constraints, or portfolio interactions.
 from __future__ import annotations
 
 import math
-from itertools import pairwise
 from collections import Counter
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from itertools import pairwise
 from typing import Any
 
 
