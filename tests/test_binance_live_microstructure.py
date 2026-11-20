@@ -1,7 +1,10 @@
 # ruff: noqa: I001  # Flat-layout import ordering differs across Ruff versions.
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from binance_live_microstructure import (
+    LiveSnapshotError,
     build_active_session_snapshot,
     find_latest_active_session,
     persist_snapshot_content_addressed,
@@ -149,9 +152,5 @@ def test_snapshot_source_prefix_verification_detects_prior_record_tampering(tmp_
     )
     path = tmp_path / trade_source["path"]
     path.write_bytes(path.read_bytes().replace(b"90000", b"90001", 1))
-    try:
+    with pytest.raises(LiveSnapshotError, match="prefix|chain"):
         verify_snapshot_source_prefixes(tmp_path, snapshot)
-    except Exception as exc:
-        assert "prefix" in str(exc) or "chain" in str(exc)
-    else:
-        raise AssertionError("tampered source prefix was accepted")
