@@ -1,3 +1,4 @@
+# ruff: noqa: I001  # Flat-layout first-party import classification differs across Ruff versions.
 import datetime
 import pytest
 import sqlite3
