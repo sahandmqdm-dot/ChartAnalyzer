@@ -59,7 +59,7 @@ def _load_verified_session(
 ) -> dict[str, Any]:
     """Build and verify the session manifest without materializing raw events."""
     manifest = build_session_manifest(data_root, market, session_id)
-    if not manifest["session_closed"]:
+    if not manifest["session_closed"] and not allow_incomplete:
         raise PITFeatureError("active_session_not_eligible_for_features")
     if not manifest["session_complete"] and not allow_incomplete:
         raise PITFeatureError("incomplete_capture_not_eligible_for_research_features")
@@ -363,7 +363,14 @@ def build_pit_microstructure_features(
     if decisions != sorted(decisions):
         raise ValueError("decision_times must be in ascending order")
     started = _timestamp(manifest["started_at"], "session_started_at")
-    ended = _timestamp(manifest["ended_at"], "session_ended_at")
+    # Active-session snapshots are built from a verified point-in-time copy of
+    # append-only partitions. Their upper bound is the snapshot creation time,
+    # not a fabricated session end timestamp.
+    ended = (
+        _timestamp(manifest["ended_at"], "session_ended_at")
+        if manifest.get("ended_at")
+        else datetime.now(UTC)
+    )
     if any(value < started or value > ended for value in decisions):
         raise PITFeatureError("decision_time_outside_capture_session")
 
@@ -460,6 +467,8 @@ def build_pit_microstructure_features(
         "session_id": session_id,
         "manifest_hash": manifest["manifest_hash"],
         "session_complete": manifest["session_complete"],
+        "session_closed": manifest["session_closed"],
+        "session_state": manifest["session_state"],
         "window_seconds": sorted(set(window_seconds)),
         "snapshots": snapshots,
     }
