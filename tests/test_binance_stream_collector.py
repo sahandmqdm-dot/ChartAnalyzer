@@ -283,6 +283,8 @@ def test_collector_reconnects_into_a_new_auditable_session(tmp_path):
         assert running["payload"]["raw_frame_count"] == 1
         assert running["payload"]["typed_event_count"] == 1
         assert running["payload"]["write_pipeline_latency_ms"]["p95"] is not None
+        assert running["payload"]["disk"]["free_bytes"] > 0
+        assert running["payload"]["orderbook"]["buffer_overflow_count"] == 0
         assert {r["payload"]["termination"] for r in terminals} == {
             "stream_ended", "operator_stop",
         }
