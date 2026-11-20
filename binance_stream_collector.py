@@ -165,6 +165,8 @@ class HashChainJSONLStore:
                     if not line.strip():
                         continue
                     record = json.loads(line)
+                    if not isinstance(record, dict):
+                        return False, count, "unreadable_or_malformed"
                     digest = record.pop("event_hash")
                     canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
                     expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -172,7 +174,7 @@ class HashChainJSONLStore:
                         return False, count, "hash_chain_mismatch"
                     previous = digest
                     count += 1
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return False, count, "unreadable_or_malformed"
         return True, count, previous
 
