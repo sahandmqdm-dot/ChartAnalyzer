@@ -146,6 +146,11 @@ def _microstructure_provenance(
         raise ValueError("microstructure_provenance must be an object")
     required_hashes = ("manifest_hash", "feature_hash", "dataset_hash")
     hashes = {name: _sha(value.get(name), f"microstructure_{name}") for name in required_hashes}
+    artifact_sha256 = _sha(value.get("artifact_sha256"), "microstructure_artifact_sha256")
+    expected_artifact_path = f"vault/features/{hashes['dataset_hash']}.json"
+    artifact_path = str(value.get("artifact_path") or "").replace("\\\\", "/")
+    if artifact_path != expected_artifact_path:
+        raise ValueError("microstructure artifact_path must be content-addressed under vault/features")
     if value.get("schema") != "chartanalyzer_pit_microstructure_features_v1":
         raise ValueError("unsupported microstructure feature schema")
     market = str(value.get("market") or "").lower()
@@ -190,6 +195,8 @@ def _microstructure_provenance(
         "symbol": symbol,
         "session_id": value["session_id"].strip(),
         **hashes,
+        "artifact_path": artifact_path,
+        "artifact_sha256": artifact_sha256,
         "decision_time": _iso(decision),
         "available_at": _iso(available),
         "source_event_watermark": _iso(watermark) if watermark else None,
