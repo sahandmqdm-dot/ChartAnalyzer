@@ -182,3 +182,20 @@ def test_claim_subject_must_be_point_in_time_valid():
     future_subject = entity(recorded_at=T0 + timedelta(seconds=1))
     with pytest.raises(IdentityContractError, match="point-in-time valid"):
         ClaimRegistry().register_many([item], entities=[future_subject], evidence=[record])
+
+
+def test_claim_rejects_evidence_for_different_subject():
+    unrelated = EvidenceRecord(
+        evidence_type=EvidenceType.OBSERVATION, claim="AAPL revenue",
+        source_reference_id="src:test", first_seen_at=T0, available_at=T0,
+        entity_ids=("equity:NASDAQ:AAPL",),
+    )
+    item = claim(unrelated)
+    with pytest.raises(IdentityContractError, match="not linked by cited evidence"):
+        ClaimRegistry().register_many([item], entities=[entity()], evidence=[unrelated])
+
+
+def test_claim_valid_time_interval_must_have_positive_duration():
+    record = evidence()
+    with pytest.raises(IdentityContractError, match="must be later"):
+        claim(record, valid_time_start=T0, valid_time_end=T0)
