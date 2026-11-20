@@ -1,0 +1,26 @@
+[Unit]
+Description=ChartAnalyzer prospective holdout collector
+Requires=chartanalyzer.service
+After=network-online.target chartanalyzer.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chartanalyzer
+Group=chartanalyzer
+WorkingDirectory=/opt/chartanalyzer
+Environment=PYTHONUNBUFFERED=1
+Environment=CHARTANALYZER_COLLECTOR_CONFIG=/etc/chartanalyzer/prospective-cohort.json
+ExecStart=/opt/chartanalyzer/.venv/bin/python /opt/chartanalyzer/prospective_collector.py --config /etc/chartanalyzer/prospective-cohort.json
+Restart=always
+RestartSec=15
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/chartanalyzer
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+[Unit]
+Description=ChartAnalyzer local research API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chartanalyzer
+Group=chartanalyzer
+WorkingDirectory=/opt/chartanalyzer
+Environment=PYTHONUNBUFFERED=1
+Environment=CHARTANALYZER_DATA_DIR=/var/lib/chartanalyzer/prospective_holdouts
+EnvironmentFile=-/etc/chartanalyzer/release.env
+ExecStart=/opt/chartanalyzer/.venv/bin/python /opt/chartanalyzer/app.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+StateDirectory=chartanalyzer
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
