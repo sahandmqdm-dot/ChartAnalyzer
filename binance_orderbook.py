@@ -5,9 +5,10 @@ import asyncio
 import json
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 from urllib.request import Request, urlopen
-from typing import Any, Callable
 
 from binance_stream_collector import MarketSpec, OrderBookSequence, SequenceGap
 
@@ -112,8 +113,8 @@ class LocalOrderBook:
         asks = sorted(self.asks.items())[:depth]
         if not bids or not asks:
             raise OrderBookError("one side of the order book is empty")
-        bid_price, bid_qty = bids[0]
-        ask_price, ask_qty = asks[0]
+        bid_price = bids[0][0]
+        ask_price = asks[0][0]
         mid = (bid_price + ask_price) / 2
         total_bid = sum(qty for _, qty in bids)
         total_ask = sum(qty for _, qty in asks)
