@@ -2591,6 +2591,15 @@ def _prospective_identity(payload):
     market_type = str((conf().get("backtest") or {}).get("market_type", "spot")).lower()
     if market_type != "spot":
         raise ValueError("prospective PMI collection is currently spot-only; futures requires a separate price-basis contract")
+    use_microstructure = payload.get("use_binance_microstructure", False)
+    if not isinstance(use_microstructure, bool):
+        raise ValueError("use_binance_microstructure must be a boolean")
+    if use_microstructure and not (
+        source == "ccxt" and exchange == "binance" and symbol == "BTCUSDT"
+    ):
+        raise ValueError(
+            "Binance microstructure evidence currently requires CCXT Binance Spot BTCUSDT"
+        )
     model_id, model_version = "chartanalyzer-pmi-bootstrap", "5.0.0"
     code_hashes = {}
     for label, path in (
@@ -2602,6 +2611,10 @@ def _prospective_identity(payload):
         ("iran_crypto_market", os.path.join(BASE_DIR, "iran_crypto_market.py")),
         ("prospective_ledger", os.path.join(BASE_DIR, "prospective_holdout.py")),
         ("prospective_baselines", os.path.join(BASE_DIR, "prospective_baselines.py")),
+        ("binance_stream_collector", os.path.join(BASE_DIR, "binance_stream_collector.py")),
+        ("binance_pit_vault", os.path.join(BASE_DIR, "binance_pit_vault.py")),
+        ("binance_microstructure_features", os.path.join(BASE_DIR, "binance_microstructure_features.py")),
+        ("binance_live_microstructure", os.path.join(BASE_DIR, "binance_live_microstructure.py")),
     ):
         if not path or not os.path.isfile(path):
             raise ValueError("cannot fingerprint required model component: " + label)
@@ -2636,6 +2649,10 @@ def _prospective_identity(payload):
         "paired_bootstrap_seed": 19,
         "input_policy": "closed_candles_only",
         "target_kind": "log_return",
+        "microstructure_evidence_required": use_microstructure,
+        "microstructure_evidence_policy": "auxiliary_audit_only_v1" if use_microstructure else "disabled",
+        "microstructure_windows_seconds": [5, 60, 300],
+        "microstructure_book_depth": 10,
     }
     encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest(), identity
@@ -2644,6 +2661,58 @@ def _prospective_identity(payload):
 def _prospective_ledger(cohort_id):
     from prospective_holdout import ProspectiveHoldoutLedger
     return ProspectiveHoldoutLedger(_prospective_cohort_path(cohort_id))
+
+
+def _prospective_binance_microstructure_provenance(identity, data_cutoff_at):
+    """Build and archive exact-cutoff Spot microstructure evidence for one forecast."""
+    from binance_live_microstructure import (
+        build_active_session_snapshot,
+        find_latest_active_session,
+        persist_snapshot_content_addressed,
+    )
+
+    data_root = os.getenv(
+        "CHARTANALYZER_DATA_DIR",
+        os.path.join(BASE_DIR, "data", "binance_raw"),
+    )
+    decision_time = data_cutoff_at.isoformat()
+    session_id = find_latest_active_session(
+        data_root,
+        "spot",
+        identity["symbol"],
+        decision_time=decision_time,
+    )
+    dataset = build_active_session_snapshot(
+        data_root,
+        "spot",
+        session_id,
+        decision_time,
+        window_seconds=tuple(identity["microstructure_windows_seconds"]),
+        book_depth=identity["microstructure_book_depth"],
+    )
+    feature = dataset["snapshots"][0]
+    artifact = persist_snapshot_content_addressed(dataset, data_root)
+    return {
+        "schema": feature["schema"],
+        "snapshot_mode": dataset["snapshot_mode"],
+        "market": feature["market"],
+        "symbol": feature["symbol"],
+        "session_id": feature["session_id"],
+        "manifest_hash": feature["manifest_hash"],
+        "feature_hash": feature["feature_hash"],
+        "dataset_hash": dataset["dataset_hash"],
+        **artifact,
+        "decision_time": feature["decision_time"],
+        "available_at": feature["available_at"],
+        "source_event_watermark": feature["source_event_watermark"],
+        "snapshot_created_at": dataset["snapshot_created_at"],
+        "point_in_time_valid": feature["point_in_time_valid"],
+        "book_valid": feature["book"]["valid"],
+        "session_complete": dataset["session_complete"],
+        "session_closed": dataset["session_closed"],
+        "book_sequence_gaps": feature["book_sequence_gaps"],
+        "book_buffer_overflows": feature["book_buffer_overflows"],
+    }
 
 
 def _prospective_source_parts(input_source):
