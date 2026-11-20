@@ -63,12 +63,16 @@ def evaluate_execution(
     reference_mid: float,
     best_bid: float,
     best_ask: float,
-    impact_bps: float = 0.0,
-    funding_rate: float = 0.0,
+    impact_bps: float | None = None,
+    funding_rate: float | None = None,
     funding_events: int = 0,
     latency_ms: float | None = None,
     fill_source: str | None = None,
     assumptions: dict[str, Any] | None = None,
+    rejection_reason: str | None = None,
+    fill_probability: float | None = None,
+    fill_probability_source: str | None = None,
+    fill_probability_calibrated: bool = False,
 ) -> dict[str, Any]:
     """Account for supplied fills; never manufacture an execution."""
     side = str(side).lower()
@@ -85,9 +89,16 @@ def evaluate_execution(
     ask = _number(best_ask, "best_ask", minimum=0.0)
     if mid <= 0 or bid <= 0 or ask <= 0 or bid > ask:
         raise ValueError("valid positive reference_mid and best_bid <= best_ask are required")
-    impact = _number(impact_bps, "impact_bps", minimum=0.0)
-    funding = _number(funding_rate, "funding_rate")
+    impact = None if impact_bps is None else _number(impact_bps, "impact_bps", minimum=0.0)
+    funding = None if funding_rate is None else _number(funding_rate, "funding_rate")
     events = int(_number(funding_events, "funding_events", minimum=0.0))
+    probability = None if fill_probability is None else _number(fill_probability, "fill_probability", minimum=0.0)
+    if probability is not None and probability > 1:
+        raise ValueError("fill_probability must be <= 1")
+    if probability is not None and (not fill_probability_source or not fill_probability_calibrated):
+        raise ValueError("fill probability requires calibrated model provenance")
+    if rejection_reason and fills:
+        raise ValueError("rejected order cannot contain fills")
     latency = None if latency_ms is None else _number(latency_ms, "latency_ms", minimum=0.0)
     schedule = validate_fee_schedule(fee_schedule)
     if not isinstance(fills, list):
@@ -112,9 +123,9 @@ def evaluate_execution(
     tolerance = max(1e-12, requested * 1e-9)
     if filled_qty > requested + tolerance:
         raise ValueError("filled quantity cannot exceed requested quantity")
-    status = "unfilled" if not parsed else (
+    status = "rejected" if rejection_reason else ("unfilled" if not parsed else (
         "partial" if filled_qty < requested - tolerance else "filled"
-    )
+    ))
     gross_notional = sum(row["price"] * row["quantity"] for row in parsed)
     if gross_notional <= 0:
         vwap = None
@@ -132,8 +143,8 @@ def evaluate_execution(
             max(0.0, row["price"] - touch if side == "buy" else touch - row["price"])
             * row["quantity"] for row in parsed
         )
-        impact_cost = gross_notional * impact / 10000.0
-        funding_cost = gross_notional * funding * events
+        impact_cost = gross_notional * (impact or 0.0) / 10000.0
+        funding_cost = gross_notional * (funding or 0.0) * events
         total_cost = fee_cost + spread_cost + slippage_cost + impact_cost + funding_cost
         effective_cost_rate = total_cost / gross_notional
 
@@ -154,12 +165,19 @@ def evaluate_execution(
             "slippage_beyond_touch": slippage_cost, "market_impact": impact_cost,
             "funding": funding_cost, "total": total_cost,
             "effective_cost_rate": effective_cost_rate,
+            "complete": impact is not None and (events == 0 or funding is not None),
+            "missing_inputs": ([ "impact_bps" ] if impact is None else []) +
+                ([ "funding_rate" ] if events > 0 and funding is None else []),
         },
         "execution_context": {
             "reference_mid": mid, "best_bid": bid, "best_ask": ask,
             "quoted_spread_bps": (ask - bid) / mid * 10000.0,
             "impact_bps_assumption": impact, "latency_ms": latency,
             "fill_source": fill_source, "assumptions": assumption_data,
+            "fill_probability": probability,
+            "fill_probability_source": fill_probability_source,
+            "fill_probability_calibrated": bool(fill_probability_calibrated),
+            "rejection_reason": rejection_reason,
         },
         "fee_schedule": schedule,
         "fills": parsed,
@@ -174,7 +192,8 @@ def evaluate_execution(
             "No fill is inferred from order type or price touch.",
             "Maker/taker fees follow each fill's explicit liquidity_role.",
             "An unfilled order has no execution fee; opportunity cost is not trading PnL.",
-            "Impact and funding are only as reliable as their recorded input assumptions.",
+            "Missing impact or applicable funding inputs make the cost breakdown incomplete.",
+            "Fill probability is reported only when supplied by a calibrated, traceable external model.",
             "Research accounting only; no exchange order is submitted.",
         ],
     }
