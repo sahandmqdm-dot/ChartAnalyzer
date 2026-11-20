@@ -243,8 +243,10 @@ def run_backtest(
 
     equity = peak = 1.0
     max_dd = 0.0
-    equity_curve: List[float] = []
-    equity_bar_indices: List[int] = []
+    # Include the starting equity at the first executable fill open. This is
+    # essential for complete period returns and drawdown accounting.
+    equity_curve: List[float] = [1.0]
+    equity_bar_indices: List[int] = [int(start) + 1]
     trades: List[Dict[str, Any]] = []
     fees_paid = spread_paid = slippage_paid = impact_paid = funding_paid = 0.0
     turnover_sides = 0
@@ -563,7 +565,7 @@ def run_backtest(
         "equity_bar_indices": equity_bar_indices,
         "equity_timestamps": equity_timestamps,
         "equity_timestamp_source": time_axis_source,
-        "equity_timeline_semantics": "equity marked at next open; bar index i+2 for each loop iteration",
+        "equity_timeline_semantics": "initial equity at first executable fill open (start+1), then marked at next opens (i+2)",
         "warning": (
             "Next-open execution with OHLC-based ATR exits; exact intrabar path/order is unknown, and same-bar dual touches assume stop-first. "
             "Futures leverage is synthetic: margin calls, liquidation prices and historical funding schedules "
