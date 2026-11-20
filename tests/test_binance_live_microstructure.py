@@ -2,6 +2,8 @@ from datetime import UTC, datetime, timedelta
 
 from binance_live_microstructure import (
     build_active_session_snapshot,
+    find_latest_active_session,
+    persist_snapshot_content_addressed,
     write_snapshot,
 )
 from binance_stream_collector import HashChainJSONLStore
@@ -76,3 +78,25 @@ def test_active_snapshot_writes_atomic_artifact(tmp_path):
     output = write_snapshot(result, tmp_path / "research" / "snapshot.json")
     assert output.is_file()
     assert output.read_text(encoding="utf-8").endswith("\\n")
+
+
+
+def test_latest_active_session_is_selected_only_when_started_by_cutoff(tmp_path):
+    _active_session(tmp_path)
+    selected = find_latest_active_session(
+        tmp_path, "spot", "BTCUSDT", decision_time=_stamp(3)
+    )
+    assert selected == SESSION
+
+
+def test_snapshot_artifact_is_content_addressed_and_never_overwritten(tmp_path):
+    _active_session(tmp_path / "raw")
+    snapshot = build_active_session_snapshot(
+        tmp_path / "raw", "spot", SESSION, _stamp(3), window_seconds=(5,)
+    )
+    first = persist_snapshot_content_addressed(snapshot, tmp_path / "raw")
+    second = persist_snapshot_content_addressed(snapshot, tmp_path / "raw")
+    assert first == second
+    artifact = tmp_path / "raw" / first["artifact_path"]
+    assert artifact.is_file()
+    assert len(first["artifact_sha256"]) == 64
