@@ -2714,6 +2714,10 @@ def _prospective_binance_microstructure_provenance(identity, data_cutoff_at):
         "session_closed": dataset["session_closed"],
         "book_sequence_gaps": feature["book_sequence_gaps"],
         "book_buffer_overflows": feature["book_buffer_overflows"],
+        "collector_sequence_gaps": feature["collector_sequence_gaps"],
+        "collector_buffer_overflows": feature["collector_buffer_overflows"],
+        "collector_dropped_events": feature["collector_dropped_events"],
+        "collector_snapshot_failures": feature["collector_snapshot_failures"],
     }
 
 
