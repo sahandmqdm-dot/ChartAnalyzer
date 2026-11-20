@@ -16,6 +16,8 @@ from typing import Any, Dict, Iterable
 import numpy as np
 
 APP_VERSION = "7.2.0"
+# Bump whenever signal generation, execution semantics or research interpretation changes.
+RESEARCH_ENGINE_REVISION = "2026.11.20.1"
 
 
 def _json_safe(value: Any):
@@ -46,7 +48,7 @@ def _canonical_digest(value: Any) -> str:
 
 def config_fingerprint(strategy_config: Dict[str, Any]) -> str:
     """Full fingerprint including code release and normalized strategy settings."""
-    return _canonical_digest({"app_version": APP_VERSION, "strategy_config": strategy_config})
+    return _canonical_digest({"app_version": APP_VERSION, "research_engine_revision": RESEARCH_ENGINE_REVISION, "strategy_config": strategy_config})
 
 
 def dataset_fingerprint(df, *, source: str, symbol: str, timeframe: str) -> str:
@@ -83,6 +85,7 @@ def build_provenance(
 
     return {
         "app_version": APP_VERSION,
+        "research_engine_revision": RESEARCH_ENGINE_REVISION,
         "run_id": run_id,
         "dataset_id": dataset_id[:20],
         "config_id": config_id[:20],
