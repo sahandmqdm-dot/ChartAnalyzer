@@ -6,6 +6,7 @@ storage or a cryptographic signature.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -13,7 +14,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from binance_orderbook import DepthSnapshot, LocalOrderBook, OrderBookError, synchronize_buffered
+from binance_orderbook import (
+    DepthSnapshot,
+    LocalOrderBook,
+    OrderBookError,
+    synchronize_buffered,
+)
 from binance_stream_collector import HashChainJSONLStore, SequenceGap
 
 
@@ -273,3 +279,33 @@ __all__ = [
     "replay_orderbook_session",
     "verify_session_manifest",
 ]
+
+
+
+def _main() -> None:
+    parser = argparse.ArgumentParser(description="Verify and replay ChartAnalyzer Binance PIT evidence.")
+    parser.add_argument("--data-dir", default="./data/binance_raw")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    for command in ("manifest", "replay"):
+        sub = subparsers.add_parser(command)
+        sub.add_argument("--market", choices=("spot", "usdm"), required=True)
+        sub.add_argument("--session-id", required=True)
+
+    verify = subparsers.add_parser("verify")
+    verify.add_argument("--manifest", required=True)
+
+    args = parser.parse_args()
+    if args.command == "manifest":
+        result = persist_session_manifest(args.data_dir, args.market, args.session_id)
+        print(json.dumps({"manifest_path": str(result)}, indent=2))
+    elif args.command == "verify":
+        result = verify_session_manifest(args.data_dir, args.manifest)
+        print(json.dumps(result, indent=2))
+    else:
+        result = replay_orderbook_session(args.data_dir, args.market, args.session_id)
+        print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    _main()

@@ -91,3 +91,30 @@ replay evidence. The collector does not yet perform a complete independent
 offline replay audit or use reconstructed book features in the directional
 candidate score. Do not treat a displayed or reconstructed imbalance as a
 validated predictive feature.
+
+
+## PIT evidence manifest and offline replay
+
+After a collector session has ended, obtain its session ID from the session
+manifest JSONL partition, then create a content-addressed evidence manifest:
+
+```powershell
+python binance_pit_vault.py --data-dir .\data\binance_raw manifest --market usdm --session-id <SESSION_ID>
+python binance_pit_vault.py --data-dir .\data\binance_raw verify --manifest <MANIFEST_PATH>
+python binance_pit_vault.py --data-dir .\data\binance_raw replay --market usdm --session-id <SESSION_ID>
+```
+
+The manifest binds the session to SHA-256 digests, byte counts and verified
+per-partition hash-chain heads. Offline replay applies the captured depth
+snapshots and raw diffs in receive-time order, checks the sequence bridge and
+returns a deterministic replay hash plus final validity, gap and event counts.
+A replay that cannot establish a contiguous sequence remains invalid.
+
+The vault currently stores manifests and references the original local evidence
+partitions. It does not copy data to independent immutable storage, sign
+manifests with an external key, or guarantee protection against an attacker who
+can rewrite both the data and all local hashes. For independent audit, preserve
+the manifest and raw partitions in separately controlled storage. The 42-day
+prospective evaluation must not start until live collection, reconnect recovery,
+hash verification and replay checks have been exercised in the intended
+deployment environment.

@@ -281,6 +281,7 @@ class BinanceDualMarketCollector:
                         snapshot_fetch=(lambda: self.snapshot_fetch(spec))
                         if self.snapshot_fetch is not None else None,
                         max_buffered_events=self.max_buffered_depth_events,
+                        session_id=session_id,
                     )
                     try:
                         async for message in websocket:
