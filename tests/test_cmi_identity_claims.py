@@ -3,10 +3,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from evidence_contracts import EvidenceRecord, EvidenceType
+from multi_asset import AssetClass, Instrument, MarketRegistry, MarketType
 from cmi_identity_claims import (
     ClaimModality, ClaimRecord, ClaimRegistry, ClaimStance, EntityAlias,
     EntityRecord, EntityResolver, EntityType, IdentityContractError,
-    ResolutionStatus,
+    ResolutionMethod, ResolutionStatus,
 )
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -134,3 +135,25 @@ def test_claim_registry_batch_is_atomic():
     with pytest.raises(IdentityContractError):
         registry.register_many([good, bad], entities=[entity()], evidence=[record])
     assert registry.all() == ()
+
+
+def test_venue_instrument_resolution_reuses_market_registry():
+    instrument = Instrument(
+        "crypto:BTC/USDT", "BTC/USDT", "BINANCE",
+        AssetClass.CRYPTO_SPOT, MarketType.SPOT, "BTC", "USDT",
+    )
+    resolver = EntityResolver(market_registry=MarketRegistry([instrument]))
+    result = resolver.resolve_instrument(
+        venue="binance", symbol="BTC/USDT", market_type="spot"
+    )
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.method is ResolutionMethod.VENUE_INSTRUMENT
+    assert result.candidate_entity_ids == ("crypto:BTC/USDT",)
+
+
+def test_venue_instrument_resolution_fails_closed_without_registry_match():
+    resolver = EntityResolver(market_registry=MarketRegistry())
+    result = resolver.resolve_instrument(
+        venue="binance", symbol="BTCUSDT", market_type="spot"
+    )
+    assert result.status is ResolutionStatus.UNRESOLVED
