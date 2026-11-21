@@ -25,7 +25,7 @@ async def test_bybit_adapter_sorts_reverse_response_and_normalizes_candles():
             client, clock=lambda: datetime.fromtimestamp(999, tz=UTC)
         ).fetch_ohlcv("btcusdt", "1m", limit=2)
     assert [item.timestamp.timestamp() for item in result] == [0, 60]
-    assert result[0].close == Decimal("11")
+    assert result[0].close == Decimal(11)
     assert result[0].close_time == datetime.fromtimestamp(59.999, tz=UTC)
     assert result[0].is_closed is True
 
