@@ -59,18 +59,6 @@ class BybitLinearRiskTierAdapter(_HttpFuturesAdapter):
                     )
                 )
                 floor = cap
-            # The final published tier is the maximum configured risk limit.
-            # Do not extrapolate above it; the calculator's unbounded final tier
-            # is represented with a cap only when the exchange provides a further tier.
-            final = tiers[-1]
-            tiers[-1] = RiskTier(
-                tier=final.tier,
-                notional_floor=final.notional_floor,
-                notional_cap=None,
-                maintenance_margin_rate=final.maintenance_margin_rate,
-                maintenance_margin_deduction=final.maintenance_margin_deduction,
-                max_leverage=final.max_leverage,
-            )
             return RiskTierSet(
                 provider=self.name,
                 category="linear",
