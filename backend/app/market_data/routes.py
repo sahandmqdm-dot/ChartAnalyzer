@@ -3,7 +3,6 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.auth import current_user
-from app.market_data.binance import MarketDataProviderError
 from app.market_data.cache import AsyncTTLCache
 from app.market_data.candle import Candle
 from app.market_data.provider import MarketDataProvider, MarketDataProviderError
