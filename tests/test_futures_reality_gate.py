@@ -106,3 +106,11 @@ def test_contract_identity_mismatch_blocks():
     values["contract"]["contract_type"] = "inverse"
     result = evaluate(**values)
     assert any("only linear contracts" in item for item in result["blockers"])
+
+
+def test_malformed_timestamp_fails_closed_without_crashing():
+    values = inputs()
+    values["prices"]["observed_at"] = "not-a-timestamp"
+    result = evaluate(**values)
+    assert result["status"] == "NOT_READY"
+    assert any("prices.observed_at must be an ISO-8601" in item for item in result["blockers"])
