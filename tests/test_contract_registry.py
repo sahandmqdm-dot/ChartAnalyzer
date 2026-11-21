@@ -101,3 +101,12 @@ def test_rejects_missing_margin_deduction_even_if_exchange_filter_tier_is_presen
     bad["maintenance_margin_tiers"][0].pop("maintenance_amount")
     with pytest.raises(ValueError, match="missing"):
         registry.register(bad)
+
+
+def test_halted_contract_is_preserved_but_not_resolved_as_tradable():
+    registry = ContractRegistry()
+    registry.register(metadata(status="HALT"))
+    result = registry.resolve(venue="binance", instrument_id="BTCUSDT",
+                              market_type="linear_perpetual", as_of=NOW)
+    assert result["status"] == "CONTRACT_NOT_TRADING"
+    assert result["contract"]["status"] == "HALT"
