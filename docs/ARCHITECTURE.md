@@ -68,4 +68,11 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - `GET /api/v1/derivatives/mark-price-history` returns bounded linear-perpetual mark-price OHLC candles from Binance USDⓈ-M (`/fapi/v1/markPriceKlines`) or Bybit V5 (`/v5/market/mark-price-kline`). It is authenticated and read-only.
 - The adapters normalize exchange tuples into UTC timestamps, Decimal OHLC values, deterministic chronological order, and an explicit candle-closed flag. The API accepts `5m`, `15m`, `30m`, `1h`, `4h`, and `1d`, with a maximum of 200 rows and a 30-second process-local cache.
 - Mark-price candles contain no meaningful traded volume in these endpoints; the domain intentionally models only OHLC and timestamps rather than inventing volume.
-- The existing futures intelligence analyzer still uses Spot candles for its price/OI interpretation. Wiring Mark Price into that analyzer and validating its outputs is the next integration step. This endpoint alone does not estimate liquidation prices or identify liquidation clusters.
+- The futures intelligence analyzer now uses Mark Price candles for its price/OI interpretation. This endpoint alone does not estimate liquidation prices or identify liquidation clusters.
+
+
+## Isolated futures risk estimate
+- `POST /api/v1/derivatives/risk-estimate` accepts a linear contract side, entry price, base-asset quantity, leverage, optional extra isolated margin, estimated close-fee rate, and an explicit ordered risk-tier table. It solves the liquidation-price equation against each tier and selects the tier containing the resulting liquidation notional.
+- Tier records carry notional floor/cap, maintenance-margin rate, cumulative maintenance deduction, and optional maximum leverage. Finite final caps are preserved; notionals outside the supplied table are rejected rather than extrapolated.
+- `GET /api/v1/derivatives/risk-tiers?symbol=BTCUSDT` retrieves public Bybit V5 linear risk-limit tiers and caches them for five minutes. Binance `/fapi/v1/leverageBracket` is a signed USER_DATA endpoint, so this unauthenticated market-data service deliberately does not claim to fetch Binance account-specific brackets. Verified Binance tiers can be supplied to the calculator by the caller.
+- The calculator is strictly isolated-margin and estimate-only. It does not model cross/portfolio margin, multi-position collateral, funding cashflows, open orders, ADL, or the full exchange liquidation engine. The result is not a guaranteed liquidation trigger price.
