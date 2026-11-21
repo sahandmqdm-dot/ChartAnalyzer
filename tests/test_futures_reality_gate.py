@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from futures_reality_gate import evaluate_futures_reality_gate
 
