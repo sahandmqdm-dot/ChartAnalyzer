@@ -45,3 +45,12 @@ Both market-data candle endpoints accept `closed_only=true` to exclude the curre
 ### Market-data cache concurrency and provider isolation
 
 The process-local market-data cache coalesces concurrent misses for the same key: only one provider request runs, and concurrent callers await the same shielded task. Cancelling one HTTP request does not cancel work shared by other callers. Failed loads are not cached and can be retried. Cache keys include the provider name so results from different providers cannot collide. This is an in-process optimization; separate worker processes maintain separate caches.
+
+
+## Derivatives market-data boundary
+- The derivatives overview and history APIs are read-only and require the existing authenticated session. No exchange API credentials or trading permissions are used.
+- `BinanceUsdmFuturesHistoryAdapter` normalizes USDⓈ-M funding history, open-interest statistics, and global long/short account ratio. `BybitLinearFuturesHistoryAdapter` normalizes the equivalent V5 linear endpoints. Both return Decimal values and UTC timestamps in chronological order.
+- `GET /api/v1/derivatives/history` accepts a normalized symbol, one common interval, and a bounded record count. A process-local 60-second TTL/LRU cache coalesces repeated requests. The three upstream series are requested concurrently; provider errors are sanitized into HTTP 502 responses.
+- Source semantics are not identical: Binance long/short ratio is the global account ratio; Bybit ratio is calculated as buyRatio divided by sellRatio. The secondary ratio field preserves the provider's long/buy share where available. Open-interest units and notional fields remain exchange-defined and should not be compared across contracts without contract metadata.
+- Exchange retention differs. Binance open-interest history exposes only the latest month and its global long/short account ratio the latest 30 days. This endpoint does not yet paginate beyond the bounded recent window or persist series to a database.
+- The frontend plots the three normalized series separately. These are descriptive market-context indicators, not standalone trading signals. Liquidation analytics and futures-aware backtesting (including funding, leverage, margin, and liquidation mechanics) are not implemented.
