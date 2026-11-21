@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -148,7 +148,7 @@ def test_adapter_rejects_negative_retry_configuration():
 async def test_binance_marks_candle_open_before_close_time():
     open_time = 1_700_000_000_000
     close_time = open_time + 60_000
-    now = __import__("datetime").datetime.fromtimestamp(
+    now = datetime.fromtimestamp(
         (close_time - 1) / 1000, tz=UTC
     )
     transport = httpx.MockTransport(
@@ -167,8 +167,6 @@ async def test_binance_marks_candle_open_before_close_time():
 
 @pytest.mark.asyncio
 async def test_binance_marks_candle_closed_after_close_time():
-    from datetime import datetime, timedelta
-
     open_time = 1_700_000_000_000
     close_time = open_time + 60_000
     now = datetime.fromtimestamp(close_time / 1000, tz=UTC) + timedelta(milliseconds=1)
