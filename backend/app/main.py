@@ -26,6 +26,7 @@ from app.market_data.mark_price_routes import router as mark_price_router
 from app.market_data.routes import router as market_data_router
 from app.settings import settings
 
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     yield
