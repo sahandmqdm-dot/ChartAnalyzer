@@ -57,9 +57,9 @@ The process-local market-data cache coalesces concurrent misses for the same key
 
 
 ## Futures intelligence interpretation
-- `GET /api/v1/derivatives/analysis` combines the latest two closed candles from the configured Spot provider with normalized derivatives history from the configured futures venue. The route is authenticated and read-only.
-- The deterministic analyzer describes price/OI combinations (price up + OI up, price down + OI up, and the two falling-OI cases), a simple funding threshold, and account-ratio context. It emits individual explanations, a qualitative confidence label, and explicit caveats.
-- Price return is a Spot proxy because historical futures mark-price candles are not yet wired into the common candle model. Funding thresholds are exploratory constants, not volatility-normalized or backtested parameters.
+- `GET /api/v1/derivatives/analysis` combines the latest two closed futures Mark Price candles with normalized derivatives history from the configured futures venue. The route is authenticated and read-only.
+- The deterministic analyzer describes Mark Price/OI combinations (price up + OI up, price down + OI up, and the two falling-OI cases), a simple funding threshold, and account-ratio context. It emits individual explanations, a qualitative confidence label, and explicit caveats.
+- Price return is calculated from the exchange's futures Mark Price candles. Mark Price is the reference used in margin calculations and can differ from the latest traded price. Funding thresholds are exploratory constants, not volatility-normalized or backtested parameters.
 - “Squeeze conditions” labels are heuristic conjunctions (e.g. rising OI, falling price, and strongly positive funding for long-squeeze conditions). They do not detect liquidations, identify who is trapped, or forecast a squeeze. Long/short account ratios are account counts/ratios, not position-size-weighted exposure.
 - The endpoint does not emit buy/sell orders or exchange actions. Treat output as a market-context annotation and not as a recommendation.
 
