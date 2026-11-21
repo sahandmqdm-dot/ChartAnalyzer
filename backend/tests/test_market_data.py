@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -10,7 +10,7 @@ from app.market_data.quality import validate_candle_series
 
 def make_candle(minute: int, *, open_: str = "10", high: str = "12", low: str = "9", close: str = "11", volume: str = "5"):
     return Candle(
-        timestamp=datetime(2026, 1, 1, 0, minute, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, 0, minute, tzinfo=UTC),
         open=Decimal(open_),
         high=Decimal(high),
         low=Decimal(low),
@@ -21,7 +21,7 @@ def make_candle(minute: int, *, open_: str = "10", high: str = "12", low: str = 
 
 def test_candle_accepts_valid_ohlc():
     candle = make_candle(0)
-    assert candle.high == Decimal("12")
+    assert candle.high == Decimal(12)
     assert candle.timestamp.tzinfo is not None
 
 
