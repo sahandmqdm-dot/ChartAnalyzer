@@ -154,5 +154,5 @@ def test_backtest_reports_trade_quality_metrics():
     assert result.trade_count == 1
     assert result.expectancy == result.trades[0].pnl
     assert result.average_loss == result.trades[0].pnl
-    assert result.profit_factor is None
+    assert result.profit_factor == Decimal(0)
     assert Decimal(0) <= result.exposure_pct <= Decimal(100)
