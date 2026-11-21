@@ -135,7 +135,7 @@ class FakeNamedProvider:
                 close_time=datetime(2026, 1, 1, 0, 59, 59, 999000, tzinfo=UTC),
                 is_closed=True,
                 open=Decimal(10),
-                high=Decimal(12),
+                high=Decimal(30),
                 low=Decimal(9),
                 close=self.close,
                 volume=Decimal(5),
@@ -168,6 +168,6 @@ def test_candle_cache_isolated_by_provider(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response_a.status_code == 200
-    assert response_b.status_code == 200
+    assert response_b.status_code == 200, response_b.text
     assert response_a.json()["candles"][0]["close"] == "11"
     assert response_b.json()["candles"][0]["close"] == "22"
