@@ -88,8 +88,8 @@ def test_fair_value_gap_tracks_partial_mitigation_and_full_fill():
     )
     gap = next(item for item in result.fair_value_gaps if item.start_time == candles[0].timestamp)
     assert gap.direction == "bullish"
-    assert gap.lower == Decimal("102")
-    assert gap.upper == Decimal("104")
+    assert gap.lower == Decimal(102)
+    assert gap.upper == Decimal(104)
     assert gap.status == "filled"
     assert gap.mitigation_time == candles[4].timestamp
     assert gap.invalidation_time is None
@@ -134,8 +134,8 @@ def test_market_structure_detects_and_tracks_bullish_order_block():
     block = next(item for item in result.order_blocks if item.direction == "bullish")
     assert block.start_time == candles[4].timestamp
     assert block.break_time == candles[5].timestamp
-    assert block.lower == Decimal("98")
-    assert block.upper == Decimal("104")
+    assert block.lower == Decimal(98)
+    assert block.upper == Decimal(104)
     assert block.status == "invalidated"
     assert block.mitigation_time == candles[6].timestamp
     assert block.invalidation_time == candles[7].timestamp
