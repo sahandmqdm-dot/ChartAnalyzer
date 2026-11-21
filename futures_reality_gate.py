@@ -8,14 +8,15 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any
 
 
 def _time(value: Any, name: str) -> datetime:
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            value = datetime.fromisoformat(value)
         except ValueError as exc:
             raise ValueError(f"{name} must be an ISO-8601 timestamp") from exc
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
@@ -25,7 +26,7 @@ def _time(value: Any, name: str) -> datetime:
 
 def _number(value: Any, name: str, *, positive: bool = False) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{name} must be finite numeric")
+        raise TypeError(f"{name} must be numeric")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
