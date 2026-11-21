@@ -285,8 +285,6 @@ def market_sweep_fills(
         raise ValueError("book levels must be sorted by executable price")
     if len({price for price, _ in parsed_levels}) != len(parsed_levels):
         raise ValueError("book levels must not contain duplicate prices")
-    best_bid = max(price for price, _ in parsed_levels) if side == "sell" else None
-    best_ask = min(price for price, _ in parsed_levels) if side == "buy" else None
     opposite = book.get("bids" if side == "buy" else "asks")
     if not isinstance(opposite, (list, tuple)) or not opposite:
         raise ValueError("opposite side of the order book is empty")
@@ -296,6 +294,9 @@ def market_sweep_fills(
         raise ValueError("malformed opposite order-book side")
     if len(set(opposite_prices)) != len(opposite_prices):
         raise ValueError("opposite book levels must not contain duplicate prices")
+    expected_opposite = sorted(opposite_prices, reverse=(side == "buy"))
+    if opposite_prices != expected_opposite:
+        raise ValueError("opposite book levels must be sorted by executable price")
     if side == "buy" and max(opposite_prices) >= min(price for price, _ in parsed_levels):
         raise ValueError("crossed order book")
     if side == "sell" and max(price for price, _ in parsed_levels) >= min(opposite_prices):
