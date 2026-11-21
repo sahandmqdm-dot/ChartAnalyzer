@@ -2,7 +2,7 @@
 
 A local, read-only quantitative market research MVP. It includes a FastAPI backend, signed-cookie authentication, provider-neutral Spot OHLCV ingestion, a small React workspace, and automated checks.
 
-> **Scope and safety:** This is a single-admin, single-process research MVP. It is not a live-trading system and is not production-hardened. Do not expose it directly to the public internet or connect trading credentials. Persistent users/sessions, shared rate limits, audit logging, database-backed market history, streaming, strategy backtesting, portfolio/risk controls, and an independent security review are not implemented.
+> **Scope and safety:** This is a single-admin, single-process research MVP. It is not a live-trading system and is not production-hardened. Do not expose it directly to the public internet or connect trading credentials. Persistent users/sessions, shared rate limits, audit logging, database-backed market history, streaming, portfolio-level risk controls, and an independent security review are not implemented.
 
 ## Features
 
@@ -71,6 +71,7 @@ GET /api/v1/auth/me
 POST /api/v1/auth/logout
 GET /api/v1/market-data/candles?symbol=BTCUSDT&interval=1h&limit=300&closed_only=true
 GET /api/v1/market-data/candles/history?symbol=BTCUSDT&interval=1h&start_time=2026-01-01T00:00:00Z&end_time=2026-01-02T00:00:00Z
+GET /api/v1/backtest/sma-crossover?symbol=BTCUSDT&interval=1h&start_time=2026-01-01T00:00:00Z&end_time=2026-02-01T00:00:00Z&fast_period=10&slow_period=30
 ```
 
 Market-data endpoints require a valid session. Public exchange endpoints do not require exchange API keys. The history endpoint requires timezone-aware bounds and enforces a maximum of 10,000 candles. The cache has a 15-second TTL and 512-key bound; it is per process and not durable.
@@ -93,7 +94,7 @@ CI runs backend lint/tests and the frontend production build. Exchange API tests
 - One configured administrator; no user management or role-based access control.
 - Login throttling, session revocation, and caching are in-memory and reset on restart.
 - One worker per API instance; no shared Redis cache or distributed rate limiter.
-- No PostgreSQL history store, WebSocket feed, backtesting engine, portfolio/risk engine, or order execution.
+- No PostgreSQL history store, WebSocket feed, portfolio-level risk engine, or order execution.
 - Exchange interval support differs; Bybit Spot does not provide the 3-day or 8-hour intervals; unsupported intervals return a validation error.
 - No production deployment hardening, observability stack, backup/restore, or external penetration test.
 
@@ -108,4 +109,4 @@ CI runs backend lint/tests and the frontend production build. Exchange API tests
 
 ## SMA crossover backtest
 
-The authenticated `GET /api/v1/backtest/sma-crossover` endpoint runs a deterministic, long-only SMA crossover over historical closed candles. Signals are calculated from completed closes and executed at the following candle open; any open position is liquidated at the final close. Configure `fast_period`, `slow_period`, `initial_equity`, `fee_rate`, and `slippage_rate` as query parameters. This is a research tool, not a live-trading system. The initial implementation reports trade-based drawdown and does not model funding, spread, partial fills, taxes, or exchange-specific fee tiers.
+The authenticated `GET /api/v1/backtest/sma-crossover` endpoint runs a deterministic, long-only SMA crossover over historical closed candles. Signals are calculated from completed closes and executed at the following candle open; any open position is liquidated at the final close. Configure `fast_period`, `slow_period`, `initial_equity`, `fee_rate`, and `slippage_rate` as query parameters. This is a research tool, not a live-trading system. The engine marks open positions to market at each candle close, reports an equity curve, maximum drawdown, profit factor, expectancy, average win/loss, and exposure. It does not model funding, spread, partial fills, taxes, exchange-specific fee tiers, or intrabar price paths. Drawdown is based on candle-close marks, not tick-level liquidation prices.
