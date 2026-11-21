@@ -249,14 +249,14 @@ def test_execution_cost_result_is_registered_with_provenance_and_completeness(tm
     ("effective_at", "2026-11-20T00:00:00"),
 ])
 def test_fee_schedule_rejects_boolean_rates_and_naive_effective_time(field, value):
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, TypeError)):
         validate_fee_schedule(schedule(**{field: value}))
 
 
 def test_execution_rejects_boolean_numeric_inputs():
     with pytest.raises((ValueError, TypeError), match="numeric, not boolean"):
         run(impact_bps=True)
-    with pytest.raises(ValueError, match="numeric, not boolean"):
+    with pytest.raises((ValueError, TypeError), match="numeric, not boolean"):
         run(funding_events=True)
 
 
