@@ -324,3 +324,20 @@ def test_holdout_seal_rejects_caller_supplied_fingerprint_mismatch(tmp_path, mon
                               "dataset_id": "forged-dataset", "config_hash": "actual-config"})
     assert "dataset fingerprint" in exc.value.detail
     assert not (tmp_path / "holdout.json").exists()
+
+
+def test_api_compute_slots_reject_over_capacity_without_blocking():
+    acquired = []
+    try:
+        for _ in range(app._API_MAX_CONCURRENT):
+            assert app._API_SEMAPHORE.acquire(blocking=False)
+            acquired.append(True)
+        assert app._acquire_api_slot() is False
+    finally:
+        for _ in acquired:
+            app._API_SEMAPHORE.release()
+
+
+def test_api_compute_slots_allow_capacity_and_release():
+    assert app._acquire_api_slot() is True
+    app._API_SEMAPHORE.release()
