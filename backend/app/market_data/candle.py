@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -18,7 +18,7 @@ class Candle(BaseModel):
     def timestamp_must_be_timezone_aware(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("timestamp must include timezone information")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     @model_validator(mode="after")
     def validate_ohlc_relationships(self):
