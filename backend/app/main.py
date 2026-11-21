@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.database import close_database
 from app.auth import (
     CSRF_COOKIE,
     SESSION_COOKIE,
@@ -31,6 +32,7 @@ from app.settings import settings
 async def lifespan(_app: FastAPI):
     yield
     await stop_all_collectors()
+    await close_database()
 
 
 app = FastAPI(
