@@ -24,6 +24,7 @@ from app.market_data.futures_routes import router as derivatives_router
 from app.market_data.liquidation_routes import router as liquidation_router
 from app.market_data.liquidation_stream import stop_all_collectors
 from app.market_data.mark_price_routes import router as mark_price_router
+from app.market_data.market_structure_routes import router as market_structure_router
 from app.market_data.routes import router as market_data_router
 from app.settings import settings
 
@@ -50,6 +51,7 @@ app.include_router(futures_risk_router)
 app.include_router(liquidation_router)
 app.include_router(derivatives_history_router)
 app.include_router(mark_price_router)
+app.include_router(market_structure_router)
 app.include_router(derivatives_analysis_router)
 app.include_router(backtest_router)
 
