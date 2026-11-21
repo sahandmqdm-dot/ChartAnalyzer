@@ -619,15 +619,15 @@ __all__ = [
     "iter_session_records",
     "persist_session_manifest",
     "reference_replay_orderbook_session",
-    "replay_orderbook_session",
     "replay_historical_market_orders",
+    "replay_orderbook_session",
     "verify_session_manifest",
 ]
 
 
 def _parse_replay_timestamp(value: Any, field: str) -> datetime:
     if not isinstance(value, str):
-        raise ValueError(f"{field} must be an ISO-8601 string")
+        raise TypeError(f"{field} must be an ISO-8601 string")
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError as exc:
@@ -657,7 +657,7 @@ def replay_historical_market_orders(
     if isinstance(book_depth, bool) or not isinstance(book_depth, int) or not 1 <= book_depth <= 1000:
         raise ValueError("book_depth must be an integer from 1 to 1000")
     if isinstance(max_book_age_ms, bool):
-        raise ValueError("max_book_age_ms must be numeric")
+        raise TypeError("max_book_age_ms must be numeric")
     try:
         age_limit = float(max_book_age_ms)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -711,7 +711,7 @@ def replay_historical_market_orders(
             raise ValueError(f"order {order_id} side must be buy or sell")
         raw_quantity = order.get("quantity")
         if isinstance(raw_quantity, bool):
-            raise ValueError(f"order {order_id} quantity must be numeric")
+            raise TypeError(f"order {order_id} quantity must be numeric")
         try:
             quantity = float(raw_quantity)
         except (TypeError, ValueError, OverflowError) as exc:
@@ -732,7 +732,7 @@ def replay_historical_market_orders(
         raw_funding = order.get("funding_rate")
         if raw_funding is not None:
             if isinstance(raw_funding, bool):
-                raise ValueError(f"order {order_id} funding_rate must be numeric")
+                raise TypeError(f"order {order_id} funding_rate must be numeric")
             try:
                 funding_value = float(raw_funding)
             except (TypeError, ValueError, OverflowError) as exc:
@@ -742,7 +742,7 @@ def replay_historical_market_orders(
         raw_latency = order.get("latency_ms")
         if raw_latency is not None:
             if isinstance(raw_latency, bool):
-                raise ValueError(f"order {order_id} latency_ms must be numeric")
+                raise TypeError(f"order {order_id} latency_ms must be numeric")
             try:
                 latency_value = float(raw_latency)
             except (TypeError, ValueError, OverflowError) as exc:
@@ -751,7 +751,7 @@ def replay_historical_market_orders(
                 raise ValueError(f"order {order_id} latency_ms must be finite and >= 0")
         raw_events = order.get("funding_events", 0)
         if isinstance(raw_events, bool):
-            raise ValueError(f"order {order_id} funding_events must be an integer")
+            raise TypeError(f"order {order_id} funding_events must be an integer")
         try:
             events = float(raw_events)
         except (TypeError, ValueError, OverflowError) as exc:
