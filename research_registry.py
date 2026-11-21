@@ -111,10 +111,15 @@ class ResearchRegistry:
             raise ValueError(f"hypothesis specification exceeds the {MAX_SPEC_BYTES // 1024} KiB limit")
         digest = hashlib.sha256(spec_bytes).hexdigest()
         with self._db() as c:
-            old = c.execute("SELECT specification_hash FROM hypotheses WHERE hypothesis_id=?", (hypothesis_id,)).fetchone()
+            old = c.execute(
+                "SELECT name,family_id,specification_hash FROM hypotheses WHERE hypothesis_id=?",
+                (hypothesis_id,),
+            ).fetchone()
             if old:
-                if old[0] != digest:
-                    raise ValueError("Hypothesis ID is immutable; register a new ID for changed specification")
+                if old["specification_hash"] != digest or old["name"] != name or old["family_id"] != family:
+                    raise ValueError(
+                        "Hypothesis ID is immutable; use a new ID for changed name, family or specification"
+                    )
                 return {"hypothesis_id": hypothesis_id, "specification_hash": digest, "created": False}
             c.execute("INSERT INTO hypotheses VALUES(?,?,?,?,?,?,?)", (hypothesis_id, name, spec, digest, family, time.time(), "REGISTERED"))
         return {"hypothesis_id": hypothesis_id, "specification_hash": digest, "created": True}
@@ -123,21 +128,73 @@ class ResearchRegistry:
                source: str, symbol: str, timeframe: str, metrics: Dict[str, Any],
                p_value: Optional[float], status="COMPLETED", run_id=None,
                sample_start=None, sample_end=None):
-        if p_value is not None and not (0 <= float(p_value) <= 1):
-            raise ValueError("p_value must be in [0,1]")
+        required = {
+            "experiment_id": experiment_id, "hypothesis_id": hypothesis_id,
+            "dataset_id": dataset_id, "config_hash": config_hash,
+            "source": source, "symbol": symbol, "timeframe": timeframe, "status": status,
+        }
+        for field, value in required.items():
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field} must be a non-empty string")
+            if len(value) > 256:
+                raise ValueError(f"{field} exceeds its length limit")
+        if run_id is not None and (not isinstance(run_id, str) or len(run_id) > 128):
+            raise ValueError("run_id must be a string of at most 128 characters")
+        if not isinstance(metrics, dict):
+            raise TypeError("metrics must be an object")
+        normalized_p = None if p_value is None else float(p_value)
+        if normalized_p is not None and (not math.isfinite(normalized_p) or not 0 <= normalized_p <= 1):
+            raise ValueError("p_value must be finite and in [0,1]")
+        normalized_samples = []
+        for field, value in (("sample_start", sample_start), ("sample_end", sample_end)):
+            if value is None:
+                normalized_samples.append(None)
+                continue
+            if isinstance(value, bool):
+                raise ValueError(f"{field} must be finite numeric data")
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"{field} must be finite numeric data") from exc
+            if not math.isfinite(numeric):
+                raise ValueError(f"{field} must be finite numeric data")
+            normalized_samples.append(numeric)
+        sample_start, sample_end = normalized_samples
+        if sample_start is not None and sample_end is not None and sample_end < sample_start:
+            raise ValueError("sample_end must be >= sample_start")
         payload = json.dumps(_safe_json(metrics), sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
         if len(payload.encode("utf-8")) > MAX_METRICS_BYTES:
             raise ValueError(f"experiment metrics exceed the {MAX_METRICS_BYTES // 1024} KiB limit")
         with self._db() as c:
             if not c.execute("SELECT 1 FROM hypotheses WHERE hypothesis_id=?", (hypothesis_id,)).fetchone():
                 raise ValueError("hypothesis must be registered before experiment")
-            cur = c.execute("""INSERT OR IGNORE INTO experiments(
+            existing = c.execute(
+                "SELECT hypothesis_id,dataset_id,config_hash,source,symbol,timeframe,run_id,"
+                "sample_start,sample_end,metrics_json,p_value,status FROM experiments WHERE experiment_id=?",
+                (experiment_id,),
+            ).fetchone()
+            candidate = (
+                hypothesis_id, dataset_id, config_hash, source, symbol, timeframe, run_id,
+                sample_start, sample_end, payload, normalized_p, status,
+            )
+            if existing:
+                stored = tuple(existing[key] for key in (
+                    "hypothesis_id", "dataset_id", "config_hash", "source", "symbol",
+                    "timeframe", "run_id", "sample_start", "sample_end", "metrics_json",
+                    "p_value", "status",
+                ))
+                if stored != candidate:
+                    raise ValueError(
+                        "Experiment ID is immutable; use a new ID for changed dataset, config, metrics or provenance"
+                    )
+                return {"experiment_id": experiment_id, "created": False}
+            c.execute("""INSERT INTO experiments(
               experiment_id,hypothesis_id,dataset_id,config_hash,source,symbol,timeframe,run_id,
               sample_start,sample_end,metrics_json,p_value,adjusted_p_value,status,created_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
               experiment_id,hypothesis_id,dataset_id,config_hash,source,symbol,timeframe,run_id,
-              sample_start,sample_end,payload,p_value,None,status,time.time()))
-        return {"experiment_id": experiment_id, "created": bool(cur.rowcount)}
+              sample_start,sample_end,payload,normalized_p,None,status,time.time()))
+        return {"experiment_id": experiment_id, "created": True}
 
     def apply_fdr(self, family_id="default"):
         """Benjamini-Hochberg across all completed experiments in a family."""
