@@ -85,6 +85,7 @@ POST /api/v1/derivatives/liquidations/start?symbol=BTCUSDT
 GET /api/v1/derivatives/liquidations?symbol=BTCUSDT&limit=100
 GET /api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT&window=24h&bucket_minutes=15&price_bins=24&provider=all&side=all
 GET /api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT&window=24h&price_bins=40&min_strength_pct=35&min_events=2&include_market_context=true
+GET /api/v1/derivatives/mark-price-history?symbol=BTCUSDT&period=1h&limit=100
 DELETE /api/v1/derivatives/liquidations/stop?symbol=BTCUSDT
 GET /api/v1/backtest/sma-crossover?symbol=BTCUSDT&interval=1h&start_time=2026-01-01T00:00:00Z&end_time=2026-02-01T00:00:00Z&fast_period=10&slow_period=30
 ```
