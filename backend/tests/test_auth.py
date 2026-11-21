@@ -1,4 +1,7 @@
-import json\nimport time\n\nfrom fastapi.testclient import TestClient
+import json
+import time
+
+from fastapi.testclient import TestClient
 
 from app.auth import _b64, _session_token, _sign, _verify
 from app.main import app
