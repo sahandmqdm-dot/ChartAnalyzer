@@ -66,6 +66,18 @@ type LiquidationSnapshot = {
     persistence_state?: string; persistence_error?: string | null };
   events: LiquidationEvent[]; retention: string; storage_status?: string;
 };
+type LiquidationHeatmapCell = {
+  time_bucket: string; price_bin: number; price_from: string; price_to: string;
+  events: number; long_events: number; short_events: number;
+  long_notional: string; short_notional: string; total_notional: string;
+};
+type LiquidationHeatmap = {
+  symbol: string; window: string; bucket_minutes: number; price_bins: number;
+  provider_filter: string; side_filter: string; start_time: string; end_time: string;
+  providers: string[]; total_events: number; total_notional: string;
+  price_min: string | null; price_max: string | null; price_step: string | null;
+  truncated: boolean; cells: LiquidationHeatmapCell[]; data_semantics: string;
+};
 
 type BacktestTrade = {
   entry_time: string;
@@ -181,6 +193,13 @@ function App() {
   const [liquidationBusy, setLiquidationBusy] = useState(false);
   const [liquidationError, setLiquidationError] = useState('');
   const [liquidationSnapshot, setLiquidationSnapshot] = useState<LiquidationSnapshot | null>(null);
+  const [heatmapWindow, setHeatmapWindow] = useState('24h');
+  const [heatmapBucket, setHeatmapBucket] = useState('15');
+  const [heatmapProvider, setHeatmapProvider] = useState('all');
+  const [heatmapSide, setHeatmapSide] = useState('all');
+  const [heatmapData, setHeatmapData] = useState<LiquidationHeatmap | null>(null);
+  const [heatmapBusy, setHeatmapBusy] = useState(false);
+  const [heatmapError, setHeatmapError] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -404,6 +423,31 @@ function App() {
     }
   }
 
+  async function loadLiquidationHeatmap() {
+    setHeatmapBusy(true);
+    setHeatmapError('');
+    setHeatmapData(null);
+    try {
+      const query = new URLSearchParams({
+        symbol: symbol.trim(),
+        window: heatmapWindow,
+        bucket_minutes: heatmapBucket,
+        provider: heatmapProvider,
+        side: heatmapSide,
+      });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/heatmap?' + query, {
+        credentials: 'include',
+      });
+      const body = await response.json().catch(() => ({})) as LiquidationHeatmap & { detail?: string };
+      if (!response.ok) throw new Error(body.detail || 'Liquidation heatmap failed (' + response.status + ')');
+      setHeatmapData(body);
+    } catch (cause) {
+      setHeatmapError(cause instanceof Error ? cause.message : 'Could not load liquidation heatmap');
+    } finally {
+      setHeatmapBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!authenticated || !liquidationLive) return undefined;
     let active = true;
@@ -467,6 +511,24 @@ function App() {
       setBusy(false);
     }
   }
+
+  const heatmapColumns = useMemo(() => {
+    if (!heatmapData) return [];
+    return [...new Set(heatmapData.cells.map((cell) => cell.time_bucket))].sort().slice(-96);
+  }, [heatmapData]);
+  const heatmapRows = useMemo(() => {
+    if (!heatmapData) return [];
+    const lookup = new Map(heatmapData.cells.map((cell) => [cell.time_bucket + ':' + cell.price_bin, cell]));
+    const bins = [...new Set(heatmapData.cells.map((cell) => cell.price_bin))].sort((a, b) => b - a);
+    return bins.map((bin) => ({
+      bin,
+      cells: heatmapColumns.map((timestamp) => lookup.get(timestamp + ':' + bin) || null),
+    }));
+  }, [heatmapData, heatmapColumns]);
+  const heatmapMaxNotional = useMemo(() => {
+    if (!heatmapData?.cells.length) return 1;
+    return Math.max(...heatmapData.cells.map((cell) => Number(cell.total_notional)), 1);
+  }, [heatmapData]);
 
   const points = useMemo(() => {
     if (!data?.candles.length) return '';
@@ -656,6 +718,53 @@ function App() {
         {liquidationSnapshot?.events.length ? <div className="table-wrap"><table><thead><tr><th>Time (local)</th><th>Liquidated side</th><th>Qty</th><th>Price</th><th>Notional</th><th>Price basis</th></tr></thead><tbody>
           {liquidationSnapshot.events.map((item) => <tr key={item.event_id}><td>{new Date(item.event_time).toLocaleString()}</td><td><span className={item.liquidation_side === 'long' ? 'open' : 'closed'}>{item.liquidation_side.toUpperCase()}</span></td><td>{item.quantity}</td><td>{item.price}</td><td>{Number(item.notional).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td>{item.price_kind.replace(/_/g, ' ')}</td></tr>)}
         </tbody></table></div> : <div className="empty-state">No liquidation events received yet. Start the stream and wait for exchange updates.</div>}
+      </section>
+
+
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">OBSERVED LIQUIDATION HEATMAP</p><h2>{symbol} price / time distribution</h2></div>
+          <span className="pill">Historical events · Not predictive</span>
+        </div>
+        <div className="controls heatmap-controls">
+          <label>Lookback<select value={heatmapWindow} onChange={(event) => setHeatmapWindow(event.target.value)}>{['1h','6h','24h','3d','7d'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>Time bucket<select value={heatmapBucket} onChange={(event) => setHeatmapBucket(event.target.value)}>{['1','5','15','60'].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label>
+          <label>Exchange<select value={heatmapProvider} onChange={(event) => setHeatmapProvider(event.target.value)}><option value="all">All exchanges</option><option value="binance_usdm_futures">Binance USDⓈ-M</option><option value="bybit_linear_futures">Bybit Linear</option></select></label>
+          <label>Liquidated side<select value={heatmapSide} onChange={(event) => setHeatmapSide(event.target.value)}><option value="all">Long + Short</option><option value="long">Long liquidations</option><option value="short">Short liquidations</option></select></label>
+          <button onClick={() => void loadLiquidationHeatmap()} disabled={heatmapBusy}>{heatmapBusy ? 'Loading…' : 'Load heatmap'}</button>
+        </div>
+        {heatmapError && <p className="error" role="alert">{heatmapError}</p>}
+        {heatmapData && <>
+          <div className="stats-grid">
+            <div><small>Observed events</small><strong>{heatmapData.total_events.toLocaleString()}</strong></div>
+            <div><small>Observed notional</small><strong>{Number(heatmapData.total_notional).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></div>
+            <div><small>Exchanges represented</small><strong>{heatmapData.providers.length}</strong></div>
+          </div>
+          {heatmapData.truncated && <p className="footnote">The query reached its event cap; this view may not include every event in the selected window.</p>}
+          {heatmapRows.length ? <div className="heatmap-scroll">
+            <div className="heatmap-axis"><span>Price band (high → low)</span><span>Recent time buckets (UTC) · up to 96 shown</span></div>
+            <div className="heatmap-grid" style={{ gridTemplateColumns: 'repeat(' + heatmapColumns.length + ', minmax(12px, 1fr))' }}>
+              {heatmapRows.flatMap((row) => {
+                const first = row.cells.find((cell) => cell !== null);
+                const label = first ? Number(first.price_from).toLocaleString(undefined, { maximumFractionDigits: 4 }) + ' – ' + Number(first.price_to).toLocaleString(undefined, { maximumFractionDigits: 4 }) : 'Bin ' + row.bin;
+                return [
+                  <div className="heatmap-price-label" key={'label-' + row.bin}>{label}</div>,
+                  ...row.cells.map((cell, index) => <div
+                    key={row.bin + '-' + heatmapColumns[index]}
+                    className={'heat-cell ' + (cell ? (Number(cell.long_notional) > Number(cell.short_notional) ? 'long' : Number(cell.short_notional) > Number(cell.long_notional) ? 'short' : 'mixed') : 'empty')}
+                    style={{ opacity: cell ? Math.max(0.18, Number(cell.total_notional) / heatmapMaxNotional) : 0.12 }}
+                    title={cell ? new Date(cell.time_bucket).toLocaleString() + ' · ' + label + ' · ' + cell.events + ' events · long ' + cell.long_events + ' / short ' + cell.short_events + ' · notional ' + Number(cell.total_notional).toLocaleString() : 'No observed events'}
+                  />),
+                ];
+              })}
+            </div>
+            <div className="heatmap-time-labels">
+              {heatmapColumns.filter((_, index) => index === 0 || index === heatmapColumns.length - 1 || index % Math.max(1, Math.floor(heatmapColumns.length / 6)) === 0).map((timestamp) => <span key={timestamp}>{new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>)}
+            </div>
+          </div> : <div className="empty-state">No persisted liquidation events match these filters in the selected window.</div>}
+          <p className="footnote">{heatmapData.data_semantics} · {heatmapData.truncated ? 'Result capped' : 'All queried rows included'} · {heatmapData.window} window</p>
+        </>}
+        {!heatmapData && !heatmapBusy && !heatmapError && <div className="empty-state">Load the heatmap to inspect persisted liquidation events by price and time. PostgreSQL storage is required.</div>}
       </section>
 
       <section className="panel">
