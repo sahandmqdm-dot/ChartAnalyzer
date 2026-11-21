@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -147,3 +147,72 @@ class BinanceSpotAdapter:
             return validate_candle_series(candles) if candles else []
         except (ValueError, TypeError, ArithmeticError) as exc:
             raise MarketDataProviderError("Binance returned invalid candle data") from exc
+
+    async def fetch_historical_ohlcv(
+        self,
+        symbol: str,
+        interval: str = "1h",
+        *,
+        start_time: datetime,
+        end_time: datetime,
+        page_limit: int = 1000,
+        max_candles: int = 10_000,
+    ) -> list[Candle]:
+        """Fetch a bounded historical range across sequential Binance Kline pages."""
+        if start_time.tzinfo is None or start_time.utcoffset() is None:
+            raise ValueError("start_time must be timezone-aware")
+        if end_time.tzinfo is None or end_time.utcoffset() is None:
+            raise ValueError("end_time must be timezone-aware")
+        if start_time > end_time:
+            raise ValueError("start_time must be <= end_time")
+        if not 1 <= page_limit <= 1000:
+            raise ValueError("page_limit must be between 1 and 1000")
+        if max_candles < 1:
+            raise ValueError("max_candles must be >= 1")
+
+        range_end = end_time.astimezone(UTC)
+        cursor = start_time.astimezone(UTC)
+        candles: list[Candle] = []
+        last_timestamp: datetime | None = None
+
+        while cursor <= range_end and len(candles) < max_candles:
+            remaining = max_candles - len(candles)
+            page = await self.fetch_ohlcv(
+                symbol,
+                interval,
+                limit=min(page_limit, remaining),
+                start_time=cursor,
+                end_time=range_end,
+            )
+            if not page:
+                break
+
+            new_candles = [
+                candle
+                for candle in page
+                if (last_timestamp is None or candle.timestamp > last_timestamp)
+                and candle.timestamp <= range_end
+            ]
+            if not new_candles:
+                raise MarketDataProviderError(
+                    "Binance historical pagination made no forward progress"
+                )
+
+            candles.extend(new_candles[:remaining])
+            last_timestamp = candles[-1].timestamp
+
+            if len(page) < min(page_limit, remaining) or len(candles) >= max_candles:
+                break
+
+            if last_timestamp is None or candles[-1].close_time is None:
+                raise MarketDataProviderError(
+                    "Binance candle close time is required for historical pagination"
+                )
+            next_cursor = candles[-1].close_time + timedelta(milliseconds=1)
+            if next_cursor <= cursor:
+                raise MarketDataProviderError(
+                    "Binance historical pagination cursor did not advance"
+                )
+            cursor = next_cursor
+
+        return validate_candle_series(candles) if candles else []
