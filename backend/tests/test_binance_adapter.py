@@ -66,3 +66,79 @@ async def test_provider_invalid_candle_data_is_rejected():
     async with httpx.AsyncClient(transport=transport) as client:
         with pytest.raises(MarketDataProviderError, match="invalid candle"):
             await BinanceSpotAdapter(client).fetch_ohlcv("BTCUSDT")
+
+
+@pytest.mark.asyncio
+async def test_provider_retries_rate_limit_and_honors_retry_after():
+    calls = 0
+    delays = []
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "1"})
+        return httpx.Response(200, json=kline())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await BinanceSpotAdapter(client, sleep=sleep).fetch_ohlcv("BTCUSDT")
+
+    assert len(result) == 1
+    assert calls == 2
+    assert delays == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_provider_retries_temporary_server_error_with_backoff():
+    calls = 0
+    delays = []
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            return httpx.Response(503)
+        return httpx.Response(200, json=kline())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await BinanceSpotAdapter(
+            client, retry_base_delay=0.1, sleep=sleep
+        ).fetch_ohlcv("BTCUSDT")
+
+    assert len(result) == 1
+    assert calls == 3
+    assert delays == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_provider_does_not_retry_client_errors():
+    calls = 0
+    delays = []
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(MarketDataProviderError, match="request failed"):
+            await BinanceSpotAdapter(client, sleep=sleep).fetch_ohlcv("BTCUSDT")
+
+    assert calls == 1
+    assert delays == []
+
+
+def test_adapter_rejects_negative_retry_configuration():
+    with pytest.raises(ValueError, match="max_retries"):
+        BinanceSpotAdapter(max_retries=-1)
+    with pytest.raises(ValueError, match="retry_base_delay"):
+        BinanceSpotAdapter(retry_base_delay=-0.1)
