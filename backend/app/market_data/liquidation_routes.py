@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -151,6 +152,7 @@ async def liquidation_clusters(
     side: Literal["all", "long", "short"] = "all",
     min_strength_pct: int = Query(default=35, ge=1, le=100),
     min_events: int = Query(default=2, ge=1, le=1000),
+    include_market_context: bool = False,
     limit: int = Query(default=20000, ge=100, le=50000),
 ):
     """Detect contiguous price bands with elevated observed liquidation notional."""
@@ -239,6 +241,54 @@ async def liquidation_clusters(
         )
     results.sort(key=lambda cluster: Decimal(cluster["total_notional"]), reverse=True)
 
+    market_context = {
+        "status": "not_requested",
+        "note": "Optional futures history context; descriptive only and not causal."
+    }
+    if include_market_context:
+        try:
+            from app.market_data.futures_history import (
+                BinanceUsdmFuturesHistoryAdapter,
+                BybitLinearFuturesHistoryAdapter,
+            )
+
+            configured = get_futures_provider()
+            history_adapter = (
+                BinanceUsdmFuturesHistoryAdapter()
+                if configured.name == "binance_usdm_futures"
+                else BybitLinearFuturesHistoryAdapter()
+            )
+            history = await history_adapter.fetch_history(normalized, "1h", 2)
+            oi_points = history.open_interest
+            oi_change = None
+            if len(oi_points) >= 2 and oi_points[-2].value != 0:
+                oi_change = (
+                    (oi_points[-1].value - oi_points[-2].value)
+                    / oi_points[-2].value
+                    * Decimal(100)
+                )
+            market_context = {
+                "status": "available",
+                "provider": history.provider,
+                "funding_rate": str(history.funding_rate[-1].value)
+                if history.funding_rate else None,
+                "funding_timestamp": history.funding_rate[-1].timestamp.isoformat()
+                if history.funding_rate else None,
+                "open_interest": str(oi_points[-1].value) if oi_points else None,
+                "open_interest_change_pct": str(oi_change) if oi_change is not None else None,
+                "open_interest_timestamp": oi_points[-1].timestamp.isoformat()
+                if oi_points else None,
+                "long_short_ratio": str(history.long_short_ratio[-1].value)
+                if history.long_short_ratio else None,
+                "observed_at": history.observed_at.isoformat(),
+                "note": "Context is sourced from the configured futures venue and is not linked causally to observed liquidation clusters."
+            }
+        except Exception:
+            market_context = {
+                "status": "unavailable",
+                "note": "Futures history could not be retrieved; liquidation clusters remain based on persisted observed events."
+            }
+
     return {
         "symbol": normalized,
         "window": window,
@@ -258,8 +308,5 @@ async def liquidation_clusters(
             "of the strongest single-bin notional and minimum event count. This is a descriptive "
             "heuristic over observed feed events, not estimated open positions or future liquidation levels."
         ),
-        "market_context": {
-            "status": "not_requested",
-            "note": "Compare separately with /api/v1/derivatives/history; no causal inference is made."
-        },
+        "market_context": market_context,
     }
