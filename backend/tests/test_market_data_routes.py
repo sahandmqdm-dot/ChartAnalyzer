@@ -7,6 +7,7 @@ from app.auth import _session_token
 from app.main import app
 from app.market_data.candle import Candle
 from app.market_data.registry import get_market_data_provider
+from app.market_data.routes import _candle_cache
 from app.settings import settings
 
 
@@ -121,3 +122,60 @@ def test_history_endpoint_rejects_unbounded_parameters(monkeypatch):
         },
     )
     assert response.status_code == 422
+
+
+class FakeNamedProvider:
+    def __init__(self, name: str, close: str):
+        self.name = name
+        self.close = Decimal(close)
+
+    async def fetch_ohlcv(self, symbol, interval="1h", **kwargs):
+        return [
+            Candle(
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+                close_time=datetime(2026, 1, 1, 0, 59, 59, 999000, tzinfo=UTC),
+                is_closed=True,
+                open=Decimal("10"),
+                high=Decimal("12"),
+                low=Decimal("9"),
+                close=self.close,
+                volume=Decimal("5"),
+            )
+        ]
+
+    async def fetch_historical_ohlcv(self, *args, **kwargs):
+        raise AssertionError("historical endpoint not expected")
+
+
+def test_candle_cache_isolated_by_provider(monkeypatch):
+    monkeypatch.setattr(settings, "admin_username", "admin")
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    provider_a = FakeNamedProvider("provider-a", "11")
+    provider_b = FakeNamedProvider("provider-b", "22")
+
+    async def clear_cache():
+        await _candle_cache.clear()
+
+    import asyncio
+
+    asyncio.run(clear_cache())
+    try:
+        app.dependency_overrides[get_market_data_provider] = lambda: provider_a
+        response_a = client.get(
+            "/api/v1/market-data/candles",
+            params={"symbol": "BTCUSDT", "interval": "1h"},
+        )
+        app.dependency_overrides[get_market_data_provider] = lambda: provider_b
+        response_b = client.get(
+            "/api/v1/market-data/candles",
+            params={"symbol": "BTCUSDT", "interval": "1h"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+        asyncio.run(clear_cache())
+
+    assert response_a.status_code == 200
+    assert response_b.status_code == 200
+    assert response_a.json()["candles"][0]["close"] == "11"
+    assert response_b.json()["candles"][0]["close"] == "22"
