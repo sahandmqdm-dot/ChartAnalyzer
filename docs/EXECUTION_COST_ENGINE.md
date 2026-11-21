@@ -30,8 +30,7 @@ OHLCV backtest engine. A point-in-time L2 replay adapter is available for sealed
 - Spread cost is measured from reference mid to contemporaneous touch.
   Slippage is adverse execution beyond that touch. Impact is a separately
   supplied assumption because OHLCV alone does not reveal impact.
-- Funding is applied only from explicit funding inputs. Latency is retained as
-  context and is not converted into fabricated slippage.
+- Funding is applied only from explicit funding inputs. The supplied funding rate must be signed from the held-position perspective (positive means a cost, negative a credit); the engine does not infer position-side funding. Latency is retained as context and is not converted into fabricated slippage.
 - Every report carries fee schedule provenance, a schedule hash, fill source,
   assumptions and an assumptions hash. The registry adapter persists this
   breakdown with the experiment and marks incomplete cost models separately
