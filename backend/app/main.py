@@ -15,6 +15,7 @@ from app.auth import (
     revoke_session,
 )
 from app.backtest.routes import router as backtest_router
+from app.market_data.futures_analysis_routes import router as derivatives_analysis_router
 from app.market_data.futures_history_routes import router as derivatives_history_router
 from app.market_data.futures_routes import router as derivatives_router
 from app.market_data.routes import router as market_data_router
@@ -31,6 +32,7 @@ app = FastAPI(
 app.include_router(market_data_router)
 app.include_router(derivatives_router)
 app.include_router(derivatives_history_router)
+app.include_router(derivatives_analysis_router)
 app.include_router(backtest_router)
 
 if settings.environment == "development":
