@@ -301,3 +301,17 @@ def test_cost_completeness_requires_impact_and_applicable_funding_provenance():
         funding_events=1,
     )
     assert complete["cost_breakdown"]["complete"] is True
+
+
+def test_execution_provenance_fields_must_be_typed_and_nonempty():
+    with pytest.raises(TypeError, match="fee schedule source"):
+        validate_fee_schedule(schedule(source=123))
+    with pytest.raises(TypeError, match="impact_source"):
+        run(impact_bps=0, impact_source=123)
+    with pytest.raises(TypeError, match="funding_source"):
+        run(funding_rate=0.001, funding_events=1, funding_source=123)
+    with pytest.raises(TypeError, match="fill_probability_source"):
+        run(order_type="limit", fill_probability=0.5,
+            fill_probability_source=123, fill_probability_calibrated=True)
+    with pytest.raises(TypeError, match="assumptions"):
+        run(assumptions=[])
