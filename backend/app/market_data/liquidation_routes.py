@@ -37,7 +37,7 @@ async def liquidation_snapshot(
     symbol: str = Query(min_length=2, max_length=30),
     limit: int = Query(default=100, ge=1, le=500),
 ):
-    """Return recent events observed since this API process started the collector."""
+    """Return durable recent events when PostgreSQL is available, otherwise the memory snapshot."""
     current_user(request)
     try:
         normalized = str(Symbol(symbol))
