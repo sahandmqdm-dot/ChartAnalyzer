@@ -1,5 +1,5 @@
 import subprocess
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -45,10 +45,15 @@ async def test_postgres_migration_and_liquidation_repository_round_trip():
     )
     factory = get_session_factory()
     assert factory is not None
+    expired_id = uuid4().hex[:24]
+    expired_event = event.model_copy(
+        update={"event_id": expired_id, "event_time": datetime.now(UTC) - timedelta(days=120)}
+    )
 
     try:
         assert await repository.save_liquidation_event(event) is True
         assert await repository.save_liquidation_event(event) is False
+        assert await repository.save_liquidation_event(expired_event) is True
 
         rows = await repository.list_recent_liquidation_events(
             "integration_test", "BTCUSDT", limit=10
@@ -58,9 +63,17 @@ async def test_postgres_migration_and_liquidation_repository_round_trip():
         assert stored.price == Decimal("91000.250000000000000000")
         assert stored.notional == Decimal("11375.031250000000000000")
         assert stored.event_time == event.event_time
+
+        assert await repository.delete_expired_liquidation_events(90) == 1
+        remaining = await repository.list_recent_liquidation_events(
+            "integration_test", "BTCUSDT", limit=10
+        )
+        assert [row.event_id for row in remaining] == [event_id]
     finally:
         async with factory() as session:
             await session.execute(
-                delete(LiquidationEventRecord).where(LiquidationEventRecord.event_id == event_id)
+                delete(LiquidationEventRecord).where(
+                    LiquidationEventRecord.event_id.in_([event_id, expired_id])
+                )
             )
             await session.commit()
