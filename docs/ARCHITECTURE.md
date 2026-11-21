@@ -35,3 +35,8 @@ The candles API uses a process-local asynchronous TTL/LRU cache with a 15-second
 
 ## Remaining market data work
 Bounded historical pagination is implemented in the Binance adapter; persistent storage and live streaming are not implemented yet. Candle completion is exposed as metadata; downstream backtests must explicitly exclude open candles. Retry/backoff is implemented but still needs operational tuning against exchange behavior.
+
+
+### Closed-candle consumption
+
+Both market-data candle endpoints accept `closed_only=true` to exclude the currently forming candle from the response. The default remains `false` for backward compatibility; backtests and any analysis requiring finalized OHLCV data must opt in to `closed_only=true`. The cache stores the unfiltered provider result, and filtering is applied to each response so the flag does not create duplicate cache entries.
