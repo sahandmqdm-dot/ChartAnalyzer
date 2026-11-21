@@ -64,7 +64,9 @@ async def multi_timeframe_confluence(
         analyses = []
         errors = []
         for period, result in zip(_PERIODS, results, strict=True):
-            if isinstance(result, BaseException):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, Exception):
                 errors.append(period)
                 continue
             analyses.append(result)
