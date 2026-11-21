@@ -49,6 +49,10 @@ async def liquidation_snapshot(
         durable_events = await list_recent_liquidation_events(collector.provider, normalized, limit)
         if durable_events is not None:
             snapshot["events"] = [event.model_dump(mode="json") for event in durable_events]
+            snapshot["status"]["event_count"] = len(durable_events)
+            snapshot["status"]["last_event_time"] = (
+                durable_events[0].event_time.isoformat() if durable_events else None
+            )
             snapshot["retention"] = "postgresql_persistent"
             snapshot["storage_status"] = "available"
         else:
