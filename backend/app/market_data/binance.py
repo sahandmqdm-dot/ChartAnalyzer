@@ -35,6 +35,7 @@ class BinanceSpotAdapter:
         max_retries: int = 2,
         retry_base_delay: float = 0.25,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
         if max_retries < 0:
             raise ValueError("max_retries must be >= 0")
@@ -45,6 +46,7 @@ class BinanceSpotAdapter:
         self._max_retries = max_retries
         self._retry_base_delay = retry_base_delay
         self._sleep = sleep
+        self._clock = clock
 
     def _retry_delay(self, response: httpx.Response, attempt: int) -> float:
         retry_after = response.headers.get("Retry-After")
@@ -122,11 +124,18 @@ class BinanceSpotAdapter:
         candles: list[Candle] = []
         try:
             for row in payload:
-                if not isinstance(row, list) or len(row) < 6:
+                if not isinstance(row, list) or len(row) < 7:
                     raise ValueError("invalid kline row")
+                open_time = datetime.fromtimestamp(int(row[0]) / 1000, tz=UTC)
+                close_time = datetime.fromtimestamp(int(row[6]) / 1000, tz=UTC)
+                now = self._clock()
+                if now.tzinfo is None or now.utcoffset() is None:
+                    raise ValueError("adapter clock must return a timezone-aware datetime")
                 candles.append(
                     Candle(
-                        timestamp=datetime.fromtimestamp(int(row[0]) / 1000, tz=UTC),
+                        timestamp=open_time,
+                        close_time=close_time,
+                        is_closed=close_time < now.astimezone(UTC),
                         open=Decimal(str(row[1])),
                         high=Decimal(str(row[2])),
                         low=Decimal(str(row[3])),
