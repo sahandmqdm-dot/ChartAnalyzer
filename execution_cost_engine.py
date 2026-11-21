@@ -217,6 +217,8 @@ def evaluate_execution(
             "fee_schedule_source": schedule["source"],
             "fee_schedule_effective_at": schedule["effective_at"],
             "fee_schedule_hash": schedule["schedule_hash"],
+            "impact_source": impact_source,
+            "funding_source": funding_source,
             "assumptions_hash": _canonical_hash(assumption_data),
         },
         "guardrails": [
