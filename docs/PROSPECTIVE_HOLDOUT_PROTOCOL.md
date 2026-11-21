@@ -53,6 +53,14 @@ The ledger checks that `target_at = data_cutoff_at + horizon_bars × timeframe`.
 
 A forecast is immutable after insertion. Duplicate forecast IDs are rejected.
 
+## Microstructure evidence binding boundary
+
+The prospective ledger now accepts an optional `microstructure_provenance` object on each forecast record. When supplied, it validates and hash-chains the feature schema, Spot market/symbol identity, active-session snapshot mode, manifest/feature/dataset SHA-256 values, decision/availability timestamps, source-event watermark, book validity, reference-replay sequence-gap/overflow counters, collector-side sequence gaps, buffer overflows, exact dropped-diff counts and snapshot failures, and session completion state. The decision timestamp must match the forecast's closed-candle `data_cutoff_at`; no feature watermark may exceed that cutoff.
+
+The prospective API now supports an explicit `use_binance_microstructure=true` registration option. It is accepted only for CCXT Binance Spot BTCUSDT, and that setting is included in the frozen configuration fingerprint. On each forecast tick, the app discovers the newest active Spot session that began no later than the forecast cutoff, creates a verified active-partition copy, requires raw-frame/typed-event count parity, computes features using only local `received_at <= data_cutoff_at`, archives the evidence at `vault/features/<dataset_hash>.json` with exclusive creation, and binds its hashes and quality counters into the forecast ledger. If no eligible active session exists or snapshot verification fails, the tick fails closed and does not record a forecast.
+
+This is now an automated evidence-capture path, but it is **not proof that the PMI model consumed those features**. The current PMI quantile calculation remains unchanged; the microstructure vector is auxiliary observed context only. Do not report it as a model input or demonstrated predictive edge. A cohort intended to measure the incremental predictive value of microstructure still needs a separately trained/frozen feature-aware candidate model and its own pre-registered evaluation.
+
 ## Outcome resolution contract
 
 An outcome is accepted only when:
@@ -103,7 +111,15 @@ This is tamper-evident operational control, not a cryptographic boundary against
 
 ## Current implementation boundary
 
-`prospective_holdout.py` currently provides the tested ledger and evaluation primitive. It is not yet wired to the dashboard, live forecast generation, or an automatic market-data resolver. No future data has been collected and no prospective performance result exists yet. The API/UI integration and provider-specific outcome resolver are follow-on work; the holdout must remain locked until those are complete.
+The repository contains three distinct operational paths that must not be conflated:
+
+1. The local API integrates the Spot PMI forecast, prospective ledger, and provider-specific closed-candle outcome resolver. Its current documented scope is Spot only.
+2. `binance_stream_collector.py` independently captures raw Binance Spot and USD-M Futures WebSocket frames, derived trades/depth/liquidation events, and Order Book synchronization records. It writes append-only JSONL partitions with hash chaining. It does not place orders.
+3. The microstructure feature and replay modules provide research primitives, but this does not by itself prove that their features are consumed by the frozen PMI forecast or scored in the prospective ledger.
+
+The raw Binance stream collector is therefore an independent evidence-capture service, not an automatic input to the current Spot PMI Holdout. Do not claim a combined OHLCV + Tick + Order Book model evaluation until a versioned, tested adapter links the same point-in-time raw-data manifest and derived features to forecast issuance and evaluation.
+
+No future data has been collected and no prospective performance result exists yet. The holdout must remain locked until the complete intended path, provider identity, data completeness checks, and release fingerprint are validated.
 
 ## Acceptance checklist before starting the clock
 
@@ -123,6 +139,23 @@ This is tamper-evident operational control, not a cryptographic boundary against
 ## Local API collector workflow (Windows)
 
 The API integration is available in the local app. The ledger is stored outside the source checkout, by default under `%LOCALAPPDATA%\\ChartAnalyzer\\prospective_holdouts`. Set `CHARTANALYZER_DATA_DIR` before starting the app to choose another persistent data directory.
+
+For the optional Binance Spot microstructure evidence mode, use the exact matching instrument and enable the frozen option at both registration and every tick. The collector and ChartAnalyzer app must share the same `CHARTANALYZER_DATA_DIR` on the same host:
+
+```powershell
+$env:CHARTANALYZER_DATA_DIR = "F:\\ChartAnalyzerData\\binance_raw"
+python -m binance_stream_collector --symbol BTCUSDT
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File ".\\tools\\Register-ProspectiveHoldout.ps1" `
+  -CohortId "btcusdt-spot-1h-h4-pit-202611" -Source ccxt -Exchange binance `
+  -Symbol BTCUSDT -Timeframe 1h -HorizonBars 4 -UseBinanceMicrostructure
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File ".\\tools\\Invoke-ProspectiveHoldoutTick.ps1" `
+  -CohortId "btcusdt-spot-1h-h4-pit-202611" -Source ccxt -Exchange binance `
+  -Symbol BTCUSDT -Timeframe 1h -HorizonBars 4 -UseBinanceMicrostructure
+```
+
+The `-UseBinanceMicrostructure` switch must be present on every tick because it is part of the frozen cohort fingerprint. If the active Binance session is unavailable, began after the candle cutoff, has raw/typed frame-count mismatch, or fails hash verification, no forecast is recorded for that tick. The feature artifact is archived under `vault/features/<dataset_hash>.json` within the shared data directory.
 
 The first integrated collector supports **Spot** data from Ramzinex or CCXT. It uses only fully closed candles. It records the PMI bootstrap quantiles as log-return forecasts and stores the last closed candle's close as the reference price. When the target candle closes, the next tick resolves the outcome from that exact candle. Missing target candles are left unresolved; the resolver never substitutes a nearby candle.
 
