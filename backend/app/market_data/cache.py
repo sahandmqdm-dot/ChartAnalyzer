@@ -3,6 +3,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from time import monotonic
 
+
 class AsyncTTLCache[T]:
     """Process-local async TTL/LRU cache with bounded single-flight loading."""
 
