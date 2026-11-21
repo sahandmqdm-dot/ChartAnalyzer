@@ -9,8 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any
 
 from futures_exchange_rules import validate_futures_rules
 from tiered_margin_engine import validate_margin_tiers
@@ -19,7 +20,7 @@ from tiered_margin_engine import validate_margin_tiers
 def _utc(value: Any, name: str) -> datetime:
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            value = datetime.fromisoformat(value)
         except ValueError as exc:
             raise ValueError(f"{name} must be ISO-8601") from exc
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
