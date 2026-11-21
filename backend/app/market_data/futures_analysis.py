@@ -5,8 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.market_data.mark_price import MarkPriceCandle
 from app.market_data.futures_history import FuturesHistory
+from app.market_data.mark_price import MarkPriceCandle
 
 
 class DerivativesSignal(BaseModel):
