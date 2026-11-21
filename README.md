@@ -1,11 +1,35 @@
 # ChartAnalyzer Next
 
-Security-first quantitative research foundation.
+A local, read-only quantitative market research MVP. It includes a FastAPI backend, signed-cookie authentication, provider-neutral Spot OHLCV ingestion, a small React workspace, and automated checks.
+
+> **Scope and safety:** This is a single-admin, single-process research MVP. It is not a live-trading system and is not production-hardened. Do not expose it directly to the public internet or connect trading credentials. Persistent users/sessions, shared rate limits, audit logging, database-backed market history, streaming, strategy backtesting, portfolio/risk controls, and an independent security review are not implemented.
+
+## Features
+
+- FastAPI API with health and authentication endpoints.
+- HMAC-signed session cookies, CSRF-protected logout, and basic login throttling.
+- Validated OHLCV candle domain model with UTC timestamps, Decimal values, OHLC invariants, and closed/open state.
+- Binance Spot and Bybit Spot public market-data adapters behind one provider protocol.
+- Provider selection using `MARKET_DATA_PROVIDER` (`binance_spot` or `bybit_spot`).
+- Bounded historical pagination, transient-error retries, sanitized provider errors, and `closed_only=true`.
+- Process-local asynchronous TTL/LRU cache with single-flight request coalescing.
+- React + TypeScript workspace for login, selecting symbol/timeframe, viewing a close-price line chart, and inspecting recent OHLCV rows.
+- Docker Compose for a loopback-bound, single-worker API container.
+
+## Requirements
+
+- Python 3.12+
+- Node.js 20+
+- Docker Compose (optional)
 
 ## Local setup
+
 1. Copy `.env.example` to `.env`.
-2. Set a random `APP_SECRET` of 32+ characters and a strong `ADMIN_PASSWORD`.
-3. Install backend dependencies and start the API:
+2. Replace `APP_SECRET` with a cryptographically random value of at least 32 characters.
+3. Replace `ADMIN_PASSWORD` with a strong unique password.
+4. Choose `MARKET_DATA_PROVIDER=binance_spot` or `MARKET_DATA_PROVIDER=bybit_spot`.
+
+Start the API:
 
 ```sh
 cd backend
@@ -16,34 +40,67 @@ pip install -e '.[dev]'
 uvicorn app.main:app --reload
 ```
 
-Health endpoint: http://127.0.0.1:8000/api/v1/health
-Development API docs: http://127.0.0.1:8000/docs
+In a second terminal, start the UI:
 
-## Current implementation
-- FastAPI backend and typed configuration
-- Local bootstrap admin login
-- Signed session cookie, CSRF token, logout invalidation (single-process memory)
-- Basic login attempt throttling
-- OHLCV candle domain schema with UTC normalization and OHLC invariants
-- Candle-series timestamp quality validation
-- Provider-neutral market-data protocol with Binance Spot and Bybit Spot adapters, selected by configuration
-- Authenticated candles API with a bounded process-local cache
-- React + TypeScript + Vite scaffold
-- Docker Compose and CI checks
+```sh
+cd frontend
+npm install
+npm run dev
+```
 
-## Security status
-This is an early development scaffold. Authentication is a single configured admin account. Throttle/session revocation are in-memory and reset on process restart; multi-process deployment is not supported. Do not expose to the internet or use for trading. Database-backed users/sessions, persistent throttling, complete authorization, audit trail, hardened deployment, and security review are still pending.
+Open http://127.0.0.1:5173. The API health endpoint is http://127.0.0.1:8000/api/v1/health. Development API docs are at http://127.0.0.1:8000/docs.
 
+## Docker Compose
 
-## Market data API
+From the repository root, after creating and configuring `.env`:
 
-The authenticated endpoint retrieves public Spot candles from the configured provider (`binance_spot` by default; `bybit_spot` is also supported). Set a strong local admin password and APP_SECRET in .env before starting the backend.
+```sh
+docker compose up --build -d
+docker compose ps
+docker compose logs -f api
+```
+
+The API binds to 127.0.0.1:8000 and runs one worker because sessions, login throttling, and the candle cache are process-local. The React development UI is run separately using the steps above.
+
+## API
 
 ```http
-GET /api/v1/market-data/candles?symbol=BTCUSDT&interval=1h&limit=300
+GET /api/v1/health
+POST /api/v1/auth/login
+GET /api/v1/auth/me
+POST /api/v1/auth/logout
+GET /api/v1/market-data/candles?symbol=BTCUSDT&interval=1h&limit=300&closed_only=true
+GET /api/v1/market-data/candles/history?symbol=BTCUSDT&interval=1h&start_time=2026-01-01T00:00:00Z&end_time=2026-01-02T00:00:00Z
 ```
-Supported intervals are Binance Spot intervals. Requests are validated; provider failures are returned as a sanitized 502. The API endpoint requires a valid login session. Use mock transport tests; tests do not call Binance live.
 
+Market-data endpoints require a valid session. Public exchange endpoints do not require exchange API keys. The history endpoint requires timezone-aware bounds and enforces a maximum of 10,000 candles. The cache has a 15-second TTL and 512-key bound; it is per process and not durable.
 
-### Candle response cache
-The authenticated candles endpoint uses a bounded, process-local LRU/TTL cache (15-second TTL, up to 512 query keys) to reduce repeated provider calls. This cache is an optimization only; it is not durable storage and is not shared across workers.
+## Verification
+
+```sh
+cd backend
+ruff check .
+pytest
+cd ../frontend
+npm install
+npm run build
+```
+
+CI runs backend lint/tests and the frontend production build. Exchange API tests use mocked HTTP responses and do not depend on live exchange availability.
+
+## Known limitations
+
+- One configured administrator; no user management or role-based access control.
+- Login throttling, session revocation, and caching are in-memory and reset on restart.
+- One worker per API instance; no shared Redis cache or distributed rate limiter.
+- No PostgreSQL history store, WebSocket feed, backtesting engine, portfolio/risk engine, or order execution.
+- Exchange interval support differs; Bybit Spot does not provide the 3-day interval.
+- No production deployment hardening, observability stack, backup/restore, or external penetration test.
+
+## Project layout
+
+- `backend/app/auth.py`: local authentication/session handling.
+- `backend/app/market_data/`: candle domain, providers, registry, cache, and API routes.
+- `backend/tests/`: deterministic backend tests.
+- `frontend/src/`: React research workspace.
+- `docs/ARCHITECTURE.md`: boundaries and technical decisions.
