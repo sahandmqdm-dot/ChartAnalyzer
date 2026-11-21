@@ -59,7 +59,7 @@ def _load_verified_session(
 ) -> dict[str, Any]:
     """Build and verify the session manifest without materializing raw events."""
     manifest = build_session_manifest(data_root, market, session_id)
-    if not manifest["session_closed"]:
+    if not manifest["session_closed"] and not allow_incomplete:
         raise PITFeatureError("active_session_not_eligible_for_features")
     if not manifest["session_complete"] and not allow_incomplete:
         raise PITFeatureError("incomplete_capture_not_eligible_for_research_features")
@@ -363,7 +363,14 @@ def build_pit_microstructure_features(
     if decisions != sorted(decisions):
         raise ValueError("decision_times must be in ascending order")
     started = _timestamp(manifest["started_at"], "session_started_at")
-    ended = _timestamp(manifest["ended_at"], "session_ended_at")
+    # Active-session snapshots are built from a verified point-in-time copy of
+    # append-only partitions. Their upper bound is the snapshot creation time,
+    # not a fabricated session end timestamp.
+    ended = (
+        _timestamp(manifest["ended_at"], "session_ended_at")
+        if manifest.get("ended_at")
+        else datetime.now(UTC)
+    )
     if any(value < started or value > ended for value in decisions):
         raise PITFeatureError("decision_time_outside_capture_session")
 
@@ -377,6 +384,10 @@ def build_pit_microstructure_features(
     max_received: datetime | None = None
     record_iterator = iter_session_records(data_root, manifest, session_id)
     pending_record = next(record_iterator, None)
+    collector_sequence_gaps = 0
+    collector_buffer_overflows = 0
+    collector_dropped_events = 0
+    collector_snapshot_failures = 0
 
     for decision in decisions:
         for seconds, state in window_state.items():
@@ -403,6 +414,19 @@ def build_pit_microstructure_features(
                             _add_trade(state, event)
                     max_received = max(max_received, received) if max_received else received
                     processed_counts["trades"] += 1
+            elif stream == "orderbook_state":
+                state_payload = pending_record.get("payload", {})
+                state_name = state_payload.get("state")
+                if state_name == "sequence_gap":
+                    collector_sequence_gaps += 1
+                elif state_name == "buffer_overflow":
+                    collector_buffer_overflows += 1
+                if state_name in {"buffer_overflow", "buffer_discarded_on_close"}:
+                    dropped = state_payload.get("dropped_events", 0)
+                    if isinstance(dropped, int) and not isinstance(dropped, bool) and dropped >= 0:
+                        collector_dropped_events += dropped
+                if state_name in {"snapshot_error", "invalid"}:
+                    collector_snapshot_failures += 1
             elif stream == "liquidations":
                 event = _liquidation_event(pending_record, str(manifest["symbol"]))
                 if event is not None:
@@ -441,6 +465,10 @@ def build_pit_microstructure_features(
             "book": book.metrics(book_depth),
             "book_sequence_gaps": book.sequence_gaps,
             "book_buffer_overflows": book.buffer_overflows,
+            "collector_sequence_gaps": collector_sequence_gaps,
+            "collector_buffer_overflows": collector_buffer_overflows,
+            "collector_dropped_events": collector_dropped_events,
+            "collector_snapshot_failures": collector_snapshot_failures,
             "windows": windows,
             "processed_event_counts": dict(processed_counts),
             "session_complete": manifest["session_complete"],
@@ -460,6 +488,8 @@ def build_pit_microstructure_features(
         "session_id": session_id,
         "manifest_hash": manifest["manifest_hash"],
         "session_complete": manifest["session_complete"],
+        "session_closed": manifest["session_closed"],
+        "session_state": manifest["session_state"],
         "window_seconds": sorted(set(window_seconds)),
         "snapshots": snapshots,
     }

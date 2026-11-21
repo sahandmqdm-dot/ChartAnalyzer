@@ -121,6 +121,12 @@ def _atomic_state_write(path: Path, state: dict[str, Any]) -> None:
         os.replace(temp_name, path)
         if os.name == "posix":
             os.chmod(path, 0o600)
+            # Persist the directory entry as well as the file contents.
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         try:
             os.unlink(temp_name)
@@ -181,10 +187,17 @@ class ProspectiveCollector:
 
     def _write_state(self, *, success: bool, result: dict[str, Any] | None = None, error: str | None = None):
         old = {}
-        try:
-            old = json.loads(self.config["state_file"].read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            pass
+        state_path = self.config["state_file"]
+        if state_path.exists():
+            try:
+                old = json.loads(state_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                # Never overwrite evidence of a damaged state file with a fresh heartbeat.
+                raise RuntimeError("collector state file is unreadable; operator recovery is required") from exc
+            if not isinstance(old, dict):
+                raise RuntimeError("collector state file must contain a JSON object")
+            if old.get("cohort_id") not in (None, self.config["cohort_id"]):
+                raise RuntimeError("collector state belongs to a different cohort; refusing to overwrite it")
         state = {
             "cohort_id": self.config["cohort_id"],
             "updated_at": _utc_now(),

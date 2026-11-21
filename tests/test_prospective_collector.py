@@ -200,3 +200,28 @@ def test_run_forever_stops_after_cohort_is_evaluated(tmp_path):
     collector.run_forever()
     state = json.loads(Path(config["state_file"]).read_text(encoding="utf-8"))
     assert state["last_tick"]["terminal"] is True
+
+
+def test_state_write_fails_closed_on_corrupt_state(tmp_path):
+    config = _config(tmp_path)
+    state_path = Path(config["state_file"])
+    state_path.write_text("{truncated", encoding="utf-8")
+    collector = ProspectiveCollector({
+        **config, "state_file": state_path,
+        "cohort_id": config["cohort_payload"]["cohort_id"],
+    }, session=FakeSession({}, {}))
+    with pytest.raises(RuntimeError, match="unreadable"):
+        collector._write_state(success=True, result={"terminal": False})
+    assert state_path.read_text(encoding="utf-8") == "{truncated"
+
+
+def test_state_write_rejects_different_cohort(tmp_path):
+    config = _config(tmp_path)
+    state_path = Path(config["state_file"])
+    state_path.write_text(json.dumps({"cohort_id": "other-cohort"}), encoding="utf-8")
+    collector = ProspectiveCollector({
+        **config, "state_file": state_path,
+        "cohort_id": config["cohort_payload"]["cohort_id"],
+    }, session=FakeSession({}, {}))
+    with pytest.raises(RuntimeError, match="different cohort"):
+        collector._write_state(success=True, result={"terminal": False})

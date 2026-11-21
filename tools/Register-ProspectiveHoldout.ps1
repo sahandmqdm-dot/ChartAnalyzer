@@ -19,10 +19,14 @@ param(
     [int]$MinForecasts = 200,
     [ValidateRange(5, 10000)]
     [int]$MinSegmentCount = 30,
-    [string]$Exchange = "binance"
+    [string]$Exchange = "binance",
+    [switch]$UseBinanceMicrostructure
 )
 
 $ErrorActionPreference = "Stop"
+if ($UseBinanceMicrostructure -and -not ($Source -eq "ccxt" -and $Exchange -eq "binance" -and $Symbol -eq "BTCUSDT")) {
+    throw "UseBinanceMicrostructure requires -Source ccxt -Exchange binance -Symbol BTCUSDT."
+}
 $Start = [DateTime]::UtcNow.AddMinutes(2)
 $End = $Start.AddDays($CollectionDays)
 $Payload = [ordered]@{
@@ -34,6 +38,7 @@ $Payload = [ordered]@{
     paths = $Paths
     n = $HistoryBars
     exchange = $Exchange
+    use_binance_microstructure = [bool]$UseBinanceMicrostructure
     collection_start = $Start.ToString("o")
     collection_end = $End.ToString("o")
     min_forecasts = $MinForecasts

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 
 import pytest
@@ -143,5 +144,83 @@ def test_async_capture_recovers_after_sequence_gap_with_fresh_snapshot(tmp_path)
         assert capture.book.sequence.last_update_id == 110
         await capture.close()
         store.close()
+
+    asyncio.run(scenario())
+
+
+
+def test_async_capture_counts_buffer_overflow_and_exactly_dropped_diffs(tmp_path):
+    import threading
+
+    async def scenario():
+        store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+        release_snapshot = threading.Event()
+
+        def blocked_snapshot():
+            release_snapshot.wait(timeout=2)
+            return snapshot(100)
+
+        capture = AsyncOrderBookCapture(
+            MarketSpec.spot("BTCUSDT"),
+            store,
+            snapshot_fetch=blocked_snapshot,
+            max_buffered_events=1,
+        )
+        await capture.ingest({"U": 101, "u": 101, "b": [], "a": []})
+        await capture.ingest({"U": 102, "u": 102, "b": [], "a": []})
+        metrics = capture.metrics()
+        assert metrics["buffer_overflow_count"] == 1
+        assert metrics["dropped_buffered_events"] == 2
+        assert metrics["max_buffer_observed"] == 2
+        assert metrics["buffered_events_current"] == 0
+        assert metrics["snapshot_attempt_count"] == 1
+        release_snapshot.set()
+        await capture.close()
+        store.close()
+        state_paths = list((tmp_path / "spot" / "orderbook_state").glob("*.jsonl"))
+        states = [
+            json.loads(line)
+            for state_path in state_paths
+            for line in state_path.read_text(encoding="utf-8").splitlines()
+        ]
+        overflow = next(item for item in states if item["payload"]["state"] == "buffer_overflow")
+        assert overflow["payload"]["dropped_events"] == 2
+        assert overflow["payload"]["cumulative_dropped_events"] == 2
+
+    asyncio.run(scenario())
+
+
+
+def test_async_capture_counts_unapplied_diffs_discarded_on_close(tmp_path):
+    import threading
+
+    async def scenario():
+        store = HashChainJSONLStore(tmp_path, fsync_each_event=False)
+        release_snapshot = threading.Event()
+        capture = AsyncOrderBookCapture(
+            MarketSpec.spot("BTCUSDT"),
+            store,
+            snapshot_fetch=lambda: (release_snapshot.wait(timeout=2), snapshot())[1],
+            max_buffered_events=10,
+        )
+        await capture.ingest({"U": 101, "u": 101, "b": [], "a": []})
+        assert capture.metrics()["buffered_events_current"] == 1
+        release_snapshot.set()
+        await capture.close()
+        metrics = capture.metrics()
+        assert metrics["dropped_on_close_events"] == 1
+        assert metrics["dropped_buffered_events"] == 1
+        store.close()
+        state_paths = list((tmp_path / "spot" / "orderbook_state").glob("*.jsonl"))
+        states = [
+            json.loads(line)
+            for state_path in state_paths
+            for line in state_path.read_text(encoding="utf-8").splitlines()
+        ]
+        discarded = next(
+            item for item in states
+            if item["payload"]["state"] == "buffer_discarded_on_close"
+        )
+        assert discarded["payload"]["dropped_events"] == 1
 
     asyncio.run(scenario())
