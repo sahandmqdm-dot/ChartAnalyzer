@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from collections import defaultdict, deque
 
@@ -14,6 +15,7 @@ CSRF_COOKIE = "ca_csrf"
 _LOGIN_LIMIT = 5
 _LOGIN_WINDOW_SECONDS = 60
 _attempts: dict[str, deque[float]] = defaultdict(deque)
+_revoked_sessions: set[str] = set()
 
 
 def _b64(data: bytes) -> str:
@@ -38,7 +40,7 @@ def _verify(token: str) -> dict | None:
         data = json.loads(_unb64(payload))
         if not isinstance(data, dict) or time.time() - data.get("iat", 0) > settings.session_ttl_seconds:
             return None
-        if data.get("sub") != settings.admin_username:
+        if data.get("sub") != settings.admin_username or data.get("sid") in _revoked_sessions:
             return None
         return data
     except (ValueError, TypeError, json.JSONDecodeError):
@@ -46,7 +48,7 @@ def _verify(token: str) -> dict | None:
 
 
 def _session_token(username: str) -> str:
-    payload = _b64(json.dumps({"sub": username, "iat": int(time.time())}, separators=(",", ":")).encode())
+    payload = _b64(json.dumps({"sub": username, "iat": int(time.time()), "sid": secrets.token_urlsafe(24)}, separators=(",", ":")).encode())
     return _sign(payload)
 
 
@@ -81,3 +83,9 @@ def csrf_check(request: Request) -> None:
     header = request.headers.get("X-CSRF-Token", "")
     if not cookie or not header or not hmac.compare_digest(cookie, header):
         raise HTTPException(status_code=403, detail="CSRF validation failed")
+
+
+def revoke_session(token: str) -> None:
+    session = _verify(token)
+    if session and session.get("sid"):
+        _revoked_sessions.add(session["sid"])
