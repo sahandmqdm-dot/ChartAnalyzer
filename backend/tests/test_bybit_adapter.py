@@ -96,3 +96,9 @@ async def test_bybit_adapter_retries_rate_limit():
     assert len(result) == 1
     assert calls == 2
     assert delays == [0.5]
+
+
+@pytest.mark.asyncio
+async def test_bybit_adapter_rejects_unsupported_eight_hour_interval():
+    with pytest.raises(ValueError, match="8h"):
+        await BybitSpotAdapter().fetch_ohlcv("BTCUSDT", "8h")
