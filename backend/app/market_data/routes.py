@@ -51,7 +51,7 @@ async def candles(
         values = tuple(fetched)
         await _candle_cache.set(cache_key, values)
     return {
-        "provider": "binance_spot",
+        "provider": adapter.name,
         "symbol": normalized_symbol,
         "interval": interval,
         "count": len(values),
