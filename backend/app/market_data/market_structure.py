@@ -172,7 +172,7 @@ def analyze_market_structure(
 
     gaps: list[FairValueGap] = []
     for index in range(2, len(closed)):
-        first, middle, third = closed[index - 2:index + 1]
+        first, _middle, third = closed[index - 2:index + 1]
         if third.low > first.high:
             gaps.append(FairValueGap(
                 direction="bullish",
