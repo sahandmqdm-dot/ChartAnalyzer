@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.auth import current_user
 from app.market_data.futures_routes import get_futures_provider
+from app.market_data.liquidation_repository import list_recent_liquidation_events
 from app.market_data.liquidation_stream import get_collector
 from app.market_data.symbol import Symbol
 
@@ -42,7 +43,19 @@ async def liquidation_snapshot(
         normalized = str(Symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _collector_for(normalized).snapshot(limit)
+    collector = _collector_for(normalized)
+    snapshot = collector.snapshot(limit)
+    try:
+        durable_events = await list_recent_liquidation_events(collector.provider, normalized, limit)
+        if durable_events is not None:
+            snapshot["events"] = [event.model_dump(mode="json") for event in durable_events]
+            snapshot["retention"] = "postgresql_persistent"
+            snapshot["storage_status"] = "available"
+        else:
+            snapshot["storage_status"] = "not_configured"
+    except Exception:  # noqa: BLE001 - serve bounded memory snapshot if storage is down
+        snapshot["storage_status"] = "unavailable_using_memory_fallback"
+    return snapshot
 
 
 @router.delete("/liquidations/stop")
