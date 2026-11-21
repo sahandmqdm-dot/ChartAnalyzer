@@ -8,6 +8,8 @@ class Candle(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     timestamp: datetime
+    close_time: datetime | None = None
+    is_closed: bool = True
     open: Decimal = Field(gt=0)
     high: Decimal = Field(gt=0)
     low: Decimal = Field(gt=0)
@@ -21,8 +23,19 @@ class Candle(BaseModel):
             raise ValueError("timestamp must include timezone information")
         return value.astimezone(UTC)
 
+    @field_validator("close_time")
+    @classmethod
+    def close_time_must_be_timezone_aware(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("close_time must include timezone information")
+        return value.astimezone(UTC)
+
     @model_validator(mode="after")
     def validate_ohlc_relationships(self):
+        if self.close_time is not None and self.close_time < self.timestamp:
+            raise ValueError("close_time must be >= timestamp")
         if self.high < max(self.open, self.close, self.low):
             raise ValueError("high must be >= open, close, and low")
         if self.low > min(self.open, self.close, self.high):
