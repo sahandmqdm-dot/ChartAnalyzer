@@ -88,7 +88,7 @@ def evaluate_futures_reality_gate(
         "exchange", "symbol", "market_type", "contract_type", "quote_asset",
         "margin_asset", "settlement_asset", "contract_multiplier", "tick_size",
         "step_size", "min_qty", "min_notional", "max_qty", "max_leverage",
-        "maintenance_margin_tiers", "source", "observed_at", "effective_at",
+        "maintenance_margin_tiers", "source", "observed_at",
     )
     missing = [key for key in contract_required if contract.get(key) is None]
     if missing:
@@ -98,8 +98,10 @@ def evaluate_futures_reality_gate(
             blockers.append("contract venue does not match requested venue")
         if str(contract["symbol"]).upper() != symbol:
             blockers.append("contract symbol does not match requested instrument")
-        if str(contract["market_type"]).lower() != "futures":
-            blockers.append("contract market_type is not futures")
+        if str(contract["market_type"]).lower() not in {"futures", "linear_perpetual"}:
+            blockers.append("contract market_type is not a supported linear Futures market")
+        if str(contract.get("status", "TRADING")).upper() != "TRADING":
+            blockers.append("contract is not in TRADING status")
         if str(contract["contract_type"]).lower() != "linear":
             blockers.append("only linear contracts are supported by this gate")
         if not str(contract["source"]).strip():
@@ -114,9 +116,13 @@ def evaluate_futures_reality_gate(
         if not isinstance(tiers, list) or not tiers:
             blockers.append("maintenance margin tiers are missing")
         try:
-            effective = _time(contract["effective_at"], "contract.effective_at")
-            if effective > now:
-                blockers.append("contract metadata is not yet effective")
+            effective_value = contract.get("effective_from", contract.get("effective_at"))
+            if effective_value is None:
+                blockers.append("contract effective timestamp is missing")
+            else:
+                effective = _time(effective_value, "contract.effective_from")
+                if effective > now:
+                    blockers.append("contract metadata is not yet effective")
         except ValueError as exc:
             blockers.append(str(exc))
         _age(now, contract["observed_at"], "contract.observed_at",
