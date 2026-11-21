@@ -8,6 +8,8 @@ from app.settings import settings
 
 class FakeCollector:
     def __init__(self):
+        self.provider = "bybit_linear_futures"
+        self.symbol = "BTCUSDT"
         self.started = False
         self.stopped = False
         self.events = []
@@ -77,3 +79,44 @@ def test_stop_liquidation_collector(monkeypatch):
     assert response.status_code == 200
     assert response.json()["status"]["state"] == "stopped"
     assert collector.stopped is True
+
+
+
+def test_snapshot_prefers_durable_database_events(monkeypatch):
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from app.market_data.liquidation_stream import LiquidationEvent
+
+    collector = FakeCollector()
+    monkeypatch.setattr(liquidation_routes, "_collector_for", lambda symbol: collector)
+
+    async def durable_events(provider, symbol, limit):
+        assert provider == "bybit_linear_futures"
+        assert symbol == "BTCUSDT"
+        assert limit == 5
+        return [
+            LiquidationEvent(
+                event_id="c" * 24,
+                provider=provider,
+                symbol=symbol,
+                event_time=datetime(2026, 11, 21, tzinfo=UTC),
+                liquidation_side="long",
+                order_side="BUY",
+                quantity=Decimal("1"),
+                price=Decimal("100"),
+                notional=Decimal("100"),
+                price_kind="bankruptcy",
+            )
+        ]
+
+    monkeypatch.setattr(liquidation_routes, "list_recent_liquidation_events", durable_events)
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations?symbol=BTCUSDT&limit=5"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["storage_status"] == "available"
+    assert body["retention"] == "postgresql_persistent"
+    assert body["events"][0]["event_id"] == "c" * 24
