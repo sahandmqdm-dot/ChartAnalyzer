@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.market_data.futures import (
-    _HttpFuturesAdapter,
     FuturesMarketDataError,
+    _HttpFuturesAdapter,
 )
 from app.market_data.symbol import Symbol
 
@@ -123,7 +123,7 @@ class BinanceUsdmFuturesHistoryAdapter(_HistoryAdapter):
 class BybitLinearFuturesHistoryAdapter(_HistoryAdapter):
     name = "bybit_linear_futures"
 
-    _period_map = {
+    _period_map: ClassVar[dict[str, str]] = {
         "5m": "5min",
         "15m": "15min",
         "30m": "30min",
