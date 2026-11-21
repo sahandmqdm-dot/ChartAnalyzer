@@ -1,6 +1,6 @@
-from fastapi.testclient import TestClient
+import json\nimport time\n\nfrom fastapi.testclient import TestClient
 
-from app.auth import _session_token, _verify
+from app.auth import _b64, _session_token, _sign, _verify
 from app.main import app
 from app.settings import settings
 
@@ -53,3 +53,23 @@ def test_signed_session_validates():
 
 def test_session_rejects_bad_signature():
     assert _verify("not-a-valid-token") is None
+
+
+def test_session_rejects_future_issued_at():
+    payload = _b64(
+        json.dumps(
+            {"sub": "admin", "iat": int(time.time()) + 3600, "sid": "future-session"}
+        ).encode()
+    )
+    assert _verify(_sign(payload)) is None
+
+
+def test_session_rejects_missing_session_id():
+    payload = _b64(
+        json.dumps({"sub": "admin", "iat": int(time.time())}).encode()
+    )
+    assert _verify(_sign(payload)) is None
+
+
+def test_session_rejects_oversized_token():
+    assert _verify("x" * 5000) is None
