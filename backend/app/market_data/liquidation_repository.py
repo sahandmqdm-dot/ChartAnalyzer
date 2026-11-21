@@ -1,4 +1,6 @@
-from sqlalchemy import select
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.database import get_session_factory
@@ -66,3 +68,24 @@ async def list_recent_liquidation_events(
         )
         for row in rows
     ]
+
+
+
+async def delete_expired_liquidation_events(retention_days: int) -> int | None:
+    """Delete persisted events older than the configured retention window.
+
+    None means PostgreSQL persistence is not configured. This is deliberately
+    an explicit maintenance operation; ingestion never deletes historical data.
+    """
+    if retention_days < 1:
+        raise ValueError("retention_days must be at least 1")
+    factory = get_session_factory()
+    if factory is None:
+        return None
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    async with factory() as session:
+        result = await session.execute(
+            delete(LiquidationEventRecord).where(LiquidationEventRecord.event_time < cutoff)
+        )
+        await session.commit()
+        return int(result.rowcount or 0)
