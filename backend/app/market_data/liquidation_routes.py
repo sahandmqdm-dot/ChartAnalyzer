@@ -112,7 +112,7 @@ async def liquidation_heatmap(
     provider_filter = None if provider == "all" else provider
     try:
         stored_events = await list_liquidation_events_since(
-            normalized, start_time, provider_filter, limit + 1
+            normalized, start_time, provider_filter, None if side == "all" else side, limit + 1
         )
     except Exception as exc:  # noqa: BLE001 - do not misrepresent a DB failure as empty data
         raise HTTPException(status_code=503, detail="Liquidation history storage is unavailable") from exc
@@ -121,9 +121,6 @@ async def liquidation_heatmap(
 
     truncated = len(stored_events) > limit
     events = stored_events[:limit]
-    if side != "all":
-        events = [event for event in events if event.liquidation_side == side]
-
     if events:
         min_price = min(event.price for event in events)
         max_price = max(event.price for event in events)
