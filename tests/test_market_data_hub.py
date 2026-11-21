@@ -253,7 +253,7 @@ def test_contract_metadata_public_exchange_info_is_incomplete_without_risk_brack
     assert result["status"] == "CONTRACT_METADATA_INCOMPLETE"
     assert result["registration_ready"] is False
     assert "maintenance_margin_tiers" in result["missing_components"]
-    assert result["contract"]["tick_size"] == "0.1"
+    assert result["contract"]["tick_size"] == "0.10"
     assert result["contract"]["max_qty"] == "1000"
 
 
