@@ -1,5 +1,6 @@
 # ruff: noqa: I001  # Flat-layout first-party import classification differs across Ruff versions.
 import datetime
+import sqlite3
 import numpy as np
 import pandas as pd
 import pytest
@@ -208,3 +209,96 @@ def test_tick_does_not_resolve_outcome_from_invalid_ohlcv(monkeypatch, tmp_path)
     assert status["cohort"]["resolved_count"] == 0
 
 # ruff: noqa: I001  # Flat-layout first-party import classification differs across Ruff versions.
+
+
+
+def test_microstructure_evidence_requires_exact_binance_spot_identity(monkeypatch, tmp_path):
+    clock = {"now": BASE_NOW}
+    setup_app(monkeypatch, tmp_path, clock)
+    payload = registration_payload()
+    payload["use_binance_microstructure"] = True
+    with pytest.raises(app.HTTPException, match="requires CCXT Binance Spot BTCUSDT"):
+        app.api_prospective_holdout_register(payload)
+
+
+def test_tick_archives_and_binds_microstructure_evidence_before_issuance(monkeypatch, tmp_path):
+    import json
+
+    clock = {"now": BASE_NOW}
+    setup_app(monkeypatch, tmp_path, clock)
+    payload = registration_payload()
+    payload.update({
+        "source": "ccxt",
+        "exchange": "binance",
+        "symbol": "BTCUSDT",
+        "use_binance_microstructure": True,
+    })
+    app.api_prospective_holdout_register(payload)
+    clock["now"] = BASE_NOW + datetime.timedelta(minutes=2)
+    last_open = BASE_NOW.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
+    frame = make_frame(last_open)
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: frame)
+
+    def fake_provenance(identity, cutoff):
+        dataset_hash = "c" * 64
+        return {
+            "schema": "chartanalyzer_pit_microstructure_features_v1",
+            "snapshot_mode": "verified_active_partition_copy",
+            "market": "spot",
+            "symbol": "BTCUSDT",
+            "session_id": "active-binance-session",
+            "manifest_hash": "a" * 64,
+            "feature_hash": "b" * 64,
+            "dataset_hash": dataset_hash,
+            "artifact_path": f"vault/features/{dataset_hash}.json",
+            "artifact_sha256": "d" * 64,
+            "decision_time": cutoff.isoformat(),
+            "available_at": cutoff.isoformat(),
+            "source_event_watermark": cutoff.isoformat(),
+            "snapshot_created_at": (cutoff + datetime.timedelta(seconds=1)).isoformat(),
+            "point_in_time_valid": True,
+            "book_valid": True,
+            "session_complete": False,
+            "session_closed": False,
+            "book_sequence_gaps": 0,
+            "book_buffer_overflows": 0,
+            "collector_sequence_gaps": 0,
+            "collector_buffer_overflows": 0,
+            "collector_dropped_events": 0,
+            "collector_snapshot_failures": 0,
+        }
+
+    monkeypatch.setattr(app, "_prospective_binance_microstructure_provenance", fake_provenance)
+    out = app.api_prospective_holdout_tick(payload)
+    assert out["issued_forecast"]["microstructure_evidence"]["dataset_hash"] == "c" * 64
+    ledger = app._prospective_ledger(payload["cohort_id"])
+    with sqlite3.connect(ledger.path) as connection:
+        row = connection.execute("SELECT payload FROM forecasts").fetchone()
+    stored = json.loads(row[0])["microstructure_provenance"]
+    assert stored["feature_hash"] == "b" * 64
+    assert stored["artifact_path"] == f"vault/features/{'c' * 64}.json"
+
+
+def test_microstructure_snapshot_failure_blocks_forecast_recording(monkeypatch, tmp_path):
+    clock = {"now": BASE_NOW}
+    setup_app(monkeypatch, tmp_path, clock)
+    payload = registration_payload()
+    payload.update({
+        "source": "ccxt",
+        "exchange": "binance",
+        "symbol": "BTCUSDT",
+        "use_binance_microstructure": True,
+    })
+    app.api_prospective_holdout_register(payload)
+    clock["now"] = BASE_NOW + datetime.timedelta(minutes=2)
+    last_open = BASE_NOW.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
+    monkeypatch.setattr(app, "load_cached", lambda *args, **kwargs: make_frame(last_open))
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("no active Binance PIT session")
+
+    monkeypatch.setattr(app, "_prospective_binance_microstructure_provenance", unavailable)
+    with pytest.raises(app.HTTPException, match="no active Binance PIT session"):
+        app.api_prospective_holdout_tick(payload)
+    status = app.api_prospective_holdout_status(payload["cohort_id"])
+    assert status["cohort"]["forecast_count"] == 0
