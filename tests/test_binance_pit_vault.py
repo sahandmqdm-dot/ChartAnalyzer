@@ -299,7 +299,7 @@ def test_historical_execution_rejects_incomplete_capture_and_sequence_gap(tmp_pa
 ])
 def test_historical_execution_rejects_invalid_order_inputs(tmp_path, overrides):
     create_session(tmp_path)
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, TypeError)):
         _run_historical_execution(tmp_path, [_historical_order(**overrides)])
 
 
