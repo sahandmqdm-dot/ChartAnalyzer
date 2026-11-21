@@ -22,3 +22,7 @@ Fixed-interval missing timestamps are detectable and returned without auto-filli
 - `GET /api/v1/market-data/candles` requires the local authenticated session and provides sanitized provider errors.
 - The provider is tested using HTTP mock transport; CI must not depend on live exchange availability.
 - Next work: provider-neutral interface, exchange metadata/symbol canonicalization, rate-limit/backoff, caching, incomplete-bar handling, pagination, and live stream.
+
+
+## Short-lived market data cache
+The candles API uses a process-local asynchronous TTL/LRU cache with a 15-second lifetime and a 512-key bound. Cache keys include normalized symbol, interval, limit, and optional time bounds. The cache is intentionally non-durable and per-process; shared Redis caching and request coalescing remain future work.
