@@ -6,9 +6,11 @@ import httpx
 
 from app.market_data.candle import Candle
 from app.market_data.quality import validate_candle_series
+from app.market_data.symbol import Symbol
+from app.market_data.timeframe import Timeframe
 
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
-SUPPORTED_INTERVALS = frozenset({"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"})
+SUPPORTED_INTERVALS = frozenset(item.value for item in Timeframe)
 
 
 class MarketDataProviderError(RuntimeError):
@@ -33,11 +35,11 @@ class BinanceSpotAdapter:
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ) -> list[Candle]:
-        normalized_symbol = symbol.strip().upper()
-        if not normalized_symbol or not normalized_symbol.isalnum():
-            raise ValueError("symbol must contain only letters and numbers")
-        if interval not in SUPPORTED_INTERVALS:
-            raise ValueError("unsupported Binance candle interval")
+        normalized_symbol = str(Symbol(symbol))
+        try:
+            normalized_interval = Timeframe(interval).value
+        except ValueError as exc:
+            raise ValueError("unsupported Binance candle interval") from exc
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
         if start_time and (start_time.tzinfo is None or start_time.utcoffset() is None):
@@ -47,7 +49,7 @@ class BinanceSpotAdapter:
         if start_time and end_time and start_time > end_time:
             raise ValueError("start_time must be <= end_time")
 
-        params: dict[str, Any] = {"symbol": normalized_symbol, "interval": interval, "limit": limit}
+        params: dict[str, Any] = {"symbol": normalized_symbol, "interval": normalized_interval, "limit": limit}
         if start_time:
             params["startTime"] = int(start_time.astimezone(UTC).timestamp() * 1000)
         if end_time:
