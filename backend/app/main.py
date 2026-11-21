@@ -4,7 +4,6 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app.backtest.routes import router as backtest_router
 from app.auth import (
     CSRF_COOKIE,
     SESSION_COOKIE,
@@ -15,6 +14,7 @@ from app.auth import (
     current_user,
     revoke_session,
 )
+from app.backtest.routes import router as backtest_router
 from app.market_data.routes import router as market_data_router
 from app.settings import settings
 
