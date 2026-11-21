@@ -62,11 +62,11 @@ async def test_bybit_futures_adapter_normalizes_linear_ticker():
         result = await BybitLinearFuturesAdapter(client).fetch_overview("ethusdt")
 
     assert result.provider == "bybit_linear_futures"
-    assert result.mark_price == Decimal("3000")
-    assert result.index_price == Decimal("2998")
+    assert result.mark_price == Decimal(3000)
+    assert result.index_price == Decimal(2998)
     assert result.funding_rate == Decimal("-0.0002")
-    assert result.open_interest == Decimal("1500")
-    assert result.open_interest_value == Decimal("4500000")
+    assert result.open_interest == Decimal(1500)
+    assert result.open_interest_value == Decimal(4500000)
 
 
 @pytest.mark.asyncio
