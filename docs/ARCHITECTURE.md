@@ -4,7 +4,7 @@ Bounded contexts: Identity, Market Data, Quant, Backtest, Portfolio/Risk, Resear
 
 Dependency direction: API -> application -> domain. Infrastructure implements interfaces. Domain must not depend on web frameworks, databases, exchange SDKs, or LLM libraries.
 
-MVP target: local research shell, market-data ingestion, charting, and deterministic single-strategy backtesting. Current branch implements the local shell, basic close-price chart, and a deterministic long-only SMA crossover backtest with next-bar-open execution, fee/slippage modeling, and an authenticated API endpoint. Persistent storage and live streaming are not implemented. No live trading.
+MVP target: local research shell, market-data ingestion, charting, and deterministic single-strategy backtesting. Current branch implements the local shell, basic close-price chart, and a deterministic long-only SMA crossover backtest with next-bar-open execution, candle-close mark-to-market equity, drawdown, trade-quality metrics, and an authenticated API endpoint. Persistent storage and live streaming are not implemented. No live trading.
 
 
 ## Implemented Market Data Domain
