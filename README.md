@@ -26,6 +26,8 @@ Development API docs: http://127.0.0.1:8000/docs
 - Basic login attempt throttling
 - OHLCV candle domain schema with UTC normalization and OHLC invariants
 - Candle-series timestamp quality validation
+- Provider-neutral market-data protocol with Binance Spot as the initial registered implementation
+- Authenticated candles API with a bounded process-local cache
 - React + TypeScript + Vite scaffold
 - Docker Compose and CI checks
 
