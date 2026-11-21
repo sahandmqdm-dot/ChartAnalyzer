@@ -7,7 +7,6 @@ from app.auth import _session_token
 from app.main import app
 from app.market_data.candle import Candle
 from app.market_data.registry import get_market_data_provider
-from app.market_data.routes import _candle_cache
 from app.settings import settings
 
 
@@ -135,11 +134,11 @@ class FakeNamedProvider:
                 timestamp=datetime(2026, 1, 1, tzinfo=UTC),
                 close_time=datetime(2026, 1, 1, 0, 59, 59, 999000, tzinfo=UTC),
                 is_closed=True,
-                open=Decimal("10"),
-                high=Decimal("12"),
-                low=Decimal("9"),
+                open=Decimal(10),
+                high=Decimal(12),
+                low=Decimal(9),
                 close=self.close,
-                volume=Decimal("5"),
+                volume=Decimal(5),
             )
         ]
 
@@ -154,26 +153,19 @@ def test_candle_cache_isolated_by_provider(monkeypatch):
     provider_a = FakeNamedProvider("provider-a", "11")
     provider_b = FakeNamedProvider("provider-b", "22")
 
-    async def clear_cache():
-        await _candle_cache.clear()
-
-    import asyncio
-
-    asyncio.run(clear_cache())
     try:
         app.dependency_overrides[get_market_data_provider] = lambda: provider_a
         response_a = client.get(
             "/api/v1/market-data/candles",
-            params={"symbol": "BTCUSDT", "interval": "1h"},
+            params={"symbol": "ETHUSDT", "interval": "1h"},
         )
         app.dependency_overrides[get_market_data_provider] = lambda: provider_b
         response_b = client.get(
             "/api/v1/market-data/candles",
-            params={"symbol": "BTCUSDT", "interval": "1h"},
+            params={"symbol": "ETHUSDT", "interval": "1h"},
         )
     finally:
         app.dependency_overrides.clear()
-        asyncio.run(clear_cache())
 
     assert response_a.status_code == 200
     assert response_b.status_code == 200
