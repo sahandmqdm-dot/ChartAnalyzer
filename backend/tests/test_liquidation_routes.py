@@ -145,8 +145,8 @@ def test_liquidation_heatmap_aggregates_observed_events(monkeypatch):
             liquidation_side="long",
             order_side="SELL",
             quantity=Decimal("0.1"),
-            price=Decimal("100"),
-            notional=Decimal("10"),
+            price=Decimal(100),
+            notional=Decimal(10),
             price_kind="average_execution",
         ),
         LiquidationEvent(
@@ -157,8 +157,8 @@ def test_liquidation_heatmap_aggregates_observed_events(monkeypatch):
             liquidation_side="short",
             order_side="BUY",
             quantity=Decimal("0.2"),
-            price=Decimal("110"),
-            notional=Decimal("22"),
+            price=Decimal(110),
+            notional=Decimal(22),
             price_kind="bankruptcy",
         ),
     ]
