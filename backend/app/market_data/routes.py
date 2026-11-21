@@ -21,6 +21,7 @@ async def candles(
     symbol: str = Query(min_length=2, max_length=30),
     interval: str = Query(default="1h", max_length=5),
     limit: int = Query(default=500, ge=1, le=1000),
+    closed_only: bool = Query(default=False),
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     adapter: MarketDataProvider = Depends(get_market_data_provider),  # noqa: B008
@@ -56,12 +57,13 @@ async def candles(
             raise HTTPException(status_code=502, detail="Market data provider unavailable or invalid") from exc
         values = tuple(fetched)
         await _candle_cache.set(cache_key, values)
+    output_values = tuple(candle for candle in values if candle.is_closed) if closed_only else values
     return {
         "provider": adapter.name,
         "symbol": normalized_symbol,
         "interval": normalized_interval,
-        "count": len(values),
-        "candles": [candle.model_dump(mode="json") for candle in values],
+        "count": len(output_values),
+        "candles": [candle.model_dump(mode="json") for candle in output_values],
     }
 
 
@@ -75,6 +77,7 @@ async def candle_history(
     end_time: datetime = Query(...),  # noqa: B008
     page_limit: int = Query(default=1000, ge=1, le=1000),
     max_candles: int = Query(default=10_000, ge=1, le=10_000),
+    closed_only: bool = Query(default=False),
     adapter: MarketDataProvider = Depends(get_market_data_provider),  # noqa: B008
 ):
     current_user(request)
@@ -122,10 +125,11 @@ async def candle_history(
         values = tuple(fetched)
         await _candle_cache.set(cache_key, values)
 
+    output_values = tuple(candle for candle in values if candle.is_closed) if closed_only else values
     return {
         "provider": adapter.name,
         "symbol": normalized_symbol,
         "interval": normalized_interval,
-        "count": len(values),
-        "candles": [candle.model_dump(mode="json") for candle in values],
+        "count": len(output_values),
+        "candles": [candle.model_dump(mode="json") for candle in output_values],
     }
