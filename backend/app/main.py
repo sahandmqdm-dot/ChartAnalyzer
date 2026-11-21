@@ -5,7 +5,6 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app.database import close_database
 from app.auth import (
     CSRF_COOKIE,
     SESSION_COOKIE,
@@ -17,6 +16,7 @@ from app.auth import (
     revoke_session,
 )
 from app.backtest.routes import router as backtest_router
+from app.database import close_database
 from app.market_data.futures_analysis_routes import router as derivatives_analysis_router
 from app.market_data.futures_history_routes import router as derivatives_history_router
 from app.market_data.futures_risk_routes import router as futures_risk_router
