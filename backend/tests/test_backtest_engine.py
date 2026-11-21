@@ -83,3 +83,33 @@ def test_sma_crossover_reports_no_trade_without_cross():
     assert result.trade_count == 0
     assert result.final_equity == result.initial_equity
     assert result.net_return_pct == Decimal(0)
+
+
+def test_sma_crossover_exits_on_next_bar_after_bearish_cross():
+    candles = make_candles([5, 4, 3, 4, 5, 6, 5, 3, 2])
+    result = run_sma_crossover(
+        candles,
+        fast_period=2,
+        slow_period=3,
+        fee_rate=Decimal(0),
+        slippage_rate=Decimal(0),
+    )
+    assert result.trade_count == 1
+    assert result.trades[0].entry_time == candles[5].timestamp.isoformat()
+    assert result.trades[0].exit_time == candles[8].timestamp.isoformat()
+    assert result.trades[0].exit_price == Decimal(2)
+
+
+def test_sma_crossover_applies_fees_and_slippage():
+    candles = make_candles([5, 4, 3, 4, 5, 6, 8])
+    free_result = run_sma_crossover(
+        candles, fast_period=2, slow_period=3, fee_rate=Decimal(0), slippage_rate=Decimal(0)
+    )
+    costed_result = run_sma_crossover(
+        candles,
+        fast_period=2,
+        slow_period=3,
+        fee_rate=Decimal("0.001"),
+        slippage_rate=Decimal("0.0005"),
+    )
+    assert costed_result.final_equity < free_result.final_equity
