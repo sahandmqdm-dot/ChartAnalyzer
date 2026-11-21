@@ -34,6 +34,7 @@ async def candles(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     cache_key = "|".join(
         (
+            adapter.name,
             normalized_symbol,
             normalized_interval,
             str(limit),
@@ -41,8 +42,7 @@ async def candles(
             end_time.isoformat() if end_time else "",
         )
     )
-    values = await _candle_cache.get(cache_key)
-    if values is None:
+    async def load_candles() -> tuple[Candle, ...]:
         try:
             fetched = await adapter.fetch_ohlcv(
                 normalized_symbol,
@@ -55,8 +55,9 @@ async def candles(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except MarketDataProviderError as exc:
             raise HTTPException(status_code=502, detail="Market data provider unavailable or invalid") from exc
-        values = tuple(fetched)
-        await _candle_cache.set(cache_key, values)
+        return tuple(fetched)
+
+    values = await _candle_cache.get_or_create(cache_key, load_candles)
     output_values = tuple(candle for candle in values if candle.is_closed) if closed_only else values
     return {
         "provider": adapter.name,
@@ -96,6 +97,7 @@ async def candle_history(
     cache_key = "|".join(
         (
             "history",
+            adapter.name,
             normalized_symbol,
             normalized_interval,
             start_time.isoformat(),
@@ -104,8 +106,7 @@ async def candle_history(
             str(max_candles),
         )
     )
-    values = await _candle_cache.get(cache_key)
-    if values is None:
+    async def load_history() -> tuple[Candle, ...]:
         try:
             fetched = await adapter.fetch_historical_ohlcv(
                 normalized_symbol,
@@ -122,8 +123,9 @@ async def candle_history(
                 status_code=502,
                 detail="Market data provider unavailable or invalid",
             ) from exc
-        values = tuple(fetched)
-        await _candle_cache.set(cache_key, values)
+        return tuple(fetched)
+
+    values = await _candle_cache.get_or_create(cache_key, load_history)
 
     output_values = tuple(candle for candle in values if candle.is_closed) if closed_only else values
     return {
