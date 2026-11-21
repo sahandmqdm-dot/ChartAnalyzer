@@ -20,9 +20,9 @@ def test_binance_force_order_normalizes_long_liquidation_and_execution_notional(
     assert event.provider == "binance_usdm_futures"
     assert event.liquidation_side == "long"
     assert event.order_side == "SELL"
-    assert event.quantity == Decimal('0.2')
-    assert event.price == Decimal('60100')
-    assert event.notional == Decimal('12020')
+    assert event.quantity == Decimal("0.2")
+    assert event.price == Decimal("60100")
+    assert event.notional == Decimal("12020")
     assert event.price_kind == "average_execution"
 
 
