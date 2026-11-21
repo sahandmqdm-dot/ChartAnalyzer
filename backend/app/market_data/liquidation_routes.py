@@ -139,3 +139,127 @@ async def liquidation_heatmap(
             "levels or a complete exchange-wide liquidation tape."
         ),
     }
+
+
+@router.get("/liquidations/clusters")
+async def liquidation_clusters(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+    window: Literal["1h", "6h", "24h", "3d", "7d"] = "24h",
+    price_bins: int = Query(default=40, ge=8, le=100),
+    provider: Literal["all", "binance_usdm_futures", "bybit_linear_futures"] = "all",
+    side: Literal["all", "long", "short"] = "all",
+    min_strength_pct: int = Query(default=35, ge=1, le=100),
+    min_events: int = Query(default=2, ge=1, le=1000),
+    limit: int = Query(default=20000, ge=100, le=50000),
+):
+    """Detect contiguous price bands with elevated observed liquidation notional."""
+    current_user(request)
+    try:
+        normalized = str(Symbol(symbol))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    end_time = datetime.now(UTC)
+    start_time = end_time - timedelta(hours=_WINDOW_HOURS[window])
+    provider_filter = None if provider == "all" else provider
+    try:
+        aggregation = await aggregate_liquidation_price_bands(
+            normalized,
+            start_time,
+            price_bins,
+            provider_filter,
+            None if side == "all" else side,
+            limit,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Liquidation history storage is unavailable") from exc
+    if aggregation is None:
+        raise HTTPException(status_code=503, detail="PostgreSQL persistence is not configured")
+
+    bands = aggregation["bands"]
+    max_notional = max(
+        (Decimal(band["total_notional"]) for band in bands),
+        default=Decimal(0),
+    )
+    threshold = max_notional * Decimal(min_strength_pct) / Decimal(100)
+    active = [
+        band
+        for band in bands
+        if Decimal(band["total_notional"]) >= threshold
+        and band["events"] >= min_events
+    ]
+    clusters = []
+    current = []
+    for band in active:
+        if current and band["price_bin"] != current[-1]["price_bin"] + 1:
+            clusters.append(current)
+            current = []
+        current.append(band)
+    if current:
+        clusters.append(current)
+
+    results = []
+    for group in clusters:
+        long_notional = sum(
+            (Decimal(item["long_notional"]) for item in group), Decimal(0)
+        )
+        short_notional = sum(
+            (Decimal(item["short_notional"]) for item in group), Decimal(0)
+        )
+        total_notional = long_notional + short_notional
+        event_count = sum(item["events"] for item in group)
+        results.append(
+            {
+                "price_from": group[0]["price_from"],
+                "price_to": group[-1]["price_to"],
+                "mid_price": str(
+                    (Decimal(group[0]["price_from"]) + Decimal(group[-1]["price_to"]))
+                    / Decimal(2)
+                ),
+                "price_bins": len(group),
+                "events": event_count,
+                "long_events": sum(item["long_events"] for item in group),
+                "short_events": sum(item["short_events"] for item in group),
+                "long_notional": str(long_notional),
+                "short_notional": str(short_notional),
+                "total_notional": str(total_notional),
+                "strength_pct": str(
+                    (total_notional / max_notional * Decimal(100))
+                    if max_notional
+                    else Decimal(0)
+                ),
+                "dominant_side": (
+                    "long" if long_notional > short_notional
+                    else "short" if short_notional > long_notional
+                    else "balanced"
+                ),
+                "last_event_time": max(item["last_event_time"] for item in group),
+            }
+        )
+    results.sort(key=lambda cluster: Decimal(cluster["total_notional"]), reverse=True)
+
+    return {
+        "symbol": normalized,
+        "window": window,
+        "provider_filter": provider,
+        "side_filter": side,
+        "min_strength_pct": min_strength_pct,
+        "min_events_per_band": min_events,
+        "total_events": aggregation["total_events"],
+        "truncated": aggregation["truncated"],
+        "price_min": aggregation["price_min"],
+        "price_max": aggregation["price_max"],
+        "price_step": aggregation["price_step"],
+        "total_notional": aggregation["total_notional"],
+        "clusters": results,
+        "method": (
+            "Contiguous price bins are selected when each bin reaches the configured percentage "
+            "of the strongest single-bin notional and minimum event count. This is a descriptive "
+            "heuristic over observed feed events, not estimated open positions or future liquidation levels."
+        ),
+        "market_context": {
+            "status": "not_requested",
+            "note": "Compare separately with /api/v1/derivatives/history; no causal inference is made."
+        },
+    }
