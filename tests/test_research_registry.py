@@ -53,3 +53,56 @@ def test_registry_refuses_symlink_database_path(tmp_path):
     link.symlink_to(target)
     with pytest.raises(OSError, match="symbolic link"):
         ResearchRegistry(link)
+
+
+
+def test_registry_rejects_reuse_of_hypothesis_id_with_changed_name_or_family(tmp_path):
+    registry = ResearchRegistry(tmp_path / "registry.db")
+    spec = {"entry": {"rsi": 30}}
+    registry.register("H-IMMUTABLE", "RSI rebound", spec, family_id="family-a")
+    with pytest.raises(ValueError, match="immutable"):
+        registry.register("H-IMMUTABLE", "Different name", spec, family_id="family-a")
+    with pytest.raises(ValueError, match="immutable"):
+        registry.register("H-IMMUTABLE", "RSI rebound", spec, family_id="family-b")
+
+
+def test_registry_rejects_experiment_id_reuse_with_changed_evidence(tmp_path):
+    registry = ResearchRegistry(tmp_path / "registry.db")
+    registry.register("H1", "hypothesis", {"entry": "frozen"})
+    base = {
+        "experiment_id": "E-IMMUTABLE", "hypothesis_id": "H1",
+        "dataset_id": "D1", "config_hash": "C1", "source": "binance",
+        "symbol": "BTCUSDT", "timeframe": "1m", "metrics": {"trades": 100},
+        "p_value": 0.02, "run_id": "run-1", "sample_start": 1, "sample_end": 2,
+    }
+    assert registry.record(**base)["created"] is True
+    assert registry.record(**base)["created"] is False
+    changed = {**base, "metrics": {"trades": 101}}
+    with pytest.raises(ValueError, match="Experiment ID is immutable"):
+        registry.record(**changed)
+
+
+@pytest.mark.parametrize("metrics", [[], "not-an-object", None])
+def test_registry_requires_metrics_object(tmp_path, metrics):
+    registry = ResearchRegistry(tmp_path / "registry.db")
+    registry.register("H1", "hypothesis", {"entry": "frozen"})
+    with pytest.raises(TypeError, match="metrics"):
+        registry.record(
+            experiment_id="E1", hypothesis_id="H1", dataset_id="D1",
+            config_hash="C1", source="binance", symbol="BTCUSDT",
+            timeframe="1m", metrics=metrics, p_value=None,
+        )
+
+
+def test_registry_rejects_invalid_sample_ranges_and_nonfinite_pvalues(tmp_path):
+    registry = ResearchRegistry(tmp_path / "registry.db")
+    registry.register("H1", "hypothesis", {"entry": "frozen"})
+    args = {
+        "experiment_id": "E1", "hypothesis_id": "H1", "dataset_id": "D1",
+        "config_hash": "C1", "source": "binance", "symbol": "BTCUSDT",
+        "timeframe": "1m", "metrics": {}, "p_value": None,
+    }
+    with pytest.raises(ValueError, match="sample_end"):
+        registry.record(**args, sample_start=10, sample_end=9)
+    with pytest.raises(ValueError, match="p_value"):
+        registry.record(**{**args, "p_value": float("nan")})
