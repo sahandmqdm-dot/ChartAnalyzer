@@ -325,17 +325,42 @@ class BinanceUSDMPublicAdapter:
             if not isinstance(bracket, Mapping):
                 raise DataValidationError(f"risk bracket {index} must be an object")
             try:
+                floor = _number(bracket["notionalFloor"], f"bracket[{index}].notionalFloor")
                 cap = _number(bracket["notionalCap"], f"bracket[{index}].notionalCap", positive=True)
                 mmr = _number(bracket["maintMarginRatio"], f"bracket[{index}].maintMarginRatio")
                 deduction = _number(bracket["cum"], f"bracket[{index}].cum")
                 leverage = _number(bracket["initialLeverage"], f"bracket[{index}].initialLeverage", positive=True)
             except (KeyError, TypeError, ValueError) as exc:
                 raise DataValidationError(f"risk bracket {index} is incomplete") from exc
+            if floor < 0 or cap <= floor or not 0 <= mmr < 1 or deduction < 0 or leverage < 1:
+                raise DataValidationError(f"risk bracket {index} contains invalid bounds or rates")
             normalized_tiers.append({
-                "notional_cap": cap, "maintenance_margin_rate": mmr,
+                "notional_floor": floor, "notional_cap": cap,
+                "maintenance_margin_rate": mmr,
                 "maintenance_amount": deduction, "max_leverage": leverage,
             })
-        normalized_tiers.sort(key=lambda item: item["notional_cap"])
+        normalized_tiers.sort(key=lambda item: item["notional_floor"])
+        previous_cap = 0.0
+        previous_mmr = 0.0
+        previous_deduction = 0.0
+        previous_leverage = float("inf")
+        for index, tier in enumerate(normalized_tiers):
+            if not math.isclose(tier["notional_floor"], previous_cap, rel_tol=1e-9, abs_tol=1e-8):
+                raise DataValidationError(f"risk bracket {index} has a gap or overlap")
+            if tier["maintenance_margin_rate"] < previous_mmr:
+                raise DataValidationError("risk bracket maintenance rates must be non-decreasing")
+            if tier["max_leverage"] > previous_leverage:
+                raise DataValidationError("risk bracket max leverage must be non-increasing")
+            expected_deduction = previous_deduction + previous_cap * (
+                tier["maintenance_margin_rate"] - previous_mmr
+            )
+            if not math.isclose(tier["maintenance_amount"], expected_deduction,
+                                rel_tol=1e-6, abs_tol=1e-6):
+                raise DataValidationError(f"risk bracket {index} cumulative maintenance deduction is inconsistent")
+            previous_cap = tier["notional_cap"]
+            previous_mmr = tier["maintenance_margin_rate"]
+            previous_deduction = tier["maintenance_amount"]
+            previous_leverage = tier["max_leverage"]
         base.update({
             "max_leverage": max(item["max_leverage"] for item in normalized_tiers),
             "maintenance_margin_tiers": normalized_tiers,
