@@ -123,19 +123,20 @@ class BinanceSpotAdapter:
             raise MarketDataProviderError("Binance returned an unexpected payload")
         candles: list[Candle] = []
         try:
+            now = self._clock()
+            if now.tzinfo is None or now.utcoffset() is None:
+                raise ValueError("adapter clock must return a timezone-aware datetime")
+            now = now.astimezone(UTC)
             for row in payload:
                 if not isinstance(row, list) or len(row) < 7:
                     raise ValueError("invalid kline row")
                 open_time = datetime.fromtimestamp(int(row[0]) / 1000, tz=UTC)
                 close_time = datetime.fromtimestamp(int(row[6]) / 1000, tz=UTC)
-                now = self._clock()
-                if now.tzinfo is None or now.utcoffset() is None:
-                    raise ValueError("adapter clock must return a timezone-aware datetime")
                 candles.append(
                     Candle(
                         timestamp=open_time,
                         close_time=close_time,
-                        is_closed=close_time < now.astimezone(UTC),
+                        is_closed=close_time < now,
                         open=Decimal(str(row[1])),
                         high=Decimal(str(row[2])),
                         low=Decimal(str(row[3])),
