@@ -258,7 +258,6 @@ async def test_historical_pagination_rejects_non_advancing_page():
         transport=httpx.MockTransport(handler)
     ) as client:
         adapter = BinanceSpotAdapter(client)
-        adapter._get_with_retries = adapter._get_with_retries
         with pytest.raises(ValueError, match="page_limit"):
             await adapter.fetch_historical_ohlcv(
                 "BTCUSDT",
@@ -267,3 +266,31 @@ async def test_historical_pagination_rejects_non_advancing_page():
                 end_time=datetime.fromtimestamp(600_000 / 1000, tz=UTC),
                 page_limit=1001,
             )
+
+
+@pytest.mark.asyncio
+async def test_historical_pagination_fails_if_provider_does_not_advance():
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200, json=[kline_row(0), kline_row(60_000)]
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as client:
+        with pytest.raises(
+            MarketDataProviderError, match="no forward progress"
+        ):
+            await BinanceSpotAdapter(client).fetch_historical_ohlcv(
+                "BTCUSDT",
+                "1m",
+                start_time=datetime.fromtimestamp(0, tz=UTC),
+                end_time=datetime.fromtimestamp(600_000 / 1000, tz=UTC),
+                page_limit=2,
+            )
+
+    assert calls == 2
