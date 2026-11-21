@@ -47,10 +47,11 @@ type FuturesAnalysis = {
 
 type MarketStructureSwing = { kind: 'high' | 'low'; timestamp: string; price: string };
 type MarketStructureEvent = { code: string; direction: string; timestamp: string; level: string; explanation: string };
-type FairValueGap = { direction: string; start_time: string; end_time: string; lower: string; upper: string; midpoint: string };
+type FairValueGap = { direction: string; start_time: string; end_time: string; lower: string; upper: string; midpoint: string; status: string; mitigation_time: string | null; invalidation_time: string | null };
+type OrderBlock = { direction: string; start_time: string; break_time: string; lower: string; upper: string; source_swing_level: string; status: string; mitigation_time: string | null; invalidation_time: string | null };
 type MarketStructure = {
   symbol: string; period: string; provider: string; trend: string; latest_close: string | null;
-  swings: MarketStructureSwing[]; events: MarketStructureEvent[]; fair_value_gaps: FairValueGap[];
+  swings: MarketStructureSwing[]; events: MarketStructureEvent[]; fair_value_gaps: FairValueGap[]; order_blocks: OrderBlock[];
   liquidity_levels: string[]; closed_candles: number; pivot_window: number; observed_at: string; caveats: string[];
 };
 
@@ -893,7 +894,7 @@ function App() {
           <label>Pivot confirmation window<select value={pivotWindow} onChange={(event) => setPivotWindow(event.target.value)}>{['2','3','4','5','6','8','10'].map((value) => <option key={value}>{value}</option>)}</select></label>
           <button onClick={() => void loadMarketStructure()} disabled={marketStructureBusy || busy}>{marketStructureBusy ? 'Analyzing…' : 'Analyze structure'}</button>
         </div>
-        <p className="footnote">Detects confirmed swing highs/lows, close-through BOS/CHoCH, wick-rejection liquidity sweeps and three-candle Fair Value Gaps. Pivots are confirmed with a delay of the selected number of right-side candles.</p>
+        <p className="footnote">Detects confirmed swings, BOS/CHoCH, liquidity sweeps, three-candle FVGs with lifecycle states, and opposing-candle Order Blocks tied to confirmed structure breaks. Pivot confirmation is delayed by the selected number of right-side candles.</p>
         {marketStructureError && <p className="error" role="alert">{marketStructureError}</p>}
         {marketStructure && <>
           <div className="stats-grid">
@@ -902,6 +903,7 @@ function App() {
             <div><small>Confirmed swings</small><strong>{marketStructure.swings.length}</strong></div>
             <div><small>Structure events</small><strong>{marketStructure.events.length}</strong></div>
             <div><small>Detected FVG zones</small><strong>{marketStructure.fair_value_gaps.length}</strong></div>
+            <div><small>Order Blocks</small><strong>{marketStructure.order_blocks.length}</strong></div>
             <div><small>Closed candles</small><strong>{marketStructure.closed_candles}</strong></div>
           </div>
           {marketStructure.events.length ? <div className="signal-list">{marketStructure.events.map((event, index) => <article className="signal-item" key={event.code + event.timestamp + index}>
@@ -909,9 +911,17 @@ function App() {
             <p>{event.explanation}</p>
           </article>)}</div> : <div className="empty-state">No new structure break or sweep was confirmed on the latest closed candle.</div>}
           <div className="table-wrap">
-            <table><thead><tr><th>FVG direction</th><th>Lower bound</th><th>Upper bound</th><th>Midpoint</th><th>Detected</th></tr></thead>
+            <table><thead><tr><th>FVG direction</th><th>Lower bound</th><th>Upper bound</th><th>Midpoint</th><th>State</th><th>Mitigated</th><th>Invalidated</th></tr></thead>
               <tbody>{marketStructure.fair_value_gaps.slice(-10).reverse().map((gap, index) => <tr key={gap.start_time + gap.end_time + index}>
-                <td>{gap.direction.toUpperCase()}</td><td>{Number(gap.lower).toLocaleString()}</td><td>{Number(gap.upper).toLocaleString()}</td><td>{Number(gap.midpoint).toLocaleString()}</td><td>{new Date(gap.end_time).toLocaleString()}</td>
+                <td>{gap.direction.toUpperCase()}</td><td>{Number(gap.lower).toLocaleString()}</td><td>{Number(gap.upper).toLocaleString()}</td><td>{Number(gap.midpoint).toLocaleString()}</td><td>{gap.status.replace(/_/g, ' ')}</td><td>{gap.mitigation_time ? new Date(gap.mitigation_time).toLocaleString() : '—'}</td><td>{gap.invalidation_time ? new Date(gap.invalidation_time).toLocaleString() : '—'}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap">
+            <table><thead><tr><th>Order Block</th><th>Lower bound</th><th>Upper bound</th><th>Broken swing</th><th>State</th><th>Created</th><th>Mitigated</th><th>Invalidated</th></tr></thead>
+              <tbody>{marketStructure.order_blocks.slice(-10).reverse().map((block, index) => <tr key={block.start_time + block.direction + index}>
+                <td>{block.direction.toUpperCase()}</td><td>{Number(block.lower).toLocaleString()}</td><td>{Number(block.upper).toLocaleString()}</td><td>{Number(block.source_swing_level).toLocaleString()}</td><td>{block.status}</td><td>{new Date(block.break_time).toLocaleString()}</td><td>{block.mitigation_time ? new Date(block.mitigation_time).toLocaleString() : '—'}</td><td>{block.invalidation_time ? new Date(block.invalidation_time).toLocaleString() : '—'}</td>
               </tr>)}</tbody>
             </table>
           </div>
