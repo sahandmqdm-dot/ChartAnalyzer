@@ -35,6 +35,14 @@ type FuturesHistory = {
   funding_rate: FuturesSeriesPoint[]; open_interest: FuturesSeriesPoint[]; long_short_ratio: FuturesSeriesPoint[];
 };
 
+type FuturesSignal = { code: string; label: string; direction: string; severity: string; explanation: string };
+type FuturesAnalysis = {
+  symbol: string; period: string; price_change_pct: string | null; open_interest_change_pct: string | null;
+  latest_funding_rate: string | null; latest_long_short_ratio: string | null; positioning: string;
+  funding_bias: string; squeeze_risk: string; confidence: string; signals: FuturesSignal[];
+  caveats: string[]; observed_at: string;
+};
+
 type BacktestTrade = {
   entry_time: string;
   exit_time: string;
@@ -131,6 +139,9 @@ function App() {
   const [historyLimit, setHistoryLimit] = useState('100');
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [futuresAnalysis, setFuturesAnalysis] = useState<FuturesAnalysis | null>(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -228,6 +239,25 @@ function App() {
       setFuturesError(cause instanceof Error ? cause.message : 'Could not load futures data');
     } finally {
       setFuturesBusy(false);
+    }
+  }
+
+  async function loadFuturesAnalysis() {
+    setAnalysisBusy(true);
+    setAnalysisError('');
+    setFuturesAnalysis(null);
+    try {
+      const query = new URLSearchParams({ symbol: symbol.trim(), period: historyPeriod });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/analysis?' + query, { credentials: 'include' });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail || 'Futures analysis failed (' + response.status + ')');
+      }
+      setFuturesAnalysis(await response.json() as FuturesAnalysis);
+    } catch (cause) {
+      setAnalysisError(cause instanceof Error ? cause.message : 'Could not analyze futures context');
+    } finally {
+      setAnalysisBusy(false);
     }
   }
 
@@ -394,6 +424,36 @@ function App() {
           <div className="series-card"><small>Long / short account ratio</small><strong>{futuresHistory.long_short_ratio.length ? Number(futuresHistory.long_short_ratio[futuresHistory.long_short_ratio.length - 1].value).toFixed(3) : 'No data'}</strong><svg viewBox="0 0 800 190" role="img" aria-label="Long short ratio history"><polyline points={seriesPolyline(futuresHistory.long_short_ratio)} /></svg><span>{futuresHistory.long_short_ratio.length} points</span></div>
         </div>}
         {futuresHistory && <p className="footnote">Source: {futuresHistory.provider} · {futuresHistory.symbol} · {futuresHistory.period} · Updated {new Date(futuresHistory.observed_at).toLocaleString()}</p>}
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">FUTURES INTELLIGENCE</p><h2>Positioning context analysis</h2></div>
+          <span className="pill">Rule-based · Not a trade signal</span>
+        </div>
+        <div className="controls history-controls">
+          <label>Analysis interval<select value={historyPeriod} onChange={(event) => setHistoryPeriod(event.target.value)}>{['5m','15m','30m','1h','4h','1d'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <button onClick={() => void loadFuturesAnalysis()} disabled={analysisBusy || busy}>{analysisBusy ? 'Analyzing…' : 'Analyze futures context'}</button>
+        </div>
+        <p className="footnote">Combines Spot price movement with futures Open Interest, Funding Rate and account ratio. It is descriptive, not predictive.</p>
+        {analysisError && <p className="error" role="alert">{analysisError}</p>}
+        {futuresAnalysis && <>
+          <div className="stats-grid">
+            <div><small>Price change (Spot proxy)</small><strong>{futuresAnalysis.price_change_pct === null ? '—' : Number(futuresAnalysis.price_change_pct).toFixed(3) + '%'}</strong></div>
+            <div><small>Open interest change</small><strong>{futuresAnalysis.open_interest_change_pct === null ? '—' : Number(futuresAnalysis.open_interest_change_pct).toFixed(3) + '%'}</strong></div>
+            <div><small>Latest funding</small><strong>{futuresAnalysis.latest_funding_rate === null ? '—' : (Number(futuresAnalysis.latest_funding_rate) * 100).toFixed(4) + '%'}</strong></div>
+            <div><small>Long / short ratio</small><strong>{futuresAnalysis.latest_long_short_ratio === null ? '—' : Number(futuresAnalysis.latest_long_short_ratio).toFixed(3)}</strong></div>
+            <div><small>Positioning interpretation</small><strong>{futuresAnalysis.positioning.replaceAll('_', ' ')}</strong></div>
+            <div><small>Squeeze conditions</small><strong>{futuresAnalysis.squeeze_risk.replaceAll('_', ' ')}</strong></div>
+            <div><small>Funding bias</small><strong>{futuresAnalysis.funding_bias.replaceAll('_', ' ')}</strong></div>
+            <div><small>Confidence</small><strong>{futuresAnalysis.confidence}</strong></div>
+          </div>
+          <div className="signal-list">{futuresAnalysis.signals.map((signal) => <article className="signal-item" key={signal.code}>
+            <div><strong>{signal.label}</strong><span>{signal.direction.replaceAll('_', ' ')} · {signal.severity}</span></div>
+            <p>{signal.explanation}</p>
+          </article>)}</div>
+          <div className="caveat-list"><strong>Interpretation limits</strong><ul>{futuresAnalysis.caveats.map((item) => <li key={item}>{item}</li>)}</ul></div>
+          <p className="footnote">Updated {new Date(futuresAnalysis.observed_at).toLocaleString()} · {futuresAnalysis.symbol} · {futuresAnalysis.period}</p>
+        </>}
       </section>
       <section className="panel">
         <div className="section-heading">
