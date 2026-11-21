@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 import httpx
 
