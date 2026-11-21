@@ -7,6 +7,8 @@ from app.market_data.candle import Candle
 class MarketDataProvider(Protocol):
     """Provider-neutral contract for normalized OHLCV data."""
 
+    name: str
+
     async def fetch_ohlcv(
         self,
         symbol: str,
