@@ -228,3 +228,125 @@ async def delete_expired_liquidation_events(retention_days: int) -> int | None:
         )
         await session.commit()
         return int(result.rowcount or 0)
+
+
+async def aggregate_liquidation_price_bands(
+    symbol: str,
+    start_time: datetime,
+    price_bins: int,
+    provider: str | None = None,
+    liquidation_side: str | None = None,
+    limit: int = 20000,
+) -> dict | None:
+    """Aggregate recent observed liquidations into price bands inside PostgreSQL."""
+    if price_bins < 8 or price_bins > 100 or limit < 1:
+        raise ValueError("price_bins must be between 8 and 100 and limit must be positive")
+    factory = get_session_factory()
+    if factory is None:
+        return None
+
+    filters = [
+        LiquidationEventRecord.symbol == symbol,
+        LiquidationEventRecord.event_time >= start_time,
+    ]
+    if provider is not None:
+        filters.append(LiquidationEventRecord.provider == provider)
+    if liquidation_side is not None:
+        filters.append(LiquidationEventRecord.liquidation_side == liquidation_side)
+
+    async with factory() as session:
+        total_count = int(
+            await session.scalar(
+                select(func.count()).select_from(LiquidationEventRecord).where(*filters)
+            )
+            or 0
+        )
+        if total_count == 0:
+            return {
+                "total_events": 0,
+                "truncated": False,
+                "price_min": None,
+                "price_max": None,
+                "price_step": None,
+                "total_notional": "0",
+                "bands": [],
+            }
+
+        bounded = (
+            select(
+                LiquidationEventRecord.event_time.label("event_time"),
+                LiquidationEventRecord.liquidation_side.label("liquidation_side"),
+                LiquidationEventRecord.price.label("price"),
+                LiquidationEventRecord.notional.label("notional"),
+            )
+            .where(*filters)
+            .order_by(
+                LiquidationEventRecord.event_time.desc(),
+                LiquidationEventRecord.event_id.desc(),
+            )
+            .limit(limit)
+            .subquery()
+        )
+        min_price, max_price = (
+            await session.execute(
+                select(func.min(bounded.c.price), func.max(bounded.c.price))
+            )
+        ).one()
+        price_step = (max_price - min_price) / price_bins
+        if price_step <= 0:
+            price_step = max(abs(min_price) * Decimal("0.001"), Decimal("0.01"))
+
+        price_index = cast(
+            func.floor((bounded.c.price - min_price) / price_step), Integer
+        )
+        price_index = func.least(func.greatest(price_index, 0), price_bins - 1)
+        statement = (
+            select(
+                price_index.label("price_bin"),
+                func.count().label("events"),
+                func.sum(case((bounded.c.liquidation_side == "long", 1), else_=0)).label(
+                    "long_events"
+                ),
+                func.sum(case((bounded.c.liquidation_side == "short", 1), else_=0)).label(
+                    "short_events"
+                ),
+                func.sum(
+                    case((bounded.c.liquidation_side == "long", bounded.c.notional), else_=0)
+                ).label("long_notional"),
+                func.sum(
+                    case((bounded.c.liquidation_side == "short", bounded.c.notional), else_=0)
+                ).label("short_notional"),
+                func.sum(bounded.c.notional).label("total_notional"),
+                func.max(bounded.c.event_time).label("last_event_time"),
+            )
+            .group_by(price_index)
+            .order_by(price_index)
+        )
+        grouped = (await session.execute(statement)).mappings().all()
+
+    bands = [
+        {
+            "price_bin": row["price_bin"],
+            "price_from": str(min_price + price_step * row["price_bin"]),
+            "price_to": str(min_price + price_step * (row["price_bin"] + 1)),
+            "events": int(row["events"]),
+            "long_events": int(row["long_events"]),
+            "short_events": int(row["short_events"]),
+            "long_notional": str(row["long_notional"]),
+            "short_notional": str(row["short_notional"]),
+            "total_notional": str(row["total_notional"]),
+            "last_event_time": row["last_event_time"].isoformat(),
+        }
+        for row in grouped
+    ]
+    return {
+        "total_events": min(total_count, limit),
+        "truncated": total_count > limit,
+        "price_min": str(min_price),
+        "price_max": str(max_price),
+        "price_step": str(price_step),
+        "total_notional": str(
+            sum((Decimal(band["total_notional"]) for band in bands), Decimal(0))
+        ),
+        "bands": bands,
+    }
