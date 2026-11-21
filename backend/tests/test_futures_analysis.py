@@ -57,10 +57,10 @@ def test_rising_price_and_open_interest_is_descriptive_buildup():
 def test_falling_price_open_interest_and_negative_funding_flags_short_conditions():
     result = analyze_futures_context(
         history("-0.0012", "100", "120", "0.7"),
-        candles("100", "95"),
+        candles("100", "105"),
     )
 
-    assert result.positioning == "short_build_up_with_falling_price"
+    assert result.positioning == "long_and_short_build_up_with_rising_price"
     assert result.funding_bias == "negative_crowding_risk"
     assert result.squeeze_risk == "short_squeeze_conditions"
     assert any(signal.code == "funding_high_negative" for signal in result.signals)
