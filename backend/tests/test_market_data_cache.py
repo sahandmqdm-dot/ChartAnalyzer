@@ -1,4 +1,4 @@
-import pytest
+import asyncio\n\nimport pytest
 
 from app.market_data.cache import AsyncTTLCache
 
@@ -39,3 +39,71 @@ async def test_cache_clear_removes_all_entries():
     await cache.set("key", "value")
     await cache.clear()
     assert await cache.get("key") is None
+
+
+@pytest.mark.asyncio
+async def test_cache_single_flight_loads_once_for_concurrent_callers():
+    cache = AsyncTTLCache[str]()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def loader():
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return "shared"
+
+    first = asyncio.create_task(cache.get_or_create("key", loader))
+    await started.wait()
+    second = asyncio.create_task(cache.get_or_create("key", loader))
+    await asyncio.sleep(0)
+    release.set()
+
+    assert await asyncio.gather(first, second) == ["shared", "shared"]
+    assert calls == 1
+    assert await cache.get("key") == "shared"
+
+
+@pytest.mark.asyncio
+async def test_cache_loader_failure_is_not_cached_and_can_retry():
+    cache = AsyncTTLCache[str]()
+    calls = 0
+
+    async def failing_loader():
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("temporary failure")
+
+    with pytest.raises(RuntimeError, match="temporary failure"):
+        await cache.get_or_create("key", failing_loader)
+
+    async def succeeding_loader():
+        nonlocal calls
+        calls += 1
+        return "recovered"
+
+    assert await cache.get_or_create("key", succeeding_loader) == "recovered"
+    assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_cancelled_waiter_does_not_cancel_shared_loader():
+    cache = AsyncTTLCache[str]()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def loader():
+        started.set()
+        await release.wait()
+        return "completed"
+
+    waiter = asyncio.create_task(cache.get_or_create("key", loader))
+    await started.wait()
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+
+    release.set()
+    assert await cache.get_or_create("key", loader) == "completed"
