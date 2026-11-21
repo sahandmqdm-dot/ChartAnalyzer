@@ -18,6 +18,8 @@ class MarketDataProviderError(RuntimeError):
 class BinanceSpotAdapter:
     """Public Binance Spot OHLCV adapter; no API key is required for klines."""
 
+    name = "binance_spot"
+
     def __init__(self, client: httpx.AsyncClient | None = None, *, timeout: float = 10.0):
         self._client = client
         self._timeout = timeout
