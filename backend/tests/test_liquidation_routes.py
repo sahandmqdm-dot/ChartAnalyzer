@@ -163,9 +163,10 @@ def test_liquidation_heatmap_aggregates_observed_events(monkeypatch):
         ),
     ]
 
-    async def events_since(symbol, start_time, provider, limit):
+    async def events_since(symbol, start_time, provider, liquidation_side, limit):
         assert symbol == "BTCUSDT"
         assert provider is None
+        assert liquidation_side is None
         assert limit == 20001
         return events
 
