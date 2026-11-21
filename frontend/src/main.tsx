@@ -16,6 +16,36 @@ type Candle = {
 };
 type CandleResponse = { provider: string; symbol: string; interval: string; count: number; candles: Candle[] };
 
+type BacktestTrade = {
+  entry_time: string;
+  exit_time: string;
+  entry_price: string;
+  exit_price: string;
+  pnl: string;
+  return_pct: string;
+};
+type BacktestResponse = {
+  provider: string;
+  symbol: string;
+  interval: string;
+  candles_used: number;
+  result: {
+    initial_equity: string;
+    final_equity: string;
+    net_return_pct: string;
+    max_drawdown_pct: string;
+    trade_count: number;
+    winning_trades: number;
+    losing_trades: number;
+    win_rate_pct: string;
+    trades: BacktestTrade[];
+  };
+};
+
+function localDateTimeValue(date: Date): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 function cookieValue(name: string): string {
   const prefix = `${name}=`;
   const item = document.cookie.split('; ').find((part) => part.startsWith(prefix));
@@ -35,6 +65,13 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<'checking' | 'online' | 'offline'>('checking');
   const [error, setError] = useState('');
+  const [backtestStart, setBacktestStart] = useState(() => localDateTimeValue(new Date(Date.now() - 30 * 86400000)));
+  const [backtestEnd, setBacktestEnd] = useState(() => localDateTimeValue(new Date()));
+  const [fastPeriod, setFastPeriod] = useState('10');
+  const [slowPeriod, setSlowPeriod] = useState('30');
+  const [backtestResult, setBacktestResult] = useState<BacktestResponse | null>(null);
+  const [backtestBusy, setBacktestBusy] = useState(false);
+  const [backtestError, setBacktestError] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -79,6 +116,40 @@ function App() {
   useEffect(() => {
     if (authenticated) void loadCandles();
   }, [authenticated]);
+
+  async function runBacktest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBacktestBusy(true);
+    setBacktestError('');
+    setBacktestResult(null);
+    try {
+      const start = new Date(backtestStart);
+      const end = new Date(backtestEnd);
+      if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end) {
+        throw new Error('Choose a valid date range with start before end.');
+      }
+      const query = new URLSearchParams({
+        symbol: symbol.trim(),
+        interval,
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        fast_period: fastPeriod,
+        slow_period: slowPeriod,
+      });
+      const response = await fetch(`${API_BASE}/api/v1/backtest/sma-crossover?${query}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail || `Backtest failed (${response.status})`);
+      }
+      setBacktestResult(await response.json() as BacktestResponse);
+    } catch (cause) {
+      setBacktestError(cause instanceof Error ? cause.message : 'Could not run backtest');
+    } finally {
+      setBacktestBusy(false);
+    }
+  }
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -183,6 +254,41 @@ function App() {
           <div className="chart-wrap"><svg viewBox="0 0 800 190" role="img" aria-label={`Closing price chart for ${data.symbol}`}><line x1="8" y1="20" x2="792" y2="20" /><line x1="8" y1="95" x2="792" y2="95" /><line x1="8" y1="172" x2="792" y2="172" /><polyline points={points} /></svg></div>
           <div className="table-wrap"><table><thead><tr><th>Time (UTC)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th><th>Status</th></tr></thead><tbody>{[...data.candles].reverse().slice(0, 12).map((candle) => <tr key={candle.timestamp}><td>{new Date(candle.timestamp).toLocaleString('en-US', { timeZone: 'UTC' })}</td><td>{candle.open}</td><td>{candle.high}</td><td>{candle.low}</td><td>{candle.close}</td><td>{candle.volume}</td><td><span className={candle.is_closed ? 'closed' : 'open'}>{candle.is_closed ? 'Closed' : 'Open'}</span></td></tr>)}</tbody></table></div>
         </> : <div className="empty-state">{busy ? 'Loading market data…' : 'No candles loaded. Select a symbol and timeframe to begin.'}</div>}
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">STRATEGY RESEARCH</p><h2>SMA crossover backtest</h2></div>
+          <span className="pill">Long-only · Historical data</span>
+        </div>
+        <form className="controls backtest-controls" onSubmit={runBacktest}>
+          <label>Start (local time)<input type="datetime-local" value={backtestStart} onChange={(event) => setBacktestStart(event.target.value)} required /></label>
+          <label>End (local time)<input type="datetime-local" value={backtestEnd} onChange={(event) => setBacktestEnd(event.target.value)} required /></label>
+          <label>Fast SMA<input type="number" min="1" max="500" value={fastPeriod} onChange={(event) => setFastPeriod(event.target.value)} required /></label>
+          <label>Slow SMA<input type="number" min="2" max="1000" value={slowPeriod} onChange={(event) => setSlowPeriod(event.target.value)} required /></label>
+          <button disabled={backtestBusy || busy}>{backtestBusy ? 'Running…' : 'Run backtest'}</button>
+        </form>
+        <p className="footnote">Signals use closed candles and execute at the next candle open. Default fees and slippage are applied.</p>
+        {backtestError && <p className="error" role="alert">{backtestError}</p>}
+        {backtestResult && <>
+          <div className="stats-grid">
+            <div><small>Final equity</small><strong>{Number(backtestResult.result.final_equity).toFixed(2)}</strong></div>
+            <div><small>Net return</small><strong>{Number(backtestResult.result.net_return_pct).toFixed(2)}%</strong></div>
+            <div><small>Max drawdown*</small><strong>{Number(backtestResult.result.max_drawdown_pct).toFixed(2)}%</strong></div>
+            <div><small>Win rate</small><strong>{Number(backtestResult.result.win_rate_pct).toFixed(1)}%</strong></div>
+            <div><small>Trades</small><strong>{backtestResult.result.trade_count}</strong></div>
+            <div><small>Candles used</small><strong>{backtestResult.candles_used}</strong></div>
+          </div>
+          <div className="table-wrap">
+            <table><thead><tr><th>Entry (UTC)</th><th>Exit (UTC)</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Return</th></tr></thead>
+              <tbody>{backtestResult.result.trades.map((trade, index) => <tr key={`${trade.entry_time}-${index}`}>
+                <td>{new Date(trade.entry_time).toLocaleString('en-US', { timeZone: 'UTC' })}</td>
+                <td>{new Date(trade.exit_time).toLocaleString('en-US', { timeZone: 'UTC' })}</td>
+                <td>{trade.entry_price}</td><td>{trade.exit_price}</td><td>{Number(trade.pnl).toFixed(2)}</td><td>{Number(trade.return_pct).toFixed(2)}%</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <p className="footnote">* Drawdown is calculated from completed trades only; it does not represent intra-trade mark-to-market drawdown. Provider: {backtestResult.provider}.</p>
+        </>}
       </section>
       <footer>ChartAnalyzer Next · Local quantitative research MVP · Market data is informational, not investment advice.</footer>
     </main>
