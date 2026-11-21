@@ -16,5 +16,5 @@ def test_secret_minimum_length():
 
 
 def test_secret_is_accepted():
-    config = Settings(_env_file=None, app_secret="test-secret-that-is-long-enough")
-    assert config.app_secret == "test-secret-that-is-long-enough"
+    value = "test-secret-with-more-than-32-characters"
+    assert Settings(_env_file=None, app_secret=value).app_secret == value
