@@ -116,7 +116,11 @@ class ContractRegistry:
         }
         # Reuse the existing exchange-filter validator, rather than maintaining
         # a second independent implementation of tick/lot/tier constraints.
-        validate_futures_rules(rules)
+        # Validate the mechanical filters independently of trading status so
+        # halted/reduce-only/delisted states remain representable in history.
+        # The original status is preserved in the immutable snapshot and must
+        # be checked by every downstream decision gate.
+        validate_futures_rules({**rules, "status": "TRADING"})
         margin_tiers = validate_margin_tiers(raw["maintenance_margin_tiers"])
         for key in ("contract_multiplier",):
             try:
