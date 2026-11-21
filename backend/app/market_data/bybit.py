@@ -25,7 +25,7 @@ BYBIT_INTERVALS = {
     Timeframe.H2: "120",
     Timeframe.H4: "240",
     Timeframe.H6: "360",
-    Timeframe.H8: "480",
+    Timeframe.H8: None,
     Timeframe.H12: "720",
     Timeframe.D1: "D",
     Timeframe.D3: None,
