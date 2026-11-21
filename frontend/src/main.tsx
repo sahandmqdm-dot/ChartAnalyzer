@@ -43,6 +43,29 @@ type FuturesAnalysis = {
   caveats: string[]; observed_at: string;
 };
 
+
+type RiskTier = {
+  tier: number; notional_floor: string; notional_cap: string | null;
+  maintenance_margin_rate: string; maintenance_margin_deduction: string; max_leverage?: string | null;
+};
+type RiskEstimate = {
+  symbol: string; side: 'long' | 'short'; margin_mode: string; entry_price: string;
+  quantity: string; leverage: string; entry_notional: string; initial_margin_estimate: string;
+  extra_margin: string; liquidation_price_estimate: string; liquidation_tier: number;
+  maintenance_margin_rate: string; maintenance_margin_estimate: string; estimated_close_fee: string;
+  distance_to_liquidation_percent: string; status: string; assumptions: string[];
+};
+type LiquidationEvent = {
+  event_id: string; provider: string; symbol: string; event_time: string;
+  liquidation_side: 'long' | 'short'; order_side: 'BUY' | 'SELL';
+  quantity: string; price: string; notional: string; price_kind: string;
+};
+type LiquidationSnapshot = {
+  status: { provider: string; symbol: string; state: string; event_count: number;
+    last_event_time: string | null; last_error: string | null };
+  events: LiquidationEvent[]; retention: string;
+};
+
 type BacktestTrade = {
   entry_time: string;
   exit_time: string;
@@ -142,6 +165,21 @@ function App() {
   const [futuresAnalysis, setFuturesAnalysis] = useState<FuturesAnalysis | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [analysisError, setAnalysisError] = useState('');
+
+  const [riskSide, setRiskSide] = useState<'long' | 'short'>('long');
+  const [riskEntry, setRiskEntry] = useState('95000');
+  const [riskQuantity, setRiskQuantity] = useState('0.01');
+  const [riskLeverage, setRiskLeverage] = useState('10');
+  const [riskExtraMargin, setRiskExtraMargin] = useState('0');
+  const [riskFee, setRiskFee] = useState('0.0005');
+  const [riskTiersJson, setRiskTiersJson] = useState('');
+  const [riskBusy, setRiskBusy] = useState(false);
+  const [riskError, setRiskError] = useState('');
+  const [riskResult, setRiskResult] = useState<RiskEstimate | null>(null);
+  const [liquidationLive, setLiquidationLive] = useState(false);
+  const [liquidationBusy, setLiquidationBusy] = useState(false);
+  const [liquidationError, setLiquidationError] = useState('');
+  const [liquidationSnapshot, setLiquidationSnapshot] = useState<LiquidationSnapshot | null>(null);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -279,6 +317,113 @@ function App() {
       setHistoryBusy(false);
     }
   }
+
+
+  async function loadRiskTiers() {
+    setRiskBusy(true);
+    setRiskError('');
+    setRiskResult(null);
+    try {
+      const query = new URLSearchParams({ symbol: symbol.trim() });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/risk-tiers?' + query, { credentials: 'include' });
+      const body = await response.json().catch(() => ({})) as { detail?: string; tiers?: RiskTier[] };
+      if (!response.ok) throw new Error(body.detail || 'Risk-tier request failed (' + response.status + ')');
+      if (!body.tiers?.length) throw new Error('The exchange returned no risk tiers.');
+      setRiskTiersJson(JSON.stringify(body.tiers, null, 2));
+    } catch (cause) {
+      setRiskError(cause instanceof Error ? cause.message : 'Could not load risk tiers');
+    } finally {
+      setRiskBusy(false);
+    }
+  }
+
+  async function runRiskEstimate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRiskBusy(true);
+    setRiskError('');
+    setRiskResult(null);
+    try {
+      const tiers = JSON.parse(riskTiersJson) as RiskTier[];
+      if (!Array.isArray(tiers) || !tiers.length) throw new Error('Provide a non-empty verified risk-tier JSON array.');
+      const response = await fetch(API_BASE + '/api/v1/derivatives/risk-estimate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: symbol.trim(), side: riskSide, entry_price: riskEntry, quantity: riskQuantity,
+          leverage: riskLeverage, extra_margin: riskExtraMargin,
+          estimated_close_fee_rate: riskFee, risk_tiers: tiers,
+        }),
+      });
+      const body = await response.json().catch(() => ({})) as RiskEstimate & { detail?: string };
+      if (!response.ok) throw new Error(body.detail || 'Risk estimate failed (' + response.status + ')');
+      setRiskResult(body);
+    } catch (cause) {
+      setRiskError(cause instanceof Error ? cause.message : 'Could not calculate liquidation estimate');
+    } finally {
+      setRiskBusy(false);
+    }
+  }
+
+  async function startLiquidationStream() {
+    setLiquidationBusy(true);
+    setLiquidationError('');
+    try {
+      const query = new URLSearchParams({ symbol: symbol.trim() });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/start?' + query, {
+        method: 'POST', credentials: 'include',
+      });
+      const body = await response.json().catch(() => ({})) as LiquidationSnapshot & { detail?: string };
+      if (!response.ok) throw new Error(body.detail || 'Could not start liquidation stream (' + response.status + ')');
+      setLiquidationSnapshot(body);
+      setLiquidationLive(true);
+    } catch (cause) {
+      setLiquidationError(cause instanceof Error ? cause.message : 'Could not start liquidation stream');
+    } finally {
+      setLiquidationBusy(false);
+    }
+  }
+
+  async function stopLiquidationStream() {
+    setLiquidationBusy(true);
+    setLiquidationError('');
+    try {
+      const query = new URLSearchParams({ symbol: symbol.trim() });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/stop?' + query, {
+        method: 'DELETE', credentials: 'include',
+      });
+      const body = await response.json().catch(() => ({})) as LiquidationSnapshot & { detail?: string };
+      if (!response.ok) throw new Error(body.detail || 'Could not stop liquidation stream (' + response.status + ')');
+      setLiquidationSnapshot(body);
+      setLiquidationLive(false);
+    } catch (cause) {
+      setLiquidationError(cause instanceof Error ? cause.message : 'Could not stop liquidation stream');
+    } finally {
+      setLiquidationBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!authenticated || !liquidationLive) return undefined;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const query = new URLSearchParams({ symbol: symbol.trim(), limit: '100' });
+        const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations?' + query, { credentials: 'include' });
+        const body = await response.json() as LiquidationSnapshot & { detail?: string };
+        if (!response.ok) throw new Error(body.detail || 'Liquidation snapshot failed');
+        if (active) setLiquidationSnapshot(body);
+      } catch (cause) {
+        if (active) setLiquidationError(cause instanceof Error ? cause.message : 'Liquidation stream refresh failed');
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [authenticated, liquidationLive, symbol]);
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -455,6 +600,61 @@ function App() {
           <p className="footnote">Updated {new Date(futuresAnalysis.observed_at).toLocaleString()} · {futuresAnalysis.symbol} · {futuresAnalysis.period}</p>
         </>}
       </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">FUTURES RISK LAB</p><h2>Isolated liquidation estimator</h2></div>
+          <span className="pill">Estimate only · No orders</span>
+        </div>
+        <p className="footnote">Uses the supplied exchange maintenance-margin tiers. Bybit tiers can be loaded automatically; Binance account brackets must be supplied from a verified signed-account response.</p>
+        <form className="controls risk-controls" onSubmit={runRiskEstimate}>
+          <label>Position side<select value={riskSide} onChange={(event) => setRiskSide(event.target.value as 'long' | 'short')}><option value="long">Long</option><option value="short">Short</option></select></label>
+          <label>Entry price<input type="number" min="0" step="any" value={riskEntry} onChange={(event) => setRiskEntry(event.target.value)} required /></label>
+          <label>Quantity (base asset)<input type="number" min="0" step="any" value={riskQuantity} onChange={(event) => setRiskQuantity(event.target.value)} required /></label>
+          <label>Leverage<input type="number" min="0" step="any" value={riskLeverage} onChange={(event) => setRiskLeverage(event.target.value)} required /></label>
+          <label>Extra isolated margin<input type="number" min="0" step="any" value={riskExtraMargin} onChange={(event) => setRiskExtraMargin(event.target.value)} /></label>
+          <label>Estimated close-fee rate<input type="number" min="0" step="any" value={riskFee} onChange={(event) => setRiskFee(event.target.value)} /></label>
+          <button type="button" onClick={() => void loadRiskTiers()} disabled={riskBusy}>{riskBusy ? 'Loading…' : 'Load exchange tiers'}</button>
+          <button disabled={riskBusy}>{riskBusy ? 'Calculating…' : 'Estimate liquidation'}</button>
+        </form>
+        <label className="json-field">Verified risk tiers (JSON)
+          <textarea value={riskTiersJson} onChange={(event) => setRiskTiersJson(event.target.value)} rows={7} spellCheck={false} placeholder={'Paste the exchange risk tier array here, or load it automatically when supported.'} />
+        </label>
+        {riskError && <p className="error" role="alert">{riskError}</p>}
+        {riskResult && <>
+          <div className="stats-grid">
+            <div><small>Estimated liquidation price</small><strong>{Number(riskResult.liquidation_price_estimate).toLocaleString(undefined, { maximumFractionDigits: 8 })}</strong></div>
+            <div><small>Distance to liquidation</small><strong>{Number(riskResult.distance_to_liquidation_percent).toFixed(3)}%</strong></div>
+            <div><small>Initial margin estimate</small><strong>{Number(riskResult.initial_margin_estimate).toLocaleString(undefined, { maximumFractionDigits: 4 })}</strong></div>
+            <div><small>Maintenance margin estimate</small><strong>{Number(riskResult.maintenance_margin_estimate).toLocaleString(undefined, { maximumFractionDigits: 4 })}</strong></div>
+            <div><small>Estimated close fee</small><strong>{Number(riskResult.estimated_close_fee).toLocaleString(undefined, { maximumFractionDigits: 4 })}</strong></div>
+            <div><small>Risk tier</small><strong>{riskResult.liquidation_tier}</strong></div>
+          </div>
+          <div className="caveat-list"><strong>Calculation assumptions</strong><ul>{riskResult.assumptions.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        </>}
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">LIVE LIQUIDATION TAPE</p><h2>{symbol} liquidation events</h2></div>
+          <span className="pill">{liquidationSnapshot?.status.state || 'Not started'}</span>
+        </div>
+        <div className="futures-actions">
+          <p className="footnote">Public exchange stream. The collector retains up to 2,000 events in this API process memory; it does not backfill events from before startup.</p>
+          <button onClick={() => void startLiquidationStream()} disabled={liquidationBusy || liquidationLive}>{liquidationBusy ? 'Please wait…' : 'Start live stream'}</button>
+          <button className="quiet-button" onClick={() => void stopLiquidationStream()} disabled={liquidationBusy || !liquidationLive}>Stop stream</button>
+        </div>
+        {liquidationError && <p className="error" role="alert">{liquidationError}</p>}
+        {liquidationSnapshot?.status.last_error && <p className="footnote">Connection note: {liquidationSnapshot.status.last_error}</p>}
+        <div className="stats-grid">
+          <div><small>Stream status</small><strong>{liquidationSnapshot?.status.state || 'Stopped'}</strong></div>
+          <div><small>Events in memory</small><strong>{liquidationSnapshot?.status.event_count ?? 0}</strong></div>
+          <div><small>Last event (UTC)</small><strong>{liquidationSnapshot?.status.last_event_time ? new Date(liquidationSnapshot.status.last_event_time).toLocaleTimeString() : '—'}</strong></div>
+        </div>
+        {liquidationSnapshot?.events.length ? <div className="table-wrap"><table><thead><tr><th>Time (local)</th><th>Liquidated side</th><th>Qty</th><th>Price</th><th>Notional</th><th>Price basis</th></tr></thead><tbody>
+          {liquidationSnapshot.events.map((item) => <tr key={item.event_id}><td>{new Date(item.event_time).toLocaleString()}</td><td><span className={item.liquidation_side === 'long' ? 'open' : 'closed'}>{item.liquidation_side.toUpperCase()}</span></td><td>{item.quantity}</td><td>{item.price}</td><td>{Number(item.notional).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td>{item.price_kind.replace(/_/g, ' ')}</td></tr>)}
+        </tbody></table></div> : <div className="empty-state">No liquidation events received yet. Start the stream and wait for exchange updates.</div>}
+      </section>
+
       <section className="panel">
         <div className="section-heading">
           <div><p className="eyebrow">STRATEGY RESEARCH</p><h2>SMA crossover backtest</h2></div>
