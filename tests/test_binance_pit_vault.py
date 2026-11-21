@@ -219,6 +219,7 @@ def _historical_order(**overrides):
         "order_id": "historical-order-001",
         "decision_at": "2026-11-20T12:00:00.300000+00:00",
         "side": "buy", "quantity": 2.0, "impact_bps": 0.0,
+        "impact_bps_source": "synthetic test model",
     }
     result.update(overrides)
     return result
@@ -293,6 +294,7 @@ def test_historical_execution_rejects_incomplete_capture_and_sequence_gap(tmp_pa
     {"quantity": True},
     {"quantity": -1},
     {"impact_bps": -1},
+    {"impact_bps_source": ""},
     {"side": "hold"},
 ])
 def test_historical_execution_rejects_invalid_order_inputs(tmp_path, overrides):
