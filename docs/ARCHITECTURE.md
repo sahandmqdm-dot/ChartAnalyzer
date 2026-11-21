@@ -54,3 +54,11 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - Source semantics are not identical: Binance long/short ratio is the global account ratio; Bybit ratio is calculated as buyRatio divided by sellRatio. The secondary ratio field preserves the provider's long/buy share where available. Open-interest units and notional fields remain exchange-defined and should not be compared across contracts without contract metadata.
 - Exchange retention differs. Binance open-interest history exposes only the latest month and its global long/short account ratio the latest 30 days. This endpoint does not yet paginate beyond the bounded recent window or persist series to a database.
 - The frontend plots the three normalized series separately. These are descriptive market-context indicators, not standalone trading signals. Liquidation analytics and futures-aware backtesting (including funding, leverage, margin, and liquidation mechanics) are not implemented.
+
+
+## Futures intelligence interpretation
+- `GET /api/v1/derivatives/analysis` combines the latest two closed candles from the configured Spot provider with normalized derivatives history from the configured futures venue. The route is authenticated and read-only.
+- The deterministic analyzer describes price/OI combinations (price up + OI up, price down + OI up, and the two falling-OI cases), a simple funding threshold, and account-ratio context. It emits individual explanations, a qualitative confidence label, and explicit caveats.
+- Price return is a Spot proxy because historical futures mark-price candles are not yet wired into the common candle model. Funding thresholds are exploratory constants, not volatility-normalized or backtested parameters.
+- “Squeeze conditions” labels are heuristic conjunctions (e.g. rising OI, falling price, and strongly positive funding for long-squeeze conditions). They do not detect liquidations, identify who is trapped, or forecast a squeeze. Long/short account ratios are account counts/ratios, not position-size-weighted exposure.
+- The endpoint does not emit buy/sell orders or exchange actions. Treat output as a market-context annotation and not as a recommendation.
