@@ -301,3 +301,28 @@ def test_contract_metadata_preserves_non_trading_exchange_state():
     result = adapter.fetch_contract_metadata("BTCUSDT")
     assert result["contract"]["exchange_status"] == "PENDING_TRADING"
     assert result["contract"]["status"] == "HALT"
+
+
+@pytest.mark.parametrize("brackets", [
+    [
+        {"notionalFloor": "0", "notionalCap": "50000", "maintMarginRatio": "0.004",
+         "cum": "0", "initialLeverage": 125},
+        {"notionalFloor": "51000", "notionalCap": "250000", "maintMarginRatio": "0.01",
+         "cum": "300", "initialLeverage": 50},
+    ],
+    [
+        {"notionalFloor": "0", "notionalCap": "50000", "maintMarginRatio": "0.004",
+         "cum": "0", "initialLeverage": 125},
+        {"notionalFloor": "50000", "notionalCap": "250000", "maintMarginRatio": "0.01",
+         "cum": "250", "initialLeverage": 50},
+    ],
+])
+def test_contract_metadata_rejects_gapped_or_inconsistent_risk_brackets(brackets):
+    adapter = BinanceUSDMPublicAdapter(
+        transport=fake_transport(exchange_info_payload()), clock=lambda: NOW
+    )
+    with pytest.raises(DataValidationError, match="gap or overlap|cumulative maintenance"):
+        adapter.fetch_contract_metadata(
+            "BTCUSDT", risk_brackets=brackets,
+            risk_bracket_source="fixture", risk_bracket_version="bad-v1",
+        )
