@@ -74,6 +74,7 @@ async def list_liquidation_events_since(
     symbol: str,
     start_time: datetime,
     provider: str | None = None,
+    liquidation_side: str | None = None,
     limit: int = 50001,
 ) -> list[LiquidationEvent] | None:
     """Return bounded durable events for aggregation, or None without PostgreSQL."""
@@ -86,6 +87,8 @@ async def list_liquidation_events_since(
     )
     if provider is not None:
         statement = statement.where(LiquidationEventRecord.provider == provider)
+    if liquidation_side is not None:
+        statement = statement.where(LiquidationEventRecord.liquidation_side == liquidation_side)
     statement = statement.order_by(
         LiquidationEventRecord.event_time.desc(), LiquidationEventRecord.event_id.desc()
     ).limit(limit)
