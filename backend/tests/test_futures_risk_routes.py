@@ -46,7 +46,7 @@ def authenticated_client():
 
 
 def test_risk_estimate_requires_authentication():
-    response = TestClient(app).post("/api/v1/derivatives/risk-estimate", json={})
+    response = TestClient(app).post("/api/v1/derivatives/risk-estimate", json={"symbol": "BTCUSDT", "side": "long", "entry_price": "100", "quantity": "1", "leverage": "10", "risk_tiers": [{"tier": 1, "notional_floor": "0", "notional_cap": null, "maintenance_margin_rate": "0.005", "maintenance_margin_deduction": "0"}]})
     assert response.status_code == 401
 
 
