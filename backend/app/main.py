@@ -15,6 +15,7 @@ from app.auth import (
     revoke_session,
 )
 from app.settings import settings
+from app.market_data.routes import router as market_data_router
 
 app = FastAPI(
     title="ChartAnalyzer Next API",
@@ -23,6 +24,8 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/openapi.json" if settings.environment == "development" else None,
 )
+
+app.include_router(market_data_router)
 
 if settings.environment == "development":
     app.add_middleware(
