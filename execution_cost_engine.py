@@ -16,6 +16,8 @@ ENGINE_VERSION = "ExecutionCostEngine 1.0"
 
 
 def _number(value: Any, name: str, *, minimum: float | None = None) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be numeric, not boolean")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -41,6 +43,15 @@ def validate_fee_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     missing = [key for key in required if schedule.get(key) in (None, "")]
     if missing:
         raise ValueError("missing fee schedule fields: " + ", ".join(missing))
+    effective_at = schedule["effective_at"]
+    if not isinstance(effective_at, str):
+        raise ValueError("fee schedule effective_at must be an ISO-8601 string")
+    try:
+        effective_dt = datetime.datetime.fromisoformat(effective_at)
+    except ValueError as exc:
+        raise ValueError("fee schedule effective_at must be an ISO-8601 string") from exc
+    if effective_dt.tzinfo is None or effective_dt.utcoffset() is None:
+        raise ValueError("fee schedule effective_at must include a timezone")
     maker = _number(schedule["maker_rate"], "maker_rate", minimum=0.0)
     taker = _number(schedule["taker_rate"], "taker_rate", minimum=0.0)
     if maker >= 1 or taker >= 1:
@@ -231,6 +242,12 @@ def market_sweep_fills(
         raise ValueError("book market and symbol identity are required")
     if isinstance(book.get("last_update_id"), bool) or not isinstance(book.get("last_update_id"), int):
         raise TypeError("book last_update_id must be an integer")
+    if book["last_update_id"] < 0:
+        raise ValueError("book last_update_id must be >= 0")
+    if book.get("market") not in {"spot", "usdm"}:
+        raise ValueError("book market must be spot or usdm")
+    if not isinstance(book.get("symbol"), str) or not book["symbol"].strip():
+        raise ValueError("book symbol must be a non-empty string")
     side = str(side).lower()
     if side not in {"buy", "sell"}:
         raise ValueError("side must be buy or sell")
@@ -266,6 +283,23 @@ def market_sweep_fills(
     expected = sorted(parsed_levels, key=lambda row: row[0], reverse=(side == "sell"))
     if parsed_levels != expected:
         raise ValueError("book levels must be sorted by executable price")
+    if len({price for price, _ in parsed_levels}) != len(parsed_levels):
+        raise ValueError("book levels must not contain duplicate prices")
+    best_bid = max(price for price, _ in parsed_levels) if side == "sell" else None
+    best_ask = min(price for price, _ in parsed_levels) if side == "buy" else None
+    opposite = book.get("bids" if side == "buy" else "asks")
+    if not isinstance(opposite, (list, tuple)) or not opposite:
+        raise ValueError("opposite side of the order book is empty")
+    opposite_prices = [_number(row[0], "opposite book price", minimum=0.0)
+                       for row in opposite if isinstance(row, (list, tuple)) and len(row) == 2]
+    if len(opposite_prices) != len(opposite) or any(price <= 0 for price in opposite_prices):
+        raise ValueError("malformed opposite order-book side")
+    if len(set(opposite_prices)) != len(opposite_prices):
+        raise ValueError("opposite book levels must not contain duplicate prices")
+    if side == "buy" and max(opposite_prices) >= min(price for price, _ in parsed_levels):
+        raise ValueError("crossed order book")
+    if side == "sell" and max(price for price, _ in parsed_levels) >= min(opposite_prices):
+        raise ValueError("crossed order book")
 
     fills = []
     remaining = requested
