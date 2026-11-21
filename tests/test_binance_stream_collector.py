@@ -253,6 +253,7 @@ def test_collector_reconnects_into_a_new_auditable_session(tmp_path):
             connector=connector,
             reconnect_min=0.001,
             reconnect_max=0.002,
+            health_interval_events=1,
         )
         await asyncio.wait_for(
             collector.run_market(MarketSpec.spot("BTCUSDT"), stop),
@@ -270,10 +271,20 @@ def test_collector_reconnects_into_a_new_auditable_session(tmp_path):
             r for r in records
             if r["stream"] == "session_manifest" and r["payload"].get("state") == "ended"
         ]
+        health = [r for r in records if r["stream"] == "collector_health"]
         assert len(connections) == 2
         assert len(trades) == 2
         assert len({r["session_id"] for r in trades}) == 2
         assert len(terminals) == 2
+        assert all(r["payload"]["raw_frame_count"] == 1 for r in terminals)
+        assert all("persistence_failure_count" in r["payload"] for r in terminals)
+        assert any(r["payload"].get("state") == "running" for r in health)
+        running = next(r for r in health if r["payload"].get("state") == "running")
+        assert running["payload"]["raw_frame_count"] == 1
+        assert running["payload"]["typed_event_count"] == 1
+        assert running["payload"]["write_pipeline_latency_ms"]["p95"] is not None
+        assert running["payload"]["disk"]["free_bytes"] > 0
+        assert running["payload"]["orderbook"]["buffer_overflow_count"] == 0
         assert {r["payload"]["termination"] for r in terminals} == {
             "stream_ended", "operator_stop",
         }
@@ -336,9 +347,13 @@ def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
     for path in tmp_path.rglob("*.jsonl"):
         records.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
 
+    raw_frames = [r for r in records if r["stream"] == "raw_frames"]
     depth = [r for r in records if r["stream"] == "orderbook_depth"]
     snapshots = [r for r in records if r["stream"] == "orderbook_snapshots"]
     states = [r for r in records if r["stream"] == "orderbook_state"]
+    assert len(raw_frames) == 2
+    assert all(r["payload"]["encoding"] == "utf-8" for r in raw_frames)
+    assert all(r["payload"]["raw_message"].startswith("{") and '"stream"' in r["payload"]["raw_message"] for r in raw_frames)
     assert len(depth) == 2
     assert len(snapshots) == 1
     assert any(r["payload"]["state"] == "synchronized" for r in states)
@@ -350,4 +365,5 @@ def test_live_collector_persists_raw_depth_and_recovers_l2_book(tmp_path):
         if r["stream"] == "session_manifest" and r["payload"].get("state") == "ended"
     ]
     assert len(terminal) == 1
+    assert terminal[0]["payload"]["raw_frame_count"] == 2
     assert terminal[0]["payload"]["termination"] == "operator_stop"
