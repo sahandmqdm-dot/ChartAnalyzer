@@ -105,8 +105,8 @@ class ContractRegistry:
         end = _utc(raw["effective_to"], "effective_to") if raw.get("effective_to") is not None else None
         if end is not None and end <= start:
             raise ValueError("effective_to must be later than effective_from")
-        if start > observed:
-            raise ValueError("effective_from cannot be later than observed_at")
+        # A contract rule may be published before its effective timestamp.
+        # Such a snapshot is stored now but resolve() will not expose it early.
 
         rules = {
             **raw,
