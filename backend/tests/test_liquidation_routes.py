@@ -163,14 +163,32 @@ def test_liquidation_heatmap_aggregates_observed_events(monkeypatch):
         ),
     ]
 
-    async def events_since(symbol, start_time, provider, liquidation_side, limit):
+    async def aggregate(symbol, start_time, bucket_seconds, price_bins, provider, side, limit):
         assert symbol == "BTCUSDT"
+        assert bucket_seconds == 300
+        assert price_bins == 10
         assert provider is None
-        assert liquidation_side is None
-        assert limit == 20001
-        return events
+        assert side is None
+        assert limit == 20000
+        return {
+            "total_events": 2,
+            "total_notional": "32",
+            "providers": ["binance_usdm_futures", "bybit_linear_futures"],
+            "price_min": "100",
+            "price_max": "110",
+            "price_step": "1",
+            "truncated": False,
+            "cells": [
+                {"time_bucket": now.isoformat(), "price_bin": 0, "price_from": "100",
+                 "price_to": "101", "events": 1, "long_events": 1, "short_events": 0,
+                 "long_notional": "10", "short_notional": "0", "total_notional": "10"},
+                {"time_bucket": now.isoformat(), "price_bin": 9, "price_from": "109",
+                 "price_to": "110", "events": 1, "long_events": 0, "short_events": 1,
+                 "long_notional": "0", "short_notional": "22", "total_notional": "22"},
+            ],
+        }
 
-    monkeypatch.setattr(liquidation_routes, "list_liquidation_events_since", events_since)
+    monkeypatch.setattr(liquidation_routes, "aggregate_liquidation_events", aggregate)
     response = authenticated_client().get(
         "/api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT&price_bins=10"
     )
@@ -189,7 +207,7 @@ def test_liquidation_heatmap_reports_missing_database(monkeypatch):
     async def no_database(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(liquidation_routes, "list_liquidation_events_since", no_database)
+    monkeypatch.setattr(liquidation_routes, "aggregate_liquidation_events", no_database)
     response = authenticated_client().get(
         "/api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT"
     )
