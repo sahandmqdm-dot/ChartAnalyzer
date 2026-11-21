@@ -8,7 +8,7 @@ import os
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 SCHEMA_VERSION = 1
 MAX_SPEC_BYTES = 64 * 1024
@@ -30,7 +30,7 @@ def _safe_json(value):
     if isinstance(value, (list,tuple)): return [_safe_json(v) for v in value]
     if hasattr(value, "item") and not isinstance(value, (str,bytes)):
         try: return _safe_json(value.item())
-        except Exception: return str(value)
+        except (AttributeError, TypeError, ValueError): return str(value)
     if isinstance(value, float) and not math.isfinite(value):
         return "INF" if value > 0 else ("-INF" if value < 0 else None)
     return value
@@ -99,13 +99,13 @@ class ResearchRegistry:
             INSERT OR IGNORE INTO metadata(key,value) VALUES('schema_version','1');
             """)
 
-    def register(self, hypothesis_id: str, name: str, specification: Dict[str, Any], family_id: Optional[str] = None):
-        if (
-            not isinstance(hypothesis_id, str) or not hypothesis_id.strip()
-            or not isinstance(name, str) or not name.strip()
-            or not isinstance(specification, dict)
-        ):
-            raise ValueError("hypothesis_id, name and object specification are required")
+    def register(self, hypothesis_id: str, name: str, specification: dict[str, Any], family_id: str | None = None):
+        if not isinstance(hypothesis_id, str) or not isinstance(name, str):
+            raise TypeError("hypothesis_id and name must be strings")
+        if not isinstance(specification, dict):
+            raise TypeError("specification must be an object")
+        if not hypothesis_id.strip() or not name.strip():
+            raise ValueError("hypothesis_id and name must be non-empty")
         family = str(family_id or "default")
         if len(hypothesis_id) > 128 or len(name) > 256 or len(family) > 128:
             raise ValueError("hypothesis_id, name or family_id exceeds its length limit")
@@ -129,8 +129,8 @@ class ResearchRegistry:
         return {"hypothesis_id": hypothesis_id, "specification_hash": digest, "created": True}
 
     def record(self, *, experiment_id: str, hypothesis_id: str, dataset_id: str, config_hash: str,
-               source: str, symbol: str, timeframe: str, metrics: Dict[str, Any],
-               p_value: Optional[float], status="COMPLETED", run_id=None,
+               source: str, symbol: str, timeframe: str, metrics: dict[str, Any],
+               p_value: float | None, status="COMPLETED", run_id=None,
                sample_start=None, sample_end=None):
         required = {
             "experiment_id": experiment_id, "hypothesis_id": hypothesis_id,
@@ -138,16 +138,20 @@ class ResearchRegistry:
             "source": source, "symbol": symbol, "timeframe": timeframe, "status": status,
         }
         for field, value in required.items():
-            if not isinstance(value, str) or not value.strip():
+            if not isinstance(value, str):
+                raise TypeError(f"{field} must be a string")
+            if not value.strip():
                 raise ValueError(f"{field} must be a non-empty string")
             if len(value) > 256:
                 raise ValueError(f"{field} exceeds its length limit")
-        if run_id is not None and (not isinstance(run_id, str) or len(run_id) > 128):
-            raise ValueError("run_id must be a string of at most 128 characters")
+        if run_id is not None and not isinstance(run_id, str):
+            raise TypeError("run_id must be a string")
+        if run_id is not None and len(run_id) > 128:
+            raise ValueError("run_id must be at most 128 characters")
         if not isinstance(metrics, dict):
             raise TypeError("metrics must be an object")
         if isinstance(p_value, bool):
-            raise ValueError("p_value must be numeric, not boolean")
+            raise TypeError("p_value must be numeric, not boolean")
         try:
             normalized_p = None if p_value is None else float(p_value)
         except (TypeError, ValueError, OverflowError) as exc:
@@ -160,7 +164,7 @@ class ResearchRegistry:
                 normalized_samples.append(None)
                 continue
             if isinstance(value, bool):
-                raise ValueError(f"{field} must be finite numeric data")
+                raise TypeError(f"{field} must be finite numeric data")
             try:
                 numeric = float(value)
             except (TypeError, ValueError, OverflowError) as exc:
