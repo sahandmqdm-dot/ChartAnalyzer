@@ -720,6 +720,9 @@ def replay_historical_market_orders(
             raise ValueError(f"order {order_id} quantity must be finite and > 0")
         if "impact_bps" not in order or isinstance(order["impact_bps"], bool):
             raise ValueError(f"order {order_id} requires numeric impact_bps")
+        impact_source = order.get("impact_bps_source")
+        if not isinstance(impact_source, str) or not impact_source.strip():
+            raise ValueError(f"order {order_id} requires impact_bps_source provenance")
         try:
             impact = float(order["impact_bps"])
         except (TypeError, ValueError, OverflowError) as exc:
@@ -851,7 +854,9 @@ def replay_historical_market_orders(
             best_bid=top["bid"],
             best_ask=top["ask"],
             impact_bps=impact,
+            impact_source=impact_source,
             funding_rate=order.get("funding_rate"),
+            funding_source=order.get("funding_source"),
             funding_events=int(events),
             latency_ms=order.get("latency_ms"),
             fill_source="sequence_validated_historical_l2_snapshot_sweep",
@@ -859,7 +864,7 @@ def replay_historical_market_orders(
                 "decision_availability": "local_received_at",
                 "book_age_ms": sweep["book_provenance"]["age_ms"],
                 "market_sweep_limitations": sweep["limitations"],
-                "impact_bps_source": order.get("impact_bps_source", "caller_supplied"),
+                "impact_bps_source": impact_source,
                 "funding_source": order.get("funding_source"),
             },
         )
