@@ -130,7 +130,7 @@ def analyze_market_structure(
     latest_high = highs[-1] if highs else None
     latest_low = lows[-1] if lows else None
     events: list[StructureEvent] = []
-    if latest_high and last.close > latest_high[2]:
+    if latest_high and closed[-2].close <= latest_high[2] < last.close:
         events.append(StructureEvent(
             code="bos" if trend != "bearish" else "choch",
             direction="bullish",
@@ -141,7 +141,7 @@ def analyze_market_structure(
                 "برچسب BOS/CHoCH بر اساس روند ساختاری قبلی تعیین شده است."
             ),
         ))
-    elif latest_low and last.close < latest_low[2]:
+    elif latest_low and closed[-2].close >= latest_low[2] > last.close:
         events.append(StructureEvent(
             code="bos" if trend != "bullish" else "choch",
             direction="bearish",
@@ -212,6 +212,6 @@ def analyze_market_structure(
             "تمام محاسبات فقط از کندل‌های بسته‌شده Mark Price انجام می‌شود؛ Mark Price ممکن است با آخرین قیمت معامله متفاوت باشد.",
             "Swingها با پنجره متقارن تأیید می‌شوند و به همین دلیل با تأخیر pivot_window کندلی قابل‌شناسایی‌اند.",
             "BOS، CHoCH، Liquidity Sweep و FVG تعاریف الگوریتمی ساده و قابل‌تنظیم‌اند؛ تعاریف رایج SMC یکسان و استاندارد رسمی ندارند.",
-            "این خروجی توصیفی است، پیش‌بینی قیمت یا توصیه خریدوفروش نیست؛ Order Block و امتیازدهی چندتایم‌فریمی در مرحله بعد اضافه می‌شوند.",
+            "FVGها صرفاً شکاف هندسی سه‌کندلی‌اند و در این نسخه وضعیت پرشدن/ابطال آن‌ها ردیابی نمی‌شود؛ Order Block و امتیازدهی چندتایم‌فریمی در مرحله بعد اضافه می‌شوند.",
         ],
     )
