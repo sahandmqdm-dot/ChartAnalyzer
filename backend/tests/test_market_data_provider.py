@@ -1,6 +1,6 @@
-from app.market_data.binance import BinanceSpotAdapter
+from app.market_data.binance import BinanceSpotAdapter\nfrom app.market_data.bybit import BybitSpotAdapter
 from app.market_data.provider import MarketDataProvider
-from app.market_data.registry import get_market_data_provider
+from app.market_data.registry import get_market_data_provider\nfrom app.settings import settings
 
 
 def test_binance_adapter_matches_provider_contract():
