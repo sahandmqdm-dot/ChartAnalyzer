@@ -10,7 +10,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, UTC
 from typing import Any
 
 from futures_exchange_rules import validate_futures_rules
