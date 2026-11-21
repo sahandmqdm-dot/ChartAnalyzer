@@ -38,6 +38,8 @@ class LiquidationStreamStatus(BaseModel):
     event_count: int
     last_event_time: datetime | None = None
     last_error: str | None = None
+    persistence_state: str = "disabled"
+    persistence_error: str | None = None
 
 
 def _event_id(*parts: str) -> str:
@@ -132,6 +134,8 @@ class LiquidationCollector:
         self._task: asyncio.Task | None = None
         self.state: Literal["connecting", "connected", "reconnecting", "stopped"] = "stopped"
         self.last_error: str | None = None
+        self.persistence_state = "disabled"
+        self.persistence_error: str | None = None
 
     def start(self) -> None:
         if self._task is None or self._task.done():
@@ -161,6 +165,18 @@ class LiquidationCollector:
         self.events.clear()
         self._seen.clear()
 
+    async def ingest(self, event: LiquidationEvent) -> None:
+        self.add(event)
+        try:
+            from app.market_data.liquidation_repository import save_liquidation_event
+
+            persisted = await save_liquidation_event(event)
+            self.persistence_state = "disabled" if persisted is None else "available"
+            self.persistence_error = None
+        except Exception as exc:  # noqa: BLE001 - keep public stream alive during DB outages
+            self.persistence_state = "unavailable"
+            self.persistence_error = type(exc).__name__
+
     def snapshot(self, limit: int = 100) -> dict:
         status = LiquidationStreamStatus(
             provider=self.provider,
@@ -169,11 +185,13 @@ class LiquidationCollector:
             event_count=len(self.events),
             last_event_time=self.events[0].event_time if self.events else None,
             last_error=self.last_error,
+            persistence_state=self.persistence_state,
+            persistence_error=self.persistence_error,
         )
         return {
             "status": status.model_dump(mode="json"),
             "events": [event.model_dump(mode="json") for event in list(self.events)[:limit]],
-            "retention": "in_memory_since_collector_start",
+            "retention": "postgresql_and_bounded_memory" if self.persistence_state == "available" else "in_memory_only",
         }
 
     async def _run(self) -> None:
@@ -201,7 +219,7 @@ class LiquidationCollector:
                 if isinstance(payload, dict):
                     event = parse_binance_liquidation(payload)
                     if event is not None and event.symbol == self.symbol:
-                        self.add(event)
+                        await self.ingest(event)
 
     async def _run_bybit(self) -> None:
         url = "wss://stream.bybit.com/v5/public/linear"
@@ -214,7 +232,7 @@ class LiquidationCollector:
                 if isinstance(payload, dict):
                     for event in parse_bybit_liquidations(payload):
                         if event.symbol == self.symbol:
-                            self.add(event)
+                            await self.ingest(event)
 
 
 _collectors: dict[tuple[str, str], LiquidationCollector] = {}
