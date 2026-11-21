@@ -17,6 +17,18 @@ type Candle = {
 type CandleResponse = { provider: string; symbol: string; interval: string; count: number; candles: Candle[] };
 
 type EquityPoint = { timestamp: string; equity: string; drawdown_pct: string };
+type FuturesOverview = {
+  provider: string;
+  market_type: string;
+  symbol: string;
+  mark_price: string;
+  index_price: string;
+  funding_rate: string;
+  open_interest: string;
+  open_interest_value: string;
+  next_funding_time: string | null;
+  observed_at: string;
+};
 type BacktestTrade = {
   entry_time: string;
   exit_time: string;
@@ -92,6 +104,9 @@ function App() {
   const [backtestResult, setBacktestResult] = useState<BacktestResponse | null>(null);
   const [backtestBusy, setBacktestBusy] = useState(false);
   const [backtestError, setBacktestError] = useState('');
+  const [futuresData, setFuturesData] = useState<FuturesOverview | null>(null);
+  const [futuresBusy, setFuturesBusy] = useState(false);
+  const [futuresError, setFuturesError] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -168,6 +183,27 @@ function App() {
       setBacktestError(cause instanceof Error ? cause.message : 'Could not run backtest');
     } finally {
       setBacktestBusy(false);
+    }
+  }
+
+  async function loadFuturesOverview() {
+    setFuturesBusy(true);
+    setFuturesError('');
+    setFuturesData(null);
+    try {
+      const query = new URLSearchParams({ symbol: symbol.trim() });
+      const response = await fetch(`${API_BASE}/api/v1/derivatives/overview?${query}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail || `Futures request failed (${response.status})`);
+      }
+      setFuturesData(await response.json() as FuturesOverview);
+    } catch (cause) {
+      setFuturesError(cause instanceof Error ? cause.message : 'Could not load futures data');
+    } finally {
+      setFuturesBusy(false);
     }
   }
 
@@ -274,6 +310,28 @@ function App() {
           <div className="chart-wrap"><svg viewBox="0 0 800 190" role="img" aria-label={`Closing price chart for ${data.symbol}`}><line x1="8" y1="20" x2="792" y2="20" /><line x1="8" y1="95" x2="792" y2="95" /><line x1="8" y1="172" x2="792" y2="172" /><polyline points={points} /></svg></div>
           <div className="table-wrap"><table><thead><tr><th>Time (UTC)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th><th>Status</th></tr></thead><tbody>{[...data.candles].reverse().slice(0, 12).map((candle) => <tr key={candle.timestamp}><td>{new Date(candle.timestamp).toLocaleString('en-US', { timeZone: 'UTC' })}</td><td>{candle.open}</td><td>{candle.high}</td><td>{candle.low}</td><td>{candle.close}</td><td>{candle.volume}</td><td><span className={candle.is_closed ? 'closed' : 'open'}>{candle.is_closed ? 'Closed' : 'Open'}</span></td></tr>)}</tbody></table></div>
         </> : <div className="empty-state">{busy ? 'Loading market data…' : 'No candles loaded. Select a symbol and timeframe to begin.'}</div>}
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">DERIVATIVES MARKET CONTEXT</p><h2>{symbol} linear perpetual</h2></div>
+          <span className="pill">Read-only · Futures</span>
+        </div>
+        <div className="futures-actions">
+          <p className="footnote">Spot candles and futures statistics are separate market feeds. This view does not place orders.</p>
+          <button onClick={() => void loadFuturesOverview()} disabled={futuresBusy || busy}>{futuresBusy ? 'Loading…' : 'Load futures overview'}</button>
+        </div>
+        {futuresError && <p className="error" role="alert">{futuresError}</p>}
+        {futuresData && <>
+          <div className="stats-grid">
+            <div><small>Mark price</small><strong>{Number(futuresData.mark_price).toLocaleString(undefined, { maximumFractionDigits: 8 })}</strong></div>
+            <div><small>Index price</small><strong>{Number(futuresData.index_price).toLocaleString(undefined, { maximumFractionDigits: 8 })}</strong></div>
+            <div><small>Funding rate</small><strong>{(Number(futuresData.funding_rate) * 100).toFixed(4)}%</strong></div>
+            <div><small>Open interest</small><strong>{Number(futuresData.open_interest).toLocaleString(undefined, { maximumFractionDigits: 4 })}</strong></div>
+            <div><small>OI notional (quote)</small><strong>{Number(futuresData.open_interest_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></div>
+            <div><small>Next funding</small><strong>{futuresData.next_funding_time ? new Date(futuresData.next_funding_time).toLocaleString() : '—'}</strong></div>
+          </div>
+          <p className="footnote">Provider: {futuresData.provider} · {futuresData.market_type} · Snapshot: {new Date(futuresData.observed_at).toLocaleString()}</p>
+        </>}
       </section>
       <section className="panel">
         <div className="section-heading">
