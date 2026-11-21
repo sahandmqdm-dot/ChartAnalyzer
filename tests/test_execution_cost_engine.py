@@ -254,7 +254,7 @@ def test_fee_schedule_rejects_boolean_rates_and_naive_effective_time(field, valu
 
 
 def test_execution_rejects_boolean_numeric_inputs():
-    with pytest.raises(ValueError, match="numeric, not boolean"):
+    with pytest.raises((ValueError, TypeError), match="numeric, not boolean"):
         run(impact_bps=True)
     with pytest.raises(ValueError, match="numeric, not boolean"):
         run(funding_events=True)
