@@ -162,3 +162,25 @@ tick size، step size، min notional، contract multiplier، max leverage، marg
 - 42-day clock: شروع نشده.
 - Live order execution: خارج از دامنه.
 - سودآوری/Edge Futures: اثبات نشده.
+
+
+## 8) پیشرفت پیاده‌سازی در شاخه پژوهشی PR #73
+
+این بخش به‌روزرسانی وضعیت کد در شاخه پژوهشی است و نباید با قابلیت ادغام‌شده در `main` اشتباه گرفته شود.
+
+### انجام‌شده در کد شاخه، نیازمند CI سبز و بازبینی
+- `contract_registry.py`: Registry حافظه‌ای برای snapshotهای قرارداد با effective interval، جلوگیری از overlap، fingerprint و کنترل freshness.
+- `market_data_hub.py`: استخراج فیلترهای نماد و وضعیت قرارداد از endpoint عمومی Binance USD-M `/fapi/v1/exchangeInfo`.
+- آداپتور در نبود Risk Bracket معتبر، وضعیت `CONTRACT_METADATA_INCOMPLETE` می‌دهد و از ساخت max leverage یا maintenance tiers فرضی خودداری می‌کند.
+- در صورت ارائه‌ی bracketهای مستقل همراه source/version، آداپتور notional floor/cap، پیوستگی bracketها، monotonicity نرخ maintenance و cumulative maintenance deduction را کنترل می‌کند.
+- `futures_reality_gate.py`: اتصال‌پذیر به snapshotهای Registry، الزام وضعیت TRADING و اعتبارسنجی ساختار tierها؛ خروجی همچنان فقط research readiness است و هرگز مجوز معامله نیست.
+- تست‌های واحد و integration برای Registry، آداپتور و Reality Gate اضافه شده‌اند.
+
+### همچنان باز و بحرانی
+- Registry هنوز durable storage ندارد و بعد از restart باید از منبع پایدار و قابل‌راستی‌آزمایی بازیابی شود.
+- منبع عملیاتی و مستقل برای risk bracketهای Binance هنوز به آداپتور متصل نشده است؛ دریافت آن نباید با داده عمومی exchangeInfo اشتباه گرفته شود.
+- snapshotهای تاریخی قرارداد هنوز از آرشیو تاریخی exchange metadata بازسازی نشده‌اند؛ effective time ثبت‌شده‌ی امروز به‌تنهایی تاریخچه‌ی کامل را ایجاد نمی‌کند.
+- اتصال end-to-end این داده‌ها به Futures forecast ledger و PIT evaluator هنوز تکمیل نشده است.
+- funding settlement ledger، تطبیق liquidation با رفتار صرافی و اجرای E3 queue-aware هنوز تکمیل نشده‌اند.
+- تا زمان سبز شدن CI روی آخرین commit و بازبینی کد، هیچ مورد این بخش «تأییدشده» محسوب نمی‌شود.
+
