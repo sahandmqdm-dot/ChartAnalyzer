@@ -239,3 +239,43 @@ def test_execution_cost_result_is_registered_with_provenance_and_completeness(tm
     )
     assert incomplete["registry_status"] == "INCOMPLETE_COST_MODEL"
     assert registry.summary()["failed_experiments"] == 1
+
+
+@pytest.mark.parametrize("field,value", [
+    ("maker_rate", True),
+    ("taker_rate", False),
+    ("effective_at", "2026-11-20T00:00:00"),
+])
+def test_fee_schedule_rejects_boolean_rates_and_naive_effective_time(field, value):
+    with pytest.raises(ValueError):
+        validate_fee_schedule(schedule(**{field: value}))
+
+
+def test_execution_rejects_boolean_numeric_inputs():
+    with pytest.raises(ValueError, match="numeric, not boolean"):
+        run(impact_bps=True)
+    with pytest.raises(ValueError, match="numeric, not boolean"):
+        run(funding_events=True)
+
+
+def test_l2_sweep_rejects_duplicate_crossed_and_invalid_sequence_levels():
+    base = {
+        "market": "spot", "symbol": "BTCUSDT", "valid": True,
+        "last_update_id": 10,
+        "asks": [(101.0, 1.0), (102.0, 1.0)],
+        "bids": [(100.0, 1.0), (99.0, 1.0)],
+    }
+    kwargs = {
+        "side": "buy", "requested_quantity": 1,
+        "book_received_at": "2026-11-20T12:00:00Z",
+        "decision_at": "2026-11-20T12:00:00Z",
+    }
+    duplicate = {**base, "asks": [(101.0, 1.0), (101.0, 2.0)]}
+    with pytest.raises(ValueError, match="duplicate"):
+        market_sweep_fills(duplicate, **kwargs)
+    crossed = {**base, "bids": [(101.0, 1.0), (99.0, 1.0)]}
+    with pytest.raises(ValueError, match="crossed"):
+        market_sweep_fills(crossed, **kwargs)
+    negative_sequence = {**base, "last_update_id": -1}
+    with pytest.raises(ValueError, match="last_update_id"):
+        market_sweep_fills(negative_sequence, **kwargs)
