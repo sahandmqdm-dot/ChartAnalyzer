@@ -179,3 +179,91 @@ async def test_binance_marks_candle_closed_after_close_time():
         )
 
     assert result[0].is_closed is True
+
+
+def kline_row(timestamp: int):
+    return [
+        timestamp, "10.0", "12.0", "9.0", "11.0", "5.5",
+        timestamp + 59_999, "0", 10, "0", "0", "0",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_historical_pagination_fetches_multiple_pages_in_order():
+    requested_starts = []
+
+    def handler(request):
+        start = int(request.url.params["startTime"])
+        requested_starts.append(start)
+        if start == 0:
+            return httpx.Response(
+                200, json=[kline_row(0), kline_row(60_000)]
+            )
+        if start == 120_000:
+            return httpx.Response(200, json=[kline_row(120_000)])
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as client:
+        result = await BinanceSpotAdapter(client).fetch_historical_ohlcv(
+            "BTCUSDT",
+            "1m",
+            start_time=datetime.fromtimestamp(0, tz=UTC),
+            end_time=datetime.fromtimestamp(180_000 / 1000, tz=UTC),
+            page_limit=2,
+            max_candles=10,
+        )
+
+    assert [c.timestamp.timestamp() for c in result] == [0, 60, 120]
+    assert requested_starts == [0, 120_000]
+
+
+@pytest.mark.asyncio
+async def test_historical_pagination_respects_max_candles():
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json=[kline_row(0), kline_row(60_000), kline_row(120_000)],
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as client:
+        result = await BinanceSpotAdapter(client).fetch_historical_ohlcv(
+            "BTCUSDT",
+            "1m",
+            start_time=datetime.fromtimestamp(0, tz=UTC),
+            end_time=datetime.fromtimestamp(600_000 / 1000, tz=UTC),
+            page_limit=3,
+            max_candles=2,
+        )
+
+    assert len(result) == 2
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_historical_pagination_rejects_non_advancing_page():
+    def handler(request):
+        return httpx.Response(
+            200, json=[kline_row(0), kline_row(60_000)]
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as client:
+        adapter = BinanceSpotAdapter(client)
+        adapter._get_with_retries = adapter._get_with_retries
+        with pytest.raises(ValueError, match="page_limit"):
+            await adapter.fetch_historical_ohlcv(
+                "BTCUSDT",
+                "1m",
+                start_time=datetime.fromtimestamp(0, tz=UTC),
+                end_time=datetime.fromtimestamp(600_000 / 1000, tz=UTC),
+                page_limit=1001,
+            )
