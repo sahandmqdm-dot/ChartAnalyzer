@@ -192,7 +192,8 @@ class ContractRegistry:
                     "observation_age_seconds": age}
         payload = selected.payload()
         payload["registry_fingerprint"] = selected.fingerprint
-        return {"status": "CONTRACT_RESOLVED", "contract": payload,
+        status = "CONTRACT_RESOLVED" if payload["status"] == "TRADING" else "CONTRACT_NOT_TRADING"
+        return {"status": status, "contract": payload,
                 "fingerprint": selected.fingerprint, "observation_age_seconds": age}
 
 
