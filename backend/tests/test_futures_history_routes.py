@@ -10,6 +10,8 @@ from app.settings import settings
 
 
 class FakeHistoryAdapter:
+    name = "binance_usdm_futures"
+
     def __init__(self):
         pass
 
