@@ -1,18 +1,23 @@
 """Local-first, read-only Binance Spot + USD-M Futures event capture.
 
-Raw WebSocket messages are durably appended before parsing. This module does not
-place orders and deliberately marks order books invalid after any sequence gap.
+Exact WebSocket frames are append-only persisted before JSON parsing. Typed events
+are derived records; raw frame retention allows independent re-parsing. This module
+does not place orders and invalidates order books after any sequence gap.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
 import os
+import shutil
+import time
 import urllib.parse
 import urllib.request
 import uuid
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -243,9 +248,12 @@ class BinanceDualMarketCollector:
                  store: HashChainJSONLStore | None = None,
                  connector: Callable[..., Any] | None = None,
                  snapshot_fetch: Callable[[MarketSpec], Any] | None = None,
-                 max_buffered_depth_events: int = 10000) -> None:
+                 max_buffered_depth_events: int = 10000,
+                 health_interval_events: int = 1000) -> None:
         if reconnect_min <= 0 or reconnect_max < reconnect_min:
             raise ValueError("invalid reconnect backoff")
+        if health_interval_events < 1:
+            raise ValueError("health_interval_events must be >= 1")
         self.store = store or HashChainJSONLStore(root)
         self.proxy = proxy
         self.reconnect_min = reconnect_min
@@ -254,6 +262,7 @@ class BinanceDualMarketCollector:
         self.connector = connector
         self.snapshot_fetch = snapshot_fetch
         self.max_buffered_depth_events = max_buffered_depth_events
+        self.health_interval_events = health_interval_events
         self._active_websockets: dict[str, Any] = {}
 
     def _connect(self, uri: str):
@@ -272,12 +281,18 @@ class BinanceDualMarketCollector:
 
     async def run_market(self, spec: MarketSpec, stop: asyncio.Event) -> None:
         delay = self.reconnect_min
+        reconnect_count = 0
         streams = "/".join(spec.streams)
         uri = f"{spec.ws_url}?{urllib.parse.urlencode({'streams': streams})}"
         while not stop.is_set():
             session_id = None
             session_started = None
             stream_counts: dict[str, int] = {}
+            raw_frame_count = 0
+            typed_event_count = 0
+            collector_error_count = 0
+            persistence_failure_count = 0
+            latency_samples: deque[float] = deque(maxlen=512)
             try:
                 async with self._connect(uri) as websocket:
                     session_id = uuid.uuid4().hex
@@ -285,7 +300,8 @@ class BinanceDualMarketCollector:
                     self.store.append(spec.market, "session_manifest",
                                       {"state": "started", "endpoint": spec.ws_url,
                                        "streams": list(spec.streams),
-                                       "started_at": session_started},
+                                       "started_at": session_started,
+                                       "reconnect_count": reconnect_count},
                                       received_at=session_started, session_id=session_id)
                     self.store.append(spec.market, "connection",
                                       {"state": "connected", "endpoint": spec.ws_url},
@@ -301,6 +317,72 @@ class BinanceDualMarketCollector:
                         session_id=session_id,
                     )
                     self._active_websockets[spec.market] = websocket
+
+                    health_counters = {
+                        "raw_frame_count": raw_frame_count,
+                        "typed_event_count": typed_event_count,
+                        "collector_error_count": collector_error_count,
+                        "persistence_failure_count": persistence_failure_count,
+                    }
+
+                    def emit_health(
+                        state: str,
+                        _latency_samples=latency_samples,
+                        _health_counters=health_counters,
+                        _capture=capture,
+                        _session_id=session_id,
+                        _spec=spec,
+                        _reconnect_count=reconnect_count,
+                    ) -> None:
+                        ordered = sorted(_latency_samples)
+                        def percentile(fraction: float) -> float | None:
+                            if not ordered:
+                                return None
+                            index = min(len(ordered) - 1, int((len(ordered) - 1) * fraction))
+                            return round(ordered[index], 3)
+                        try:
+                            disk_usage = shutil.disk_usage(self.store.root)
+                            disk = {
+                                "total_bytes": disk_usage.total,
+                                "used_bytes": disk_usage.used,
+                                "free_bytes": disk_usage.free,
+                                "used_percent": round(
+                                    disk_usage.used / disk_usage.total * 100.0, 2
+                                ) if disk_usage.total else None,
+                            }
+                        except OSError:
+                            disk = None
+                        if disk and (
+                            disk["free_bytes"] < 5 * 1024**3
+                            or (disk["used_percent"] is not None and disk["used_percent"] >= 90.0)
+                        ):
+                            logging.getLogger(__name__).warning(
+                                "Low collector disk capacity for %s: %s", _spec.market, disk
+                            )
+                        self.store.append(
+                            _spec.market,
+                            "collector_health",
+                            {
+                                "state": state,
+                                "disk": disk,
+                                "raw_frame_count": _health_counters["raw_frame_count"],
+                                "typed_event_count": _health_counters["typed_event_count"],
+                                "collector_error_count": _health_counters["collector_error_count"],
+                                "persistence_failure_count": _health_counters["persistence_failure_count"],
+                                "reconnect_count": _reconnect_count,
+                                "write_pipeline_latency_ms": {
+                                    "sample_count": len(ordered),
+                                    "p50": percentile(0.50),
+                                    "p95": percentile(0.95),
+                                    "max": round(ordered[-1], 3) if ordered else None,
+                                },
+                                "orderbook": _capture.metrics(),
+                            },
+                            received_at=utc_now(),
+                            session_id=_session_id,
+                        )
+
+                    emit_health("connected")
                     try:
                         if stop.is_set():
                             await websocket.close()
@@ -309,7 +391,23 @@ class BinanceDualMarketCollector:
                                 break
                             received_at = utc_now()
                             stream = "unknown"
+                            pipeline_started = time.perf_counter()
                             try:
+                                # Preserve the exact provider frame before JSON parsing or
+                                # downstream validation. The typed event below is a derived copy.
+                                raw_frame = (
+                                    {"encoding": "utf-8", "raw_message": message}
+                                    if isinstance(message, str)
+                                    else {"encoding": "base64", "raw_message": base64.b64encode(message).decode("ascii")}
+                                )
+                                self.store.append(
+                                    spec.market, "raw_frames", raw_frame,
+                                    received_at=received_at,
+                                    stream_name="combined_websocket_frame",
+                                    session_id=session_id,
+                                )
+                                raw_frame_count += 1
+                                health_counters["raw_frame_count"] = raw_frame_count
                                 envelope = json.loads(message)
                                 stream = str(envelope.get("stream", "unknown"))
                                 payload = envelope.get("data", envelope)
@@ -325,7 +423,10 @@ class BinanceDualMarketCollector:
                                                   stream_name=metadata["stream_name"],
                                                   sequence=metadata["sequence"],
                                                   session_id=session_id)
+                                typed_event_count += 1
+                                health_counters["typed_event_count"] = typed_event_count
                                 stream_counts[kind] = stream_counts.get(kind, 0) + 1
+                                latency_samples.append((time.perf_counter() - pipeline_started) * 1000.0)
                                 if kind == "orderbook_depth":
                                     await capture.ingest(payload)
                             except (ValueError, TypeError) as exc:
@@ -334,15 +435,25 @@ class BinanceDualMarketCollector:
                                                   received_at=received_at,
                                                   stream_name=stream,
                                                   session_id=session_id)
+                                collector_error_count += 1
+                                health_counters["collector_error_count"] = collector_error_count
+                                latency_samples.append((time.perf_counter() - pipeline_started) * 1000.0)
+                            if raw_frame_count and raw_frame_count % self.health_interval_events == 0:
+                                emit_health("running")
                     finally:
                         await capture.close()
+                        emit_health("session_ending")
                         self._active_websockets.pop(spec.market, None)
                 ended_at = utc_now()
                 termination = "operator_stop" if stop.is_set() else "stream_ended"
                 self.store.append(spec.market, "session_manifest",
                                   {"state": "ended", "started_at": session_started,
                                    "ended_at": ended_at, "event_count": sum(stream_counts.values()),
+                                   "raw_frame_count": raw_frame_count,
                                    "stream_counts": stream_counts,
+                                   "collector_error_count": collector_error_count,
+                                   "persistence_failure_count": persistence_failure_count,
+                                   "reconnect_count": reconnect_count,
                                    "termination": termination},
                                   received_at=ended_at, session_id=session_id)
                 self.store.append(spec.market, "connection",
@@ -350,6 +461,7 @@ class BinanceDualMarketCollector:
                                    "retry_in_seconds": delay},
                                   session_id=session_id)
                 if not stop.is_set():
+                    reconnect_count += 1
                     try:
                         await asyncio.wait_for(stop.wait(), timeout=delay)
                     except TimeoutError:
@@ -362,23 +474,41 @@ class BinanceDualMarketCollector:
                                       {"state": "interrupted", "started_at": session_started,
                                        "ended_at": interrupted_at,
                                        "event_count": sum(stream_counts.values()),
+                                       "raw_frame_count": raw_frame_count,
                                        "stream_counts": stream_counts,
+                                       "collector_error_count": collector_error_count,
+                                       "persistence_failure_count": persistence_failure_count,
+                                       "reconnect_count": reconnect_count,
                                        "termination": "cancelled"},
                                       received_at=interrupted_at, session_id=session_id)
                 raise
-            except Exception as exc:  # noqa: BLE001  # network libraries expose several transport exception types
+            except Exception as exc:  # network libraries expose several transport exception types
+                if isinstance(exc, (OSError, CollectorError)):
+                    persistence_failure_count += 1
+                reconnect_count += 1
+                logging.getLogger(__name__).exception(
+                    "Binance collector session failed for %s (%s)",
+                    spec.market,
+                    type(exc).__name__,
+                )
                 interrupted_at = utc_now()
                 self.store.append(spec.market, "session_manifest",
                                   {"state": "interrupted", "started_at": session_started,
                                    "ended_at": interrupted_at,
                                    "event_count": sum(stream_counts.values()),
+                                   "raw_frame_count": raw_frame_count,
                                    "stream_counts": stream_counts,
+                                   "collector_error_count": collector_error_count,
+                                   "persistence_failure_count": persistence_failure_count,
+                                   "reconnect_count": reconnect_count,
                                    "termination": "transport_error",
                                    "error": type(exc).__name__},
                                   received_at=interrupted_at, session_id=session_id)
                 self.store.append(spec.market, "connection",
                                   {"state": "disconnected", "error": type(exc).__name__,
-                                   "retry_in_seconds": delay},
+                                   "retry_in_seconds": delay,
+                                   "reconnect_count": reconnect_count,
+                                   "persistence_failure_count": persistence_failure_count},
                                   session_id=locals().get("session_id"))
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=delay)
@@ -446,8 +576,40 @@ async def _run_cli() -> None:
     parser.add_argument("--data-dir", default=os.environ.get("CHARTANALYZER_DATA_DIR", "./data/binance_raw"))
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--proxy", default=os.environ.get("CHARTANALYZER_BINANCE_PROXY"))
+    parser.add_argument(
+        "--fsync-every-events",
+        type=int,
+        default=int(os.environ.get("CHARTANALYZER_BINANCE_FSYNC_EVERY_EVENTS", "100")),
+        help="fsync each partition after this many appended records (1 = every record)",
+    )
+    parser.add_argument(
+        "--fsync-each-event",
+        action="store_true",
+        help="fsync every record; strongest durability, potentially lower throughput",
+    )
+    parser.add_argument(
+        "--health-every-events",
+        type=int,
+        default=int(os.environ.get("CHARTANALYZER_BINANCE_HEALTH_EVERY_EVENTS", "1000")),
+        help="append collector health telemetry after this many raw frames",
+    )
+    parser.add_argument(
+        "--stop-file",
+        default=os.environ.get("CHARTANALYZER_BINANCE_STOP_FILE"),
+        help="gracefully stop when this sentinel file appears (useful for Windows background runs)",
+    )
     args = parser.parse_args()
-    collector = BinanceDualMarketCollector(args.data_dir, proxy=args.proxy)
+    store = HashChainJSONLStore(
+        args.data_dir,
+        fsync_each_event=args.fsync_each_event,
+        fsync_every_events=args.fsync_every_events,
+    )
+    collector = BinanceDualMarketCollector(
+        args.data_dir,
+        proxy=args.proxy,
+        store=store,
+        health_interval_events=args.health_every_events,
+    )
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -455,8 +617,26 @@ async def _run_cli() -> None:
             loop.add_signal_handler(sig, stop.set)
         except NotImplementedError:  # Windows event-loop compatibility
             pass
-    print(f"Binance local collector started: {args.symbol.upper()} Spot + USD-M; Ctrl+C to stop")
-    await collector.run(stop, symbol=args.symbol)
+    print(f"Binance local collector started: {args.symbol.upper()} Spot + USD-M; Ctrl+C or stop-file to stop")
+
+    async def watch_stop_file() -> None:
+        if not args.stop_file:
+            return
+        stop_path = Path(args.stop_file)
+        while not stop.is_set():
+            if stop_path.exists():
+                print(f"Graceful stop requested by sentinel: {stop_path}")
+                stop.set()
+                return
+            await asyncio.sleep(1)
+
+    watcher = asyncio.create_task(watch_stop_file()) if args.stop_file else None
+    try:
+        await collector.run(stop, symbol=args.symbol)
+    finally:
+        if watcher is not None:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
 
 
 if __name__ == "__main__":
