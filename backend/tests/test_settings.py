@@ -39,8 +39,8 @@ def test_production_requires_strong_admin_password():
         Settings(
             _env_file=None,
             app_secret="test-secret-with-more-than-32-characters",
-            environment="production",
-            admin_password="short-password",
+            APP_ENV="production",
+            ADMIN_PASSWORD="short-password",
         )
 
 
@@ -48,8 +48,8 @@ def test_production_accepts_long_admin_password():
     value = Settings(
         _env_file=None,
         app_secret="test-secret-with-more-than-32-characters",
-        environment="production",
-        admin_password="long-unique-production-password",
+        APP_ENV="production",
+        ADMIN_PASSWORD="long-unique-production-password",
     )
     assert value.admin_password == "long-unique-production-password"
 
