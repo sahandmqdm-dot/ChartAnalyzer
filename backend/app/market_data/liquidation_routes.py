@@ -114,7 +114,7 @@ async def liquidation_heatmap(
         stored_events = await list_liquidation_events_since(
             normalized, start_time, provider_filter, None if side == "all" else side, limit + 1
         )
-    except Exception as exc:  # noqa: BLE001 - do not misrepresent a DB failure as empty data
+    except Exception as exc:
         raise HTTPException(status_code=503, detail="Liquidation history storage is unavailable") from exc
     if stored_events is None:
         raise HTTPException(status_code=503, detail="PostgreSQL persistence is not configured")
@@ -149,9 +149,9 @@ async def liquidation_heatmap(
                 "events": 0,
                 "long_events": 0,
                 "short_events": 0,
-                "long_notional": Decimal("0"),
-                "short_notional": Decimal("0"),
-                "total_notional": Decimal("0"),
+                "long_notional": Decimal(0),
+                "short_notional": Decimal(0),
+                "total_notional": Decimal(0),
             },
         )
         cell["events"] += 1
@@ -187,7 +187,7 @@ async def liquidation_heatmap(
         "end_time": end_time.isoformat(),
         "providers": sorted({event.provider for event in events}),
         "total_events": len(events),
-        "total_notional": str(sum((event.notional for event in events), Decimal("0"))),
+        "total_notional": str(sum((event.notional for event in events), Decimal(0))),
         "price_min": str(min_price) if min_price is not None else None,
         "price_max": str(max_price) if max_price is not None else None,
         "price_step": str(price_step) if price_step is not None else None,
