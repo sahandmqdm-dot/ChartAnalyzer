@@ -15,3 +15,10 @@ MVP: local secure app shell, market-data ingestion, charting, deterministic sing
 
 ### Candle gap detection
 Fixed-interval missing timestamps are detectable and returned without auto-filling synthetic bars. Provider-specific interval metadata and gap policy are still required before ingestion can be enabled.
+
+
+## Market data provider boundary
+- `BinanceSpotAdapter` implements a public Spot Kline provider with bounded limit and interval validation, time-aware optional start/end filters, Decimal conversion, UTC timestamps, and provider error normalization.
+- `GET /api/v1/market-data/candles` requires the local authenticated session and provides sanitized provider errors.
+- The provider is tested using HTTP mock transport; CI must not depend on live exchange availability.
+- Next work: provider-neutral interface, exchange metadata/symbol canonicalization, rate-limit/backoff, caching, incomplete-bar handling, pagination, and live stream.
