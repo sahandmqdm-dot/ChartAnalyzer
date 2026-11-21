@@ -6,7 +6,7 @@ from app.auth import current_user
 from app.market_data.binance import MarketDataProviderError
 from app.market_data.cache import AsyncTTLCache
 from app.market_data.candle import Candle
-from app.market_data.provider import MarketDataProvider
+from app.market_data.provider import MarketDataProvider, MarketDataProviderError
 from app.market_data.registry import get_market_data_provider
 from app.market_data.symbol import Symbol
 from app.market_data.timeframe import Timeframe
