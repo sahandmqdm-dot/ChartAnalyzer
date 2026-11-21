@@ -12,6 +12,8 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
+from tiered_margin_engine import validate_margin_tiers
+
 
 def _time(value: Any, name: str) -> datetime:
     if isinstance(value, str):
@@ -89,7 +91,7 @@ def evaluate_futures_reality_gate(
         "exchange", "symbol", "market_type", "contract_type", "quote_asset",
         "margin_asset", "settlement_asset", "contract_multiplier", "tick_size",
         "step_size", "min_qty", "min_notional", "max_qty", "max_leverage",
-        "maintenance_margin_tiers", "source", "observed_at",
+        "maintenance_margin_tiers", "source", "observed_at", "status",
     )
     missing = [key for key in contract_required if contract.get(key) is None]
     if missing:
@@ -101,7 +103,7 @@ def evaluate_futures_reality_gate(
             blockers.append("contract symbol does not match requested instrument")
         if str(contract["market_type"]).lower() not in {"futures", "linear_perpetual"}:
             blockers.append("contract market_type is not a supported linear Futures market")
-        if str(contract.get("status", "TRADING")).upper() != "TRADING":
+        if str(contract["status"]).upper() != "TRADING":
             blockers.append("contract is not in TRADING status")
         if str(contract["contract_type"]).lower() != "linear":
             blockers.append("only linear contracts are supported by this gate")
@@ -114,8 +116,13 @@ def evaluate_futures_reality_gate(
             except ValueError as exc:
                 blockers.append(str(exc))
         tiers = contract["maintenance_margin_tiers"]
-        if not isinstance(tiers, list) or not tiers:
-            blockers.append("maintenance margin tiers are missing")
+        try:
+            normalized_tiers = validate_margin_tiers(tiers)
+            contract_max_leverage = _number(contract["max_leverage"], "contract.max_leverage", positive=True)
+            if any(tier["max_leverage"] > contract_max_leverage for tier in normalized_tiers):
+                blockers.append("maintenance tier leverage exceeds contract max_leverage")
+        except (TypeError, ValueError) as exc:
+            blockers.append(f"maintenance margin tiers are invalid: {exc}")
         try:
             effective_value = contract.get("effective_from", contract.get("effective_at"))
             if effective_value is None:
