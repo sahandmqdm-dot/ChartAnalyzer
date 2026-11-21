@@ -442,13 +442,13 @@ function App() {
             <div><small>Open interest change</small><strong>{futuresAnalysis.open_interest_change_pct === null ? '—' : Number(futuresAnalysis.open_interest_change_pct).toFixed(3) + '%'}</strong></div>
             <div><small>Latest funding</small><strong>{futuresAnalysis.latest_funding_rate === null ? '—' : (Number(futuresAnalysis.latest_funding_rate) * 100).toFixed(4) + '%'}</strong></div>
             <div><small>Long / short ratio</small><strong>{futuresAnalysis.latest_long_short_ratio === null ? '—' : Number(futuresAnalysis.latest_long_short_ratio).toFixed(3)}</strong></div>
-            <div><small>Positioning interpretation</small><strong>{futuresAnalysis.positioning.replaceAll('_', ' ')}</strong></div>
-            <div><small>Squeeze conditions</small><strong>{futuresAnalysis.squeeze_risk.replaceAll('_', ' ')}</strong></div>
-            <div><small>Funding bias</small><strong>{futuresAnalysis.funding_bias.replaceAll('_', ' ')}</strong></div>
+            <div><small>Positioning interpretation</small><strong>{futuresAnalysis.positioning.replace(/_/g, ' ')}</strong></div>
+            <div><small>Squeeze conditions</small><strong>{futuresAnalysis.squeeze_risk.replace(/_/g, ' ')}</strong></div>
+            <div><small>Funding bias</small><strong>{futuresAnalysis.funding_bias.replace(/_/g, ' ')}</strong></div>
             <div><small>Confidence</small><strong>{futuresAnalysis.confidence}</strong></div>
           </div>
           <div className="signal-list">{futuresAnalysis.signals.map((signal) => <article className="signal-item" key={signal.code}>
-            <div><strong>{signal.label}</strong><span>{signal.direction.replaceAll('_', ' ')} · {signal.severity}</span></div>
+            <div><strong>{signal.label}</strong><span>{signal.direction.replace(/_/g, ' ')} · {signal.severity}</span></div>
             <p>{signal.explanation}</p>
           </article>)}</div>
           <div className="caveat-list"><strong>Interpretation limits</strong><ul>{futuresAnalysis.caveats.map((item) => <li key={item}>{item}</li>)}</ul></div>
