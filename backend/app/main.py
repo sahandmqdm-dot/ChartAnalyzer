@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.backtest.routes import router as backtest_router
 from app.auth import (
     CSRF_COOKIE,
     SESSION_COOKIE,
@@ -26,6 +27,7 @@ app = FastAPI(
 )
 
 app.include_router(market_data_router)
+app.include_router(backtest_router)
 
 if settings.environment == "development":
     app.add_middleware(
