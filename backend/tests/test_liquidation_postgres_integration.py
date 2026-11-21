@@ -58,11 +58,22 @@ async def test_postgres_migration_and_liquidation_repository_round_trip():
         rows = await repository.list_recent_liquidation_events(
             "integration_test", "BTCUSDT", limit=10
         )
-        filtered = await repository.list_liquidation_events_since(
-            "BTCUSDT", datetime.now(UTC) - timedelta(days=1), "integration_test", "long", 10
+        filtered = await repository.aggregate_liquidation_events(
+            "BTCUSDT",
+            datetime.now(UTC) - timedelta(days=1),
+            300,
+            12,
+            "integration_test",
+            "long",
+            10,
         )
         assert filtered is not None
-        assert [row.event_id for row in filtered] == [event_id]
+        assert filtered["total_events"] == 1
+        assert filtered["truncated"] is False
+        assert filtered["providers"] == ["integration_test"]
+        assert sum(cell["long_events"] for cell in filtered["cells"]) == 1
+        assert sum(cell["events"] for cell in filtered["cells"]) == 1
+        assert filtered["total_notional"] == "11375.031250000000000000"
         stored = next(row for row in rows if row.event_id == event_id)
         assert stored.quantity == Decimal("0.125")
         assert stored.price == Decimal("91000.250000000000000000")
