@@ -208,3 +208,70 @@ def test_liquidation_heatmap_validates_filters():
         "/api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT&bucket_minutes=7"
     )
     assert response.status_code == 422
+
+
+def test_liquidation_clusters_requires_authentication():
+    response = TestClient(app).get(
+        "/api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT"
+    )
+    assert response.status_code == 401
+
+
+def test_liquidation_clusters_groups_adjacent_strong_price_bands(monkeypatch):
+    async def aggregate(symbol, start_time, price_bins, provider, side, limit):
+        assert symbol == "BTCUSDT"
+        assert price_bins == 40
+        assert provider is None
+        assert side is None
+        assert limit == 20000
+        return {
+            "total_events": 8,
+            "truncated": False,
+            "price_min": "100",
+            "price_max": "140",
+            "price_step": "1",
+            "total_notional": "500",
+            "bands": [
+                {"price_bin": 1, "price_from": "101", "price_to": "102", "events": 3,
+                 "long_events": 3, "short_events": 0, "long_notional": "100",
+                 "short_notional": "0", "total_notional": "100", "last_event_time": "2026-11-21T10:00:00+00:00"},
+                {"price_bin": 2, "price_from": "102", "price_to": "103", "events": 2,
+                 "long_events": 1, "short_events": 1, "long_notional": "80",
+                 "short_notional": "20", "total_notional": "100", "last_event_time": "2026-11-21T10:01:00+00:00"},
+                {"price_bin": 8, "price_from": "108", "price_to": "109", "events": 3,
+                 "long_events": 0, "short_events": 3, "long_notional": "0",
+                 "short_notional": "300", "total_notional": "300", "last_event_time": "2026-11-21T10:02:00+00:00"},
+            ],
+        }
+
+    monkeypatch.setattr(liquidation_routes, "aggregate_liquidation_price_bands", aggregate)
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT&min_strength_pct=35&min_events=2"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["clusters"]) == 2
+    assert body["clusters"][0]["dominant_side"] == "short"
+    assert body["clusters"][0]["events"] == 3
+    assert body["clusters"][1]["price_bins"] == 2
+    assert body["clusters"][1]["long_notional"] == "180"
+    assert body["clusters"][1]["short_notional"] == "20"
+    assert "not estimated open positions" in body["method"]
+
+
+def test_liquidation_clusters_requires_database(monkeypatch):
+    async def no_database(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(liquidation_routes, "aggregate_liquidation_price_bands", no_database)
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT"
+    )
+    assert response.status_code == 503
+
+
+def test_liquidation_clusters_validates_parameters():
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT&min_strength_pct=0"
+    )
+    assert response.status_code == 422
