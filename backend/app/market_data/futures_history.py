@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.market_data.futures import (
     _HttpFuturesAdapter,
@@ -33,6 +33,11 @@ class FuturesHistory(BaseModel):
     open_interest: list[FuturesSeriesPoint]
     long_short_ratio: list[FuturesSeriesPoint]
     observed_at: datetime
+
+    @field_validator("funding_rate", "open_interest", "long_short_ratio")
+    @classmethod
+    def chronological(cls, points: list[FuturesSeriesPoint]) -> list[FuturesSeriesPoint]:
+        return sorted(points, key=lambda point: point.timestamp)
 
 
 def _decimal(value: Any) -> Decimal:
