@@ -3977,6 +3977,16 @@ def _convert(f, params, body):
     return kwargs
 
 
+# Bound CPU-heavy API execution separately from HTTP worker count.
+_API_MAX_CONCURRENT = 4
+_API_SLOT_TIMEOUT = 0.25
+_API_SEMAPHORE = threading.BoundedSemaphore(_API_MAX_CONCURRENT)
+
+
+def _acquire_api_slot():
+    return _API_SEMAPHORE.acquire(timeout=_API_SLOT_TIMEOUT)
+
+
 CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
@@ -4066,17 +4076,27 @@ def make_handler(token, hosts):
                     body = json.loads(self.rfile.read(n) or b"{}")
                 except Exception:
                     return self._send(400, json.dumps({"detail": "invalid JSON"}))
+            if not _acquire_api_slot():
+                self.send_response(503)
+                self.send_header("Retry-After", "1")
+                self.send_header("Content-Length", "0")
+                self._hdrs()
+                self.end_headers()
+                return
             try:
-                out = f(**_convert(f, params, body))
-                if isinstance(out, str):
-                    return self._send(200, out, "text/html; charset=utf-8", setc)
-                return self._send(200, json.dumps(_clean(out), allow_nan=False), cookie=setc)
-            except HTTPException as e:
-                return self._send(e.status_code, json.dumps({"detail": redact(e.detail)}))
-            except (ValueError, TypeError) as e:
-                return self._send(400, json.dumps({"detail": redact(f"{type(e).__name__}: {e}")}))
-            except Exception as e:
-                return self._send(500, json.dumps({"detail": redact(f"{type(e).__name__}: {e}")}))
+                try:
+                    out = f(**_convert(f, params, body))
+                    if isinstance(out, str):
+                        return self._send(200, out, "text/html; charset=utf-8", setc)
+                    return self._send(200, json.dumps(_clean(out), allow_nan=False), cookie=setc)
+                except HTTPException as e:
+                    return self._send(e.status_code, json.dumps({"detail": redact(e.detail)}))
+                except (ValueError, TypeError) as e:
+                    return self._send(400, json.dumps({"detail": redact(f"{type(e).__name__}: {e}")}))
+                except Exception as e:
+                    return self._send(500, json.dumps({"detail": redact(f"{type(e).__name__}: {e}")}))
+            finally:
+                _API_SEMAPHORE.release()
 
         def do_GET(self):
             self._handle("GET")
