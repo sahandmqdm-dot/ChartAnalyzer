@@ -88,3 +88,27 @@ def test_futures_scenarios_endpoint_is_registered_and_returns_read_only_context(
 def test_futures_scenarios_endpoint_rejects_invalid_request(symbol, tf, limit):
     with pytest.raises(chart_app.HTTPException):
         chart_app.api_futures_scenarios(symbol, tf, limit)
+
+
+@pytest.mark.parametrize(
+    "error,expected_status,expected_text",
+    [
+        (market_data_hub.ProviderUnavailableError("Binance transport failed: URLError"), 502, "HTTPS_PROXY"),
+        (market_data_hub.ProviderRateLimitError("Binance rate limit"), 503, "rate limit"),
+    ],
+)
+def test_futures_api_reports_provider_outage_and_rate_limit(
+    monkeypatch, error, expected_status, expected_text
+):
+    class UnavailableAdapter:
+        def __init__(self, config=None):
+            pass
+
+        def fetch_ohlcv(self, symbol, interval, limit):
+            raise error
+
+    monkeypatch.setattr(market_data_hub, "BinanceUSDMPublicAdapter", UnavailableAdapter)
+    with pytest.raises(chart_app.HTTPException) as caught:
+        chart_app.api_futures_scenarios("BTCUSDT", "1h", 80)
+    assert caught.value.status_code == expected_status
+    assert expected_text.lower() in caught.value.detail.lower()
