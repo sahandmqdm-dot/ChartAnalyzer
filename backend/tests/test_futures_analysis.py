@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from app.market_data.mark_price import MarkPriceCandle
 from app.market_data.futures_analysis import analyze_futures_context
 from app.market_data.futures_history import FuturesHistory, FuturesSeriesPoint
+from app.market_data.mark_price import MarkPriceCandle
 
 
 def point(minutes: int, value: str) -> FuturesSeriesPoint:
