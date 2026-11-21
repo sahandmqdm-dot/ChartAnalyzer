@@ -1,12 +1,7 @@
 import asyncio
 from collections import OrderedDict
 from time import monotonic
-from typing import Generic, TypeVar
-
-T = TypeVar("T")
-
-
-class AsyncTTLCache(Generic[T]):
+class AsyncTTLCache[T]:
     """Small process-local async TTL cache with bounded LRU eviction."""
 
     def __init__(self, *, ttl_seconds: float = 15.0, max_entries: int = 256):
