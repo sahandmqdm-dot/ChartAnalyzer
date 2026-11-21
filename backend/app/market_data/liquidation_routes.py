@@ -8,6 +8,7 @@ from app.auth import current_user
 from app.market_data.futures_routes import get_futures_provider
 from app.market_data.liquidation_repository import (
     aggregate_liquidation_events,
+    aggregate_liquidation_price_bands,
     list_recent_liquidation_events,
 )
 from app.market_data.liquidation_stream import get_collector
@@ -283,7 +284,7 @@ async def liquidation_clusters(
                 "observed_at": history.observed_at.isoformat(),
                 "note": "Context is sourced from the configured futures venue and is not linked causally to observed liquidation clusters."
             }
-        except Exception:
+        except Exception:  # noqa: BLE001 - context is optional and must not break observed-event analysis
             market_context = {
                 "status": "unavailable",
                 "note": "Futures history could not be retrieved; liquidation clusters remain based on persisted observed events."
