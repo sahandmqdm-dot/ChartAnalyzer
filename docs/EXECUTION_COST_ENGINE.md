@@ -14,9 +14,8 @@ OHLCV backtest engine. A point-in-time L2 replay adapter is available for sealed
 - Requested quantity and zero or more fills, each with price, quantity and
   explicit maker or taker liquidity role.
 - Fill provenance for any supplied fills.
-- Explicit impact basis points and, when funding events apply, a funding rate.
-  Missing impact or applicable funding inputs are flagged and make the cost
-  breakdown incomplete, rather than silently asserting zero cost.
+- Explicit impact basis points and traceable impact-model source; when funding events apply, a funding rate and funding-data source.
+  Missing impact values, impact provenance or applicable funding inputs/provenance are flagged and make the cost breakdown incomplete, rather than silently asserting zero cost.
 - Optional fill probability is accepted only with a calibration flag and a
   traceable model source. It is reported as a supplied estimate, not used to
   fabricate fills or expected PnL.
