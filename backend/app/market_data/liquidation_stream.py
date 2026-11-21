@@ -157,6 +157,10 @@ class LiquidationCollector:
         self.events.appendleft(event)
         self._seen.add(event.event_id)
 
+    def clear(self) -> None:
+        self.events.clear()
+        self._seen.clear()
+
     def snapshot(self, limit: int = 100) -> dict:
         status = LiquidationStreamStatus(
             provider=self.provider,
