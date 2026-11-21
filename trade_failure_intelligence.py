@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
-from typing import Any, Dict, Iterable, Optional
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
 
 from version import APP_VERSION
 
 
-def _f(value: Any) -> Optional[float]:
+def _f(value: Any) -> float | None:
     try:
         x = float(value)
         return x if math.isfinite(x) else None
@@ -28,21 +30,20 @@ def _timestamp(df, index: int):
         if "time" in df.columns:
             value = float(df["time"].iloc[index])
             if math.isfinite(value):
-                from datetime import datetime, timezone
-                return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                return datetime.fromtimestamp(value, tz=UTC).isoformat().replace("+00:00", "Z")
         value = df.index[index]
         return value.isoformat() if hasattr(value, "isoformat") else str(value)
     except Exception:
         return None
 
 
-def _side(trade: Dict[str, Any]) -> int:
+def _side(trade: dict[str, Any]) -> int:
     return 1 if str(trade.get("side", "long")).lower() == "long" else -1
 
 
 def _net_after_costs(gross_asset_return: float, exposure: float, fee: float,
                      spread_rt: float, funding_per_bar: float, bars: int,
-                     market_impact_rt: float = 0.0) -> Optional[float]:
+                     market_impact_rt: float = 0.0) -> float | None:
     """Mirror the engine's multiplicative cost convention for a hypothetical exit."""
     try:
         if exposure <= 0 or fee < 0 or spread_rt < 0 or market_impact_rt < 0 or not math.isfinite(funding_per_bar):
@@ -55,14 +56,14 @@ def _net_after_costs(gross_asset_return: float, exposure: float, fee: float,
         funding_base = 1.0 - exposure * funding_per_bar
         if funding_base <= 0:
             return None
-        funding_factor = funding_base ** max(0, int(bars))
+        funding_factor = funding_base ** max(0, bars)
         factor = gross_factor * fee_factor * spread_factor * funding_factor
         return factor - 1.0 if math.isfinite(factor) else None
     except Exception:
         return None
 
 
-def _first_level_touch(highs, lows, level: Optional[float], side: int, kind: str):
+def _first_level_touch(highs, lows, level: float | None, side: int, kind: str):
     if level is None or not math.isfinite(level) or level <= 0:
         return None
     for offset, (hi, lo) in enumerate(zip(highs, lows)):
@@ -77,7 +78,7 @@ def _first_level_touch(highs, lows, level: Optional[float], side: int, kind: str
 
 def _counterfactual_time_exit(opens, highs, lows, entry: int, horizon: int,
                                entry_px: float, side: int,
-                               stop_px: Optional[float], target_px: Optional[float]):
+                               stop_px: float | None, target_px: float | None):
     """Apply existing ATR barriers before a requested next-open time exit."""
     for bar in range(entry, entry + horizon):
         hi, lo, op = float(highs[bar]), float(lows[bar]), float(opens[bar])
@@ -99,12 +100,12 @@ def _counterfactual_time_exit(opens, highs, lows, entry: int, horizon: int,
 
 
 def analyze_trade_failures(
-    trades: Iterable[Dict[str, Any]], df, *, signal=None, entry_regime=None,
-    entry_components: Optional[Dict[str, Any]] = None, fee_per_side: float = 0.0,
+    trades: Iterable[dict[str, Any]], df, *, signal=None, entry_regime=None,
+    entry_components: dict[str, Any] | None = None, fee_per_side: float = 0.0,
     spread_slippage_rt: float = 0.0, market_impact_rt: float = 0.0,
     funding_fee_per_bar: float = 0.0,
     time_exit_horizons=(1, 2, 3, 6, 12), favorable_thresholds=(0.25, 0.5, 1.0),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Reconstruct each trade path and compare earlier time exits descriptively.
 
     Trade indices are global candle indices from walk_forward. Entry is at the
@@ -293,7 +294,7 @@ def analyze_trade_failures(
     for horizon, values in sorted(horizon_rows.items()):
         arr = np.asarray(values, dtype=float)
         horizon_summary[str(horizon)] = {
-            "samples": int(len(arr)), "mean_estimated_net_return_pct": round(float(arr.mean()), 4),
+            "samples": len(arr), "mean_estimated_net_return_pct": round(float(arr.mean()), 4),
             "median_estimated_net_return_pct": round(float(np.median(arr)), 4),
             "positive_pct": round(float(np.mean(arr > 0) * 100.0), 2),
             "note": "Only trades where this horizon precedes actual exit; existing ATR barriers are honored before the requested time exit.",
