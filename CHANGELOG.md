@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased - cross-platform reliability and honest dashboard gating
+
+- Order-book recovery test now waits for the capture's actual monotonic retry deadline instead of assuming a fixed 5 ms sleep; production order-book behavior is unchanged.
+- Dashboard confidence labels now derive from the current NO TRADE gate in both the main verdict and Trend block, independent of async render order.
+- Futures API distinguishes provider outages from rate limits and invalid payloads; network/proxy guidance is explicit and spot analysis remains independent.
+- No signal formula, thresholds, execution policy, or strategy profitability claim changed.
+
 
 ## Unreleased - gate diagnostics and dashboard honesty fixes
 
