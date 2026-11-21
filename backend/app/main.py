@@ -3,8 +3,16 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.auth import (
+    CSRF_COOKIE,
+    SESSION_COOKIE,
+    _allow_login,
+    _password_matches,
+    _session_token,
+    csrf_check,
+    current_user,
+)
 from app.settings import settings
-from app.auth import CSRF_COOKIE, SESSION_COOKIE, _allow_login, _password_matches, _session_token, current_user, csrf_check
 
 app = FastAPI(
     title="ChartAnalyzer Next API",
