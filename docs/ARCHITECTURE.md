@@ -4,7 +4,7 @@ Bounded contexts: Identity, Market Data, Quant, Backtest, Portfolio/Risk, Resear
 
 Dependency direction: API -> application -> domain. Infrastructure implements interfaces. Domain must not depend on web frameworks, databases, exchange SDKs, or LLM libraries.
 
-MVP: local secure app shell, market-data ingestion, charting, deterministic single-strategy backtest. No live trading.
+MVP target: local research shell, market-data ingestion, charting, and deterministic single-strategy backtesting. Current branch implements the local shell and basic close-price chart; a backtesting engine, persistent storage, and live streaming are not implemented. No live trading.
 
 
 ## Implemented Market Data Domain
@@ -18,12 +18,12 @@ MVP: local secure app shell, market-data ingestion, charting, deterministic sing
 
 
 ### Candle gap detection
-Fixed-interval missing timestamps are detectable and returned without auto-filling synthetic bars. Provider-specific interval metadata and gap policy are still required before ingestion can be enabled.
+Fixed-interval missing timestamps can be detected without auto-filling synthetic bars. Gap detection is diagnostic only; no synthetic candles are generated.
 
 
 ## Market data provider boundary
-- `BinanceSpotAdapter` implements a public Spot Kline provider with bounded limit and interval validation, time-aware optional start/end filters, Decimal conversion, UTC timestamps, provider error normalization, and open/closed candle classification based on Binance Kline close time.
-- `fetch_historical_ohlcv` retrieves bounded historical ranges page-by-page, advances using the previous candle close time plus one millisecond, filters duplicate/old boundary rows, and fails closed if pagination stops advancing.
+- `BinanceSpotAdapter` and `BybitSpotAdapter` implement public Spot Kline providers with bounded limits, exchange-specific interval validation, time-aware optional start/end filters, Decimal conversion, UTC timestamps, normalized provider errors, and open/closed candle classification. Bybit returns reverse-ordered rows; its adapter sorts them chronologically and derives candle close time from the selected interval.
+- Both adapters implement bounded historical pagination. Binance advances forward using the previous candle close time plus one millisecond; Bybit pages backward from the requested end because its Kline API returns the newest rows first. Both reject pagination that does not make progress and return ascending, validated candle series.
 - Binance requests use bounded retries for transport failures, HTTP 429, and selected transient 5xx responses. `Retry-After` is honored when numeric; otherwise capped exponential backoff is used. Client errors are not retried, and retry sleep is injectable for deterministic tests.
 - `GET /api/v1/market-data/candles` and `GET /api/v1/market-data/candles/history` require the local authenticated session and provide sanitized provider errors. The history endpoint requires timezone-aware start/end bounds and caps page size at 1000 and total candles at 10000.
 - The provider is tested using HTTP mock transport; CI must not depend on live exchange availability.
@@ -34,7 +34,7 @@ Fixed-interval missing timestamps are detectable and returned without auto-filli
 The candles API uses a process-local asynchronous TTL/LRU cache with a 15-second lifetime and a 512-key bound. Cache keys include provider, normalized symbol, interval, limit, and optional time bounds. Concurrent misses are coalesced with single-flight loading. The cache is intentionally non-durable and per-process; shared Redis caching remains future work.
 
 ## Remaining market data work
-Bounded historical pagination is implemented in the Binance adapter; persistent storage and live streaming are not implemented yet. Candle completion is exposed as metadata; downstream backtests must explicitly exclude open candles. Retry/backoff is implemented but still needs operational tuning against exchange behavior.
+Bounded historical pagination is implemented in both exchange adapters; persistent storage and live streaming are not implemented yet. Candle completion is exposed as metadata; downstream backtests must explicitly exclude open candles. Retry/backoff is implemented but still needs operational tuning against exchange behavior.
 
 
 ### Closed-candle consumption
