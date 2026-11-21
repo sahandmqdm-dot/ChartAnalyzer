@@ -55,6 +55,18 @@ type MarketStructure = {
   liquidity_levels: string[]; closed_candles: number; pivot_window: number; observed_at: string; caveats: string[];
 };
 
+type ConfluenceTimeframe = {
+  period: string; bias: string; trend: string; latest_close: string | null; closed_candles: number;
+  latest_event: string | null; active_bullish_fvgs: number; active_bearish_fvgs: number;
+  active_bullish_order_blocks: number; active_bearish_order_blocks: number; evidence: string[]; caveats: string[];
+};
+type MultiTimeframeConfluence = {
+  symbol: string; provider: string; alignment: string; dominant_bias: string;
+  directional_timeframes: number; bullish_timeframes: number; bearish_timeframes: number;
+  neutral_timeframes: number; timeframes: ConfluenceTimeframe[]; observed_at: string;
+  caveats: string[]; unavailable_timeframes: string[];
+};
+
 type RiskTier = {
   tier: number; notional_floor: string; notional_cap: string | null;
   maintenance_margin_rate: string; maintenance_margin_deduction: string; max_leverage?: string | null;
@@ -222,6 +234,9 @@ function App() {
   const [marketStructure, setMarketStructure] = useState<MarketStructure | null>(null);
   const [marketStructureBusy, setMarketStructureBusy] = useState(false);
   const [marketStructureError, setMarketStructureError] = useState('');
+  const [confluence, setConfluence] = useState<MultiTimeframeConfluence | null>(null);
+  const [confluenceBusy, setConfluenceBusy] = useState(false);
+  const [confluenceError, setConfluenceError] = useState('');
 
   const [riskSide, setRiskSide] = useState<'long' | 'short'>('long');
   const [riskEntry, setRiskEntry] = useState('95000');
@@ -395,6 +410,25 @@ function App() {
       setMarketStructureError(cause instanceof Error ? cause.message : 'Could not analyze market structure');
     } finally {
       setMarketStructureBusy(false);
+    }
+  }
+
+  async function loadConfluence() {
+    setConfluenceBusy(true);
+    setConfluenceError('');
+    setConfluence(null);
+    try {
+      const query = new URLSearchParams({ symbol: symbol.trim(), limit: '200', pivot_window: pivotWindow });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/confluence?' + query, { credentials: 'include' });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail || 'Multi-timeframe confluence failed (' + response.status + ')');
+      }
+      setConfluence(await response.json() as MultiTimeframeConfluence);
+    } catch (cause) {
+      setConfluenceError(cause instanceof Error ? cause.message : 'Could not analyze multi-timeframe confluence');
+    } finally {
+      setConfluenceBusy(false);
     }
   }
 
@@ -883,6 +917,42 @@ function App() {
         </>}
       </section>
 
+
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">MULTI-TIMEFRAME CONFLUENCE</p><h2>{symbol} alignment map</h2></div>
+          <span className="pill">5m · 15m · 1h · 4h · Closed Mark Price</span>
+        </div>
+        <div className="controls history-controls">
+          <label>Pivot confirmation window<select value={pivotWindow} onChange={(event) => setPivotWindow(event.target.value)}>{['2','3','4','5','6','8','10'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <button onClick={() => void loadConfluence()} disabled={confluenceBusy || busy}>{confluenceBusy ? 'Comparing timeframes…' : 'Analyze confluence'}</button>
+        </div>
+        <p className="footnote">Compares confirmed market structure from the same configured futures venue. Neutral timeframes remain neutral; conflicting directions are not collapsed into a forced buy/sell signal.</p>
+        {confluenceError && <p className="error" role="alert">{confluenceError}</p>}
+        {confluence && <>
+          <div className="stats-grid">
+            <div><small>Alignment</small><strong>{confluence.alignment.replace(/_/g, ' ')}</strong></div>
+            <div><small>Dominant bias</small><strong>{confluence.dominant_bias}</strong></div>
+            <div><small>Bullish timeframes</small><strong>{confluence.bullish_timeframes}</strong></div>
+            <div><small>Bearish timeframes</small><strong>{confluence.bearish_timeframes}</strong></div>
+            <div><small>Neutral timeframes</small><strong>{confluence.neutral_timeframes}</strong></div>
+          </div>
+          {confluence.unavailable_timeframes.length > 0 && <p className="error">Unavailable data: {confluence.unavailable_timeframes.join(', ')}. Alignment is incomplete.</p>}
+          <div className="table-wrap">
+            <table><thead><tr><th>Timeframe</th><th>Bias</th><th>Structural trend</th><th>Last event</th><th>Active bullish FVG / OB</th><th>Active bearish FVG / OB</th><th>Closed candles</th></tr></thead>
+              <tbody>{confluence.timeframes.map((item) => <tr key={item.period}>
+                <td>{item.period}</td><td>{item.bias}</td><td>{item.trend.replace(/_/g, ' ')}</td><td>{item.latest_event || '—'}</td>
+                <td>{item.active_bullish_fvgs} / {item.active_bullish_order_blocks}</td>
+                <td>{item.active_bearish_fvgs} / {item.active_bearish_order_blocks}</td><td>{item.closed_candles}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="caveat-list"><strong>Evidence by timeframe</strong><ul>{confluence.timeframes.flatMap((item) => item.evidence.map((evidence, index) => <li key={item.period + index}><strong>{item.period}:</strong> {evidence}</li>))}</ul></div>
+          <div className="caveat-list"><strong>Method and limitations</strong><ul>{confluence.caveats.map((item) => <li key={item}>{item}</li>)}</ul></div>
+          <p className="footnote">Provider: {confluence.provider} · {confluence.symbol} · Updated {new Date(confluence.observed_at).toLocaleString()}</p>
+        </>}
+        {!confluence && !confluenceBusy && !confluenceError && <div className="empty-state">Run the confluence analysis to compare the four structural timeframes.</div>}
+      </section>
 
       <section className="panel">
         <div className="section-heading">
