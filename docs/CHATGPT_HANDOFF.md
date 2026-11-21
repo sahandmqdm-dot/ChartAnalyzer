@@ -28,13 +28,14 @@ Do not expose this application to the public internet or use it for live trading
 ### Market data
 - Provider-neutral `MarketDataProvider` protocol in `backend/app/market_data/provider.py`.
 - Registry in `backend/app/market_data/registry.py`; Binance Spot is the current default provider.
-- Canonical `Candle` model uses Decimal OHLCV and UTC-aware timestamps.
+- Canonical `Candle` model uses Decimal OHLCV, UTC-aware open/close timestamps, and an explicit `is_closed` flag.
 - `Symbol` normalizes case/whitespace and validates supported characters.
 - `Timeframe` defines canonical exchange intervals, including a calendar-month interval that has no fixed seconds duration.
 - Binance public Spot Klines adapter validates symbol, timeframe, limits, and time bounds; converts data to Decimal/UTC; normalizes provider errors.
 - Authenticated endpoint: `GET /api/v1/market-data/candles`.
 - Process-local async TTL/LRU cache: 15 seconds, up to 512 keys. It is not shared across worker processes.
-- Bounded retry/backoff was just added for transport errors, HTTP 429, and selected 5xx responses. Numeric `Retry-After` is honored (capped); otherwise exponential delay is used. Client errors are not retried. The sleep function is injectable for deterministic tests.
+- Binance adapter classifies each candle as open or closed using the exchange-provided Kline close time and an injectable UTC clock; one clock snapshot is used per response batch.
+- Bounded retry/backoff was added for transport errors, HTTP 429, and selected 5xx responses. Numeric `Retry-After` is honored (capped); otherwise exponential delay is used. Client errors are not retried. The sleep function is injectable for deterministic tests.
 - Tests use `httpx.MockTransport`; they should not rely on live Binance.
 
 ## Latest work and CI
@@ -70,7 +71,7 @@ Work through these in order, checking existing code and tests before implementat
 
 1. Verify the latest CI after commit `4b61e7c`; fix any remaining failures.
 2. Review retry semantics and add coverage for transport exceptions and exhausted retry attempts. Consider parsing HTTP-date Retry-After only if justified by provider behavior.
-3. Define candle completeness semantics. Binance Kline includes close time; determine a provider-neutral model for closed vs still-forming candles. Inject a clock for deterministic tests. Never silently treat a live candle as final.
+3. Candle completeness semantics are implemented with `close_time` and `is_closed`; next, ensure API consumers and future backtests explicitly filter open candles where appropriate.
 4. Implement safe historical pagination with explicit page/record bounds, deterministic ordering, duplicate-boundary handling, and rate-limit cooperation.
 5. Strengthen quality validation and document gap semantics per timeframe, especially calendar month.
 6. Only after the ingestion contract stabilizes, consider persistence (PostgreSQL) and shared cache (Redis).
@@ -78,4 +79,4 @@ Work through these in order, checking existing code and tests before implementat
 
 ## Ready-to-use instruction for the next ChatGPT
 
-You are continuing the ChartAnalyzer engineering project. First read this file and the README, architecture, and security baseline documents in the repository. Inspect the latest GitHub Actions status and current branch before editing. Continue only on `chartanalyzer-next-foundation`; do not touch `main`, merge, deploy, or add live trading. The project currently has a FastAPI/auth foundation and a provider-neutral market-data layer with Binance Spot Klines, canonical Candle/Symbol/Timeframe models, a process-local TTL/LRU cache, and newly added bounded retry/backoff. Verify CI after the latest retry import fix (`4b61e7c`). Then continue with deterministic tests and the next recommended task: robust candle closed/open semantics, followed by bounded historical pagination. Make small commits, update architecture docs, and report exact commit hashes and CI links. Do not claim production readiness.
+You are continuing the ChartAnalyzer engineering project. First read this file and the README, architecture, and security baseline documents in the repository. Inspect the latest GitHub Actions status and current branch before editing. Continue only on `chartanalyzer-next-foundation`; do not touch `main`, merge, deploy, or add live trading. The project currently has a FastAPI/auth foundation and a provider-neutral market-data layer with Binance Spot Klines, canonical Candle/Symbol/Timeframe models, explicit open/closed candle metadata, a process-local TTL/LRU cache, and bounded retry/backoff. Verify CI after the latest retry import fix (`4b61e7c`). Verify CI, then continue with bounded historical pagination and explicit open-candle handling at API/backtest boundaries. Make small commits, update architecture docs, and report exact commit hashes and CI links. Do not claim production readiness.
