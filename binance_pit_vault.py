@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import heapq
 import json
+import math
 import os
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -25,6 +26,11 @@ from binance_orderbook import (
     synchronize_buffered,
 )
 from binance_stream_collector import HashChainJSONLStore, SequenceGap
+from execution_cost_engine import (
+    evaluate_execution,
+    market_sweep_fills,
+    validate_fee_schedule,
+)
 
 
 class PITVaultError(RuntimeError):
@@ -614,8 +620,266 @@ __all__ = [
     "persist_session_manifest",
     "reference_replay_orderbook_session",
     "replay_orderbook_session",
+    "replay_historical_market_orders",
     "verify_session_manifest",
 ]
+
+
+def _parse_replay_timestamp(value: Any, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be an ISO-8601 string")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an ISO-8601 string") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field} must include a timezone")
+    return parsed
+
+
+def replay_historical_market_orders(
+    data_root: str | Path,
+    market: str,
+    session_id: str,
+    orders: Iterable[dict[str, Any]],
+    *,
+    fee_schedule: dict[str, Any],
+    max_book_age_ms: float = 500.0,
+    book_depth: int = 1000,
+) -> dict[str, Any]:
+    """Replay hypothetical market orders using only L2 received by decision time.
+
+    Each order requires order_id, decision_at, side, quantity and impact_bps.
+    This estimates displayed depth only; it is not a realized or queue-aware fill.
+    """
+    if market not in {"spot", "usdm"}:
+        raise ValueError("market must be spot or usdm")
+    if isinstance(book_depth, bool) or not isinstance(book_depth, int) or not 1 <= book_depth <= 1000:
+        raise ValueError("book_depth must be an integer from 1 to 1000")
+    if isinstance(max_book_age_ms, bool):
+        raise ValueError("max_book_age_ms must be numeric")
+    try:
+        age_limit = float(max_book_age_ms)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("max_book_age_ms must be numeric") from exc
+    if not math.isfinite(age_limit) or age_limit < 0:
+        raise ValueError("max_book_age_ms must be finite and >= 0")
+    fees = validate_fee_schedule(fee_schedule)
+    if fees["market"] != market:
+        raise ValueError("fee schedule market does not match replay market")
+
+    manifest = build_session_manifest(data_root, market, session_id)
+    if not manifest.get("session_closed") or not manifest.get("session_complete"):
+        raise PITVaultError("historical execution requires a closed, complete capture session")
+    verify_session_manifest(data_root, manifest)
+    if manifest.get("availability_contract", {}).get("available_at_field") != "received_at":
+        raise PITVaultError("unsupported point-in-time availability contract")
+    if manifest.get("event_time_quality", {}).get("event_time_after_receive_time", 0):
+        raise PITVaultError("event timestamps after local receipt violate point-in-time ordering")
+
+    integrity = replay_orderbook_session(data_root, market, session_id)
+    if (
+        not integrity.get("integrity_valid")
+        or not integrity.get("reconstruction_agreement")
+        or integrity.get("sequence_gaps") != 0
+        or not integrity.get("final_valid")
+        or integrity.get("data_quality_status") != "complete_capture"
+    ):
+        raise PITVaultError("order-book replay integrity or sequence validation failed")
+
+    start = _parse_replay_timestamp(manifest["started_at"], "session.started_at")
+    end = _parse_replay_timestamp(manifest["ended_at"], "session.ended_at")
+    prepared = []
+    seen_ids = set()
+    for index, order in enumerate(orders):
+        if not isinstance(order, dict):
+            raise TypeError(f"orders[{index}] must be an object")
+        order_id = str(order.get("order_id", "")).strip()
+        if not order_id or order_id in seen_ids:
+            raise ValueError("each order must have a unique non-empty order_id")
+        seen_ids.add(order_id)
+        decision = _parse_replay_timestamp(
+            order.get("decision_at"), f"orders[{index}].decision_at"
+        )
+        if decision < start or decision > end:
+            raise ValueError(f"order {order_id} decision is outside the capture session")
+        side = str(order.get("side", "")).lower()
+        if side not in {"buy", "sell"}:
+            raise ValueError(f"order {order_id} side must be buy or sell")
+        raw_quantity = order.get("quantity")
+        if isinstance(raw_quantity, bool):
+            raise ValueError(f"order {order_id} quantity must be numeric")
+        try:
+            quantity = float(raw_quantity)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"order {order_id} quantity must be numeric") from exc
+        if not math.isfinite(quantity) or quantity <= 0:
+            raise ValueError(f"order {order_id} quantity must be finite and > 0")
+        if "impact_bps" not in order or isinstance(order["impact_bps"], bool):
+            raise ValueError(f"order {order_id} requires numeric impact_bps")
+        try:
+            impact = float(order["impact_bps"])
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"order {order_id} impact_bps must be numeric") from exc
+        if not math.isfinite(impact) or impact < 0:
+            raise ValueError(f"order {order_id} impact_bps must be finite and >= 0")
+        raw_events = order.get("funding_events", 0)
+        if isinstance(raw_events, bool):
+            raise ValueError(f"order {order_id} funding_events must be an integer")
+        try:
+            events = float(raw_events)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"order {order_id} funding_events must be an integer") from exc
+        if not math.isfinite(events) or events < 0 or not events.is_integer():
+            raise ValueError(f"order {order_id} funding_events must be an integer >= 0")
+        prepared.append((decision, order_id, order, quantity, side))
+    prepared.sort(key=lambda item: (item[0], item[1]))
+
+    book = LocalOrderBook(market, str(manifest["symbol"]).upper())
+    buffered: list[dict[str, Any]] = []
+    latest_book_received_at: str | None = None
+    record_iter = iter(iter_session_records(data_root, manifest, session_id))
+    current = next(record_iter, None)
+    results = []
+
+    for decision, order_id, order, quantity, side in prepared:
+        while current is not None:
+            received_at = _parse_replay_timestamp(
+                current.get("received_at"), "record.received_at"
+            )
+            if received_at > decision:
+                break
+            stream = current.get("stream")
+            payload = current.get("payload", {})
+            if stream == "orderbook_depth":
+                if not book.valid:
+                    buffered.append(payload)
+                else:
+                    try:
+                        if book.apply_diff(payload):
+                            latest_book_received_at = current["received_at"]
+                    except (SequenceGap, OrderBookError, KeyError, TypeError, ValueError):
+                        book.sequence.valid = False
+                        buffered = [payload]
+                        latest_book_received_at = None
+            elif stream == "orderbook_snapshots":
+                try:
+                    snapshot = DepthSnapshot(
+                        last_update_id=int(payload["lastUpdateId"]),
+                        bids=tuple((float(p), float(q)) for p, q in payload["bids"]),
+                        asks=tuple((float(p), float(q)) for p, q in payload["asks"]),
+                        market=market,
+                        symbol=str(payload["symbol"]).upper(),
+                    )
+                    synchronize_buffered(book, snapshot, buffered)
+                    buffered.clear()
+                    # Synchronization only becomes knowable once the snapshot arrives.
+                    latest_book_received_at = current["received_at"]
+                except (KeyError, TypeError, ValueError, OrderBookError, SequenceGap):
+                    book.sequence.valid = False
+                    buffered.clear()
+                    latest_book_received_at = None
+            current = next(record_iter, None)
+
+        common = {
+            "order_id": order_id,
+            "decision_at": decision.isoformat(),
+            "side": side,
+            "requested_quantity": quantity,
+            "session_id": session_id,
+            "manifest_hash": manifest["manifest_hash"],
+            "orderbook_replay_hash": integrity["replay_hash"],
+        }
+        if not book.valid or latest_book_received_at is None:
+            results.append({
+                **common, "status": "blocked",
+                "blocked_reason": "no_sequence_valid_book_at_decision",
+            })
+            continue
+
+        try:
+            top = book.top(book_depth)
+            sweep = market_sweep_fills(
+                top,
+                side=side,
+                requested_quantity=quantity,
+                book_received_at=latest_book_received_at,
+                decision_at=decision.isoformat(),
+                max_age_ms=age_limit,
+            )
+        except (OrderBookError, ValueError, TypeError) as exc:
+            reason = (
+                "stale_order_book" if "stale" in str(exc).lower()
+                else "invalid_order_book"
+            )
+            results.append({
+                **common, "status": "blocked", "blocked_reason": reason,
+                "detail": str(exc),
+            })
+            continue
+
+        execution = evaluate_execution(
+            side=side,
+            order_type="market",
+            requested_quantity=quantity,
+            fills=sweep["fills"],
+            fee_schedule=fees,
+            reference_mid=top["mid"],
+            best_bid=top["bid"],
+            best_ask=top["ask"],
+            impact_bps=impact,
+            funding_rate=order.get("funding_rate"),
+            funding_events=int(events),
+            latency_ms=order.get("latency_ms"),
+            fill_source="sequence_validated_historical_l2_snapshot_sweep",
+            assumptions={
+                "decision_availability": "local_received_at",
+                "book_age_ms": sweep["book_provenance"]["age_ms"],
+                "market_sweep_limitations": sweep["limitations"],
+                "impact_bps_source": order.get("impact_bps_source", "caller_supplied"),
+                "funding_source": order.get("funding_source"),
+            },
+        )
+        results.append({
+            **common,
+            "status": execution["status"],
+            "market_sweep": sweep,
+            "execution": execution,
+            "cost_model_complete": execution["cost_breakdown"]["complete"],
+            "execution_estimate_kind": "displayed_depth_snapshot_estimate",
+            "limitations": [
+                "Not a realized historical fill or a live execution result.",
+                "No queue position, hidden liquidity, cancellations or intervening matching events.",
+                "Latency is recorded but is not independently converted into a cost.",
+                "Funding is included only when explicitly supplied for the order.",
+            ],
+        })
+
+    body = {
+        "schema": "chartanalyzer_historical_execution_replay_v1",
+        "engine": "HistoricalExecutionReplay 1.0",
+        "market": market,
+        "symbol": manifest["symbol"],
+        "session_id": session_id,
+        "manifest_hash": manifest["manifest_hash"],
+        "orderbook_replay_hash": integrity["replay_hash"],
+        "availability_field": "received_at",
+        "orders": results,
+        "summary": {
+            "orders": len(results),
+            "estimated_filled": sum(
+                row.get("execution", {}).get("filled_quantity", 0.0) > 0
+                for row in results
+            ),
+            "blocked": sum(row["status"] == "blocked" for row in results),
+            "partial": sum(row["status"] == "partial" for row in results),
+            "unfilled": sum(row["status"] == "unfilled" for row in results),
+            "cost_models_incomplete": sum(
+                row.get("cost_model_complete") is False for row in results
+            ),
+        },
+    }
+    return {**body, "replay_hash": hashlib.sha256(_canonical(body)).hexdigest()}
 
 
 
