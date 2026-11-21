@@ -315,3 +315,14 @@ def test_historical_execution_rejects_duplicate_ids_and_future_decisions(tmp_pat
                 decision_at="2026-11-20T12:02:00+00:00"
             )]
         )
+
+
+@pytest.mark.parametrize("overrides", [
+    {"order_id": 7},
+    {"side": 7},
+    {"funding_source": 7},
+])
+def test_historical_execution_rejects_untyped_identifiers_and_provenance(tmp_path, overrides):
+    create_session(tmp_path)
+    with pytest.raises((ValueError, TypeError)):
+        _run_historical_execution(tmp_path, [_historical_order(**overrides)])
