@@ -109,7 +109,7 @@ class BybitSpotAdapter:
         except (ValueError, KeyError) as exc:
             raise ValueError("unsupported Bybit Spot candle interval") from exc
         if provider_interval is None:
-            raise ValueError("Bybit Spot does not support the 3d interval")
+            raise ValueError(f"Bybit Spot does not support the {timeframe.value} interval")
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
         if start_time and (start_time.tzinfo is None or start_time.utcoffset() is None):
