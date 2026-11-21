@@ -29,6 +29,12 @@ type FuturesOverview = {
   next_funding_time: string | null;
   observed_at: string;
 };
+type FuturesSeriesPoint = { timestamp: string; value: string; secondary_value: string | null };
+type FuturesHistory = {
+  provider: string; market_type: string; symbol: string; period: string; observed_at: string;
+  funding_rate: FuturesSeriesPoint[]; open_interest: FuturesSeriesPoint[]; long_short_ratio: FuturesSeriesPoint[];
+};
+
 type BacktestTrade = {
   entry_time: string;
   exit_time: string;
@@ -74,6 +80,19 @@ function equityCurvePolyline(points: EquityPoint[]): string {
   }).join(' ');
 }
 
+function seriesPolyline(points: FuturesSeriesPoint[]): string {
+  if (!points.length) return '';
+  const values = points.map((point) => Number(point.value));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  return values.map((value, index) => {
+    const x = 8 + (index / Math.max(values.length - 1, 1)) * 784;
+    const y = 172 - ((value - min) / span) * 150;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+}
+
 function localDateTimeValue(date: Date): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
@@ -107,6 +126,11 @@ function App() {
   const [futuresData, setFuturesData] = useState<FuturesOverview | null>(null);
   const [futuresBusy, setFuturesBusy] = useState(false);
   const [futuresError, setFuturesError] = useState('');
+  const [futuresHistory, setFuturesHistory] = useState<FuturesHistory | null>(null);
+  const [historyPeriod, setHistoryPeriod] = useState('1h');
+  const [historyLimit, setHistoryLimit] = useState('100');
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -204,6 +228,25 @@ function App() {
       setFuturesError(cause instanceof Error ? cause.message : 'Could not load futures data');
     } finally {
       setFuturesBusy(false);
+    }
+  }
+
+  async function loadFuturesHistory() {
+    setHistoryBusy(true);
+    setHistoryError('');
+    setFuturesHistory(null);
+    try {
+      const query = new URLSearchParams({ symbol: symbol.trim(), period: historyPeriod, limit: historyLimit });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/history?' + query, { credentials: 'include' });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail || 'Futures history request failed (' + response.status + ')');
+      }
+      setFuturesHistory(await response.json() as FuturesHistory);
+    } catch (cause) {
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not load futures history');
+    } finally {
+      setHistoryBusy(false);
     }
   }
 
@@ -332,6 +375,25 @@ function App() {
           </div>
           <p className="footnote">Provider: {futuresData.provider} · {futuresData.market_type} · Snapshot: {new Date(futuresData.observed_at).toLocaleString()}</p>
         </>}
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">FUTURES HISTORY</p><h2>Funding · Open interest · Long/short</h2></div>
+          <span className="pill">Historical · Read-only</span>
+        </div>
+        <div className="controls history-controls">
+          <label>Period<select value={historyPeriod} onChange={(event) => setHistoryPeriod(event.target.value)}>{['5m','15m','30m','1h','4h','1d'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>Records<select value={historyLimit} onChange={(event) => setHistoryLimit(event.target.value)}>{['30','50','100','200'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <button onClick={() => void loadFuturesHistory()} disabled={historyBusy || busy}>{historyBusy ? 'Loading…' : 'Load futures history'}</button>
+        </div>
+        <p className="footnote">Long/short is a ratio of global accounts where supported. Exchange history windows and record availability differ.</p>
+        {historyError && <p className="error" role="alert">{historyError}</p>}
+        {futuresHistory && <div className="series-grid">
+          <div className="series-card"><small>Funding rate</small><strong>{futuresHistory.funding_rate.length ? (Number(futuresHistory.funding_rate[futuresHistory.funding_rate.length - 1].value) * 100).toFixed(4) + '%' : 'No data'}</strong><svg viewBox="0 0 800 190" role="img" aria-label="Funding rate history"><polyline points={seriesPolyline(futuresHistory.funding_rate)} /></svg><span>{futuresHistory.funding_rate.length} points</span></div>
+          <div className="series-card"><small>Open interest</small><strong>{futuresHistory.open_interest.length ? Number(futuresHistory.open_interest[futuresHistory.open_interest.length - 1].value).toLocaleString(undefined, { maximumFractionDigits: 3 }) : 'No data'}</strong><svg viewBox="0 0 800 190" role="img" aria-label="Open interest history"><polyline points={seriesPolyline(futuresHistory.open_interest)} /></svg><span>{futuresHistory.open_interest.length} points</span></div>
+          <div className="series-card"><small>Long / short account ratio</small><strong>{futuresHistory.long_short_ratio.length ? Number(futuresHistory.long_short_ratio[futuresHistory.long_short_ratio.length - 1].value).toFixed(3) : 'No data'}</strong><svg viewBox="0 0 800 190" role="img" aria-label="Long short ratio history"><polyline points={seriesPolyline(futuresHistory.long_short_ratio)} /></svg><span>{futuresHistory.long_short_ratio.length} points</span></div>
+        </div>}
+        {futuresHistory && <p className="footnote">Source: {futuresHistory.provider} · {futuresHistory.symbol} · {futuresHistory.period} · Updated {new Date(futuresHistory.observed_at).toLocaleString()}</p>}
       </section>
       <section className="panel">
         <div className="section-heading">
