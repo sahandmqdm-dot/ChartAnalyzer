@@ -6,6 +6,8 @@ the source response and provenance separately.
 """
 from __future__ import annotations
 
+# ruff: noqa: I001  # Flat-layout first-party imports are not consistently classified.
+
 import hashlib
 import json
 from dataclasses import dataclass
