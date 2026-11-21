@@ -67,6 +67,36 @@ python -m binance_microstructure_features --data-dir $env:CHARTANALYZER_DATA_DIR
 
 The output contains per-decision feature hashes and a dataset hash. A trade with an old exchange timestamp but a receive time after the decision is excluded. These features are diagnostic research inputs only; they are not fed into the Futures directional score or treated as evidence of predictive edge.
 
+### Point-in-time snapshot during an active collection session
+
+The closed-session research builder above is useful for replay, but a live forecast cannot wait for the WebSocket session to terminate. For an active session, use the snapshot adapter. It copies the session's current raw partitions to a temporary workspace, verifies the copied hash chains, and computes one feature snapshot using only records whose local `received_at` is at or before the requested decision time:
+
+```powershell
+python -m binance_live_microstructure `
+  --data-dir $env:CHARTANALYZER_DATA_DIR `
+  --market spot `
+  --session-id "<ACTIVE_SESSION_ID>" `
+  --decision-time "2026-11-20T12:00:00+00:00" `
+  --windows 5,60,300 `
+  --book-depth 10 `
+  --output ".\\research\\live_pit_snapshot.json"
+```
+
+The adapter never writes to the collector's source partitions. If a copy catches a partial append or fails hash-chain verification, it retries from a fresh copy and fails closed after the configured retry limit. The output binds the copied-session manifest hash, exact source-partition prefix SHA-256/byte/record boundaries, feature hash, receive-time watermark and dataset hash. The app archives the feature artifact by dataset hash and verifies its exact bytes plus the consumed raw prefixes before recording a forecast. Later appends to the same daily partitions are allowed: verification checks the original prefix and its hash chain, not the growing whole-file digest. Do not delete, rewrite or compact raw partitions before the holdout is finalized and independently archived. Active-session snapshots are explicitly marked `session_complete=false`; they are point-in-time feature evidence, not proof of a complete capture. A sequence gap or invalid book remains visible and must not be interpreted as valid L2 liquidity.
+
+To audit an archived feature artifact later, use the exact SHA-256 stored in the corresponding forecast ledger record:
+
+```powershell
+python -m binance_live_microstructure `
+  --data-dir $env:CHARTANALYZER_DATA_DIR `
+  --verify-artifact "vault/features/<DATASET_HASH>.json" `
+  --expected-sha256 "<ARTIFACT_SHA256>"
+```
+
+The verifier checks the artifact bytes, feature/dataset hashes, source manifest identity and the original raw-partition prefixes. It remains valid after later append-only records are added, but correctly fails if a consumed prefix was altered or truncated.
+
+**Operational boundary:** the prospective API can now invoke this snapshot path automatically when the cohort is registered with `use_binance_microstructure=true`. That mode is restricted to CCXT Binance Spot BTCUSDT, binds the exact cutoff and content-addressed artifact hashes into the ledger, and fails closed if no eligible active session or verified raw-frame/typed-event parity is available. The CLI remains useful for diagnostics and manual replay. The features are currently auxiliary evidence and are not consumed by the PMI quantile model. Do not claim incremental predictive edge or start the 42-day clock until the feature-aware candidate model, VPS soak, restore and failure-injection checks are complete.
+
 ### Seal, verify and replay a closed session
 
 Find the session ID in the raw `session_manifest` JSONL records, then run:
