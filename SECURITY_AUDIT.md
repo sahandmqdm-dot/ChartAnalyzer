@@ -79,6 +79,12 @@ See `SECURITY.md` for the threat model and operational guidance.
 8. **Static-analysis debt.** The 441 Ruff diagnostics and 888 Bandit low-severity findings require triage. They are not all confirmed vulnerabilities, but must not be silently ignored.
 9. **CMI remains incomplete.** CMI-01/02 and the prospective evaluation infrastructure are present. Fundamental/macro, news research, human sentiment, knowledge graph, event impact and full scenario intelligence remain roadmap work.
 
+
+## Additional hardening (2026-11-21)
+
+- API handler execution is now separately capped at four concurrent route computations. Requests that cannot acquire a compute slot within 250 ms receive HTTP 503 with `Retry-After: 1`. This is a global concurrency guard, not a per-IP rate limit; expensive GET endpoints still need endpoint-specific quotas and cancellation/time-budget controls.
+- Regression tests cover full-capacity rejection and normal slot acquisition/release.
+
 ## Required next steps
 
 1. Run the Windows registration and collector scripts against the local app, initially with a small non-production test cohort.
