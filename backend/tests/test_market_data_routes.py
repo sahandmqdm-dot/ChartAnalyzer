@@ -47,7 +47,17 @@ class FakeHistoricalProvider:
                 low=Decimal("9"),
                 close=Decimal("11"),
                 volume=Decimal("5"),
-            )
+            ),
+            Candle(
+                timestamp=datetime(2026, 1, 1, 1, tzinfo=UTC),
+                close_time=datetime(2026, 1, 1, 1, 59, 59, 999000, tzinfo=UTC),
+                is_closed=False,
+                open=Decimal("11"),
+                high=Decimal("13"),
+                low=Decimal("10"),
+                close=Decimal("12"),
+                volume=Decimal("6"),
+            ),
         ]
 
 
@@ -80,6 +90,7 @@ def test_history_endpoint_returns_bounded_historical_candles(monkeypatch):
                 "end_time": "2026-01-02T00:00:00Z",
                 "page_limit": 250,
                 "max_candles": 5000,
+                "closed_only": "true",
             },
         )
     finally:
@@ -90,6 +101,7 @@ def test_history_endpoint_returns_bounded_historical_candles(monkeypatch):
     assert payload["provider"] == "fake"
     assert payload["symbol"] == "BTCUSDT"
     assert payload["count"] == 1
+    assert len(payload["candles"]) == 1
     assert payload["candles"][0]["is_closed"] is True
     assert provider.arguments["page_limit"] == 250
     assert provider.arguments["max_candles"] == 5000
