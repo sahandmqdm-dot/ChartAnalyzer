@@ -32,7 +32,7 @@ def test_market_structure_ignores_unclosed_candles():
         pivot_window=2,
     )
     assert result.closed_candles == 10
-    assert result.latest_close == Decimal("109")
+    assert result.latest_close == Decimal(109)
 
 
 def test_market_structure_detects_fair_value_gap():
