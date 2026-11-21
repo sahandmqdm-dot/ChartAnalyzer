@@ -16,6 +16,7 @@ type Candle = {
 };
 type CandleResponse = { provider: string; symbol: string; interval: string; count: number; candles: Candle[] };
 
+type EquityPoint = { timestamp: string; equity: string; drawdown_pct: string };
 type BacktestTrade = {
   entry_time: string;
   exit_time: string;
@@ -38,9 +39,28 @@ type BacktestResponse = {
     winning_trades: number;
     losing_trades: number;
     win_rate_pct: string;
+    profit_factor: string | null;
+    expectancy: string;
+    average_win: string;
+    average_loss: string;
+    exposure_pct: string;
     trades: BacktestTrade[];
+    equity_curve: EquityPoint[];
   };
 };
+
+function equityCurvePolyline(points: EquityPoint[]): string {
+  if (!points.length) return '';
+  const values = points.map((point) => Number(point.equity));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  return values.map((value, index) => {
+    const x = 8 + (index / Math.max(values.length - 1, 1)) * 784;
+    const y = 172 - ((value - min) / span) * 150;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+}
 
 function localDateTimeValue(date: Date): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -277,6 +297,18 @@ function App() {
             <div><small>Win rate</small><strong>{Number(backtestResult.result.win_rate_pct).toFixed(1)}%</strong></div>
             <div><small>Trades</small><strong>{backtestResult.result.trade_count}</strong></div>
             <div><small>Candles used</small><strong>{backtestResult.candles_used}</strong></div>
+            <div><small>Profit factor</small><strong>{backtestResult.result.profit_factor === null ? '—' : Number(backtestResult.result.profit_factor).toFixed(2)}</strong></div>
+            <div><small>Expectancy</small><strong>{Number(backtestResult.result.expectancy).toFixed(2)}</strong></div>
+            <div><small>Exposure</small><strong>{Number(backtestResult.result.exposure_pct).toFixed(1)}%</strong></div>
+          </div>
+          <div className="chart-wrap equity-chart">
+            <div className="chart-caption">Marked-to-market equity curve</div>
+            <svg viewBox="0 0 800 190" role="img" aria-label="Backtest equity curve">
+              <line x1="8" y1="22" x2="792" y2="22" />
+              <line x1="8" y1="97" x2="792" y2="97" />
+              <line x1="8" y1="172" x2="792" y2="172" />
+              <polyline points={equityCurvePolyline(backtestResult.result.equity_curve)} />
+            </svg>
           </div>
           <div className="table-wrap">
             <table><thead><tr><th>Entry (UTC)</th><th>Exit (UTC)</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Return</th></tr></thead>
@@ -287,7 +319,7 @@ function App() {
               </tr>)}</tbody>
             </table>
           </div>
-          <p className="footnote">* Drawdown is calculated from completed trades only; it does not represent intra-trade mark-to-market drawdown. Provider: {backtestResult.provider}.</p>
+          <p className="footnote">Drawdown uses candle-close marked-to-market equity with estimated liquidation fees. Exposure is the share of candles spent holding a position. Profit factor is unavailable when there are no losing trades. Provider: {backtestResult.provider}.</p>
         </>}
       </section>
       <footer>ChartAnalyzer Next · Local quantitative research MVP · Market data is informational, not investment advice.</footer>
