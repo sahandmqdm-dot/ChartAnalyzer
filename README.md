@@ -41,3 +41,7 @@ The authenticated endpoint retrieves public Binance Spot candles. Set a strong l
 GET /api/v1/market-data/candles?symbol=BTCUSDT&interval=1h&limit=300
 ```
 Supported intervals are Binance Spot intervals. Requests are validated; provider failures are returned as a sanitized 502. The API endpoint requires a valid login session. Use mock transport tests; tests do not call Binance live.
+
+
+### Candle response cache
+The authenticated candles endpoint uses a bounded, process-local LRU/TTL cache (15-second TTL, up to 512 query keys) to reduce repeated provider calls. This cache is an optimization only; it is not durable storage and is not shared across workers.
