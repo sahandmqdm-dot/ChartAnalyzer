@@ -3,3 +3,14 @@
 .series-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}.series-card{min-width:0;background:#0c1425;border:1px solid #263650;border-radius:10px;padding:14px}.series-card small,.series-card strong,.series-card span{display:block}.series-card small,.series-card span{color:#8291a8;font-size:11px}.series-card strong{font-size:19px;margin-top:7px}.series-card svg{display:block;width:100%;height:auto;margin:14px 0 8px}.series-card polyline{fill:none;stroke:#67e8f9;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}.history-controls{grid-template-columns:1fr 1fr auto;margin-top:18px}@media(max-width:850px){.history-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.history-controls button{grid-column:span 2}}@media(max-width:650px){.series-grid{grid-template-columns:1fr}.history-controls{grid-template-columns:1fr}.history-controls button{grid-column:auto}}
 
 .signal-list{display:grid;gap:10px;margin-top:18px}.signal-item{border:1px solid #263650;background:#0c1425;border-radius:10px;padding:14px}.signal-item>div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.signal-item>div span{color:#9aa9bf;font-size:12px}.signal-item p{margin:9px 0 0;color:#b6c3d6;font-size:13px;line-height:1.6}.caveat-list{margin-top:16px;padding:14px;border:1px solid #39445a;border-radius:10px;color:#b6c3d6;font-size:12px}.caveat-list ul{padding-left:20px;margin-bottom:0}.caveat-list li{margin-top:6px;line-height:1.5}
+
+.risk-controls{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:18px}
+.risk-controls button{min-height:42px}
+.json-field{display:grid;gap:8px;margin-top:16px;color:#aebbd0;font-size:12px}
+.json-field textarea{width:100%;resize:vertical;background:#0c1425;border:1px solid #34435c;color:#e8edf6;border-radius:9px;padding:12px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.futures-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}
+.futures-actions .footnote{flex:1;min-width:240px;margin:0}
+.futures-actions button{border:0;border-radius:9px;padding:11px 16px;background:#67e8f9;color:#07111f;font-weight:800;cursor:pointer}
+.futures-actions .quiet-button{background:transparent;border:1px solid #39465d;color:#cbd5e1}
+@media(max-width:850px){.risk-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.risk-controls{grid-template-columns:1fr}.futures-actions{align-items:stretch;flex-direction:column}.futures-actions .footnote{min-width:0}}
