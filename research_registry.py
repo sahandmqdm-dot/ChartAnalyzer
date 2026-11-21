@@ -100,7 +100,11 @@ class ResearchRegistry:
             """)
 
     def register(self, hypothesis_id: str, name: str, specification: Dict[str, Any], family_id: Optional[str] = None):
-        if not hypothesis_id or not name or not isinstance(specification, dict):
+        if (
+            not isinstance(hypothesis_id, str) or not hypothesis_id.strip()
+            or not isinstance(name, str) or not name.strip()
+            or not isinstance(specification, dict)
+        ):
             raise ValueError("hypothesis_id, name and object specification are required")
         family = str(family_id or "default")
         if len(hypothesis_id) > 128 or len(name) > 256 or len(family) > 128:
@@ -142,7 +146,12 @@ class ResearchRegistry:
             raise ValueError("run_id must be a string of at most 128 characters")
         if not isinstance(metrics, dict):
             raise TypeError("metrics must be an object")
-        normalized_p = None if p_value is None else float(p_value)
+        if isinstance(p_value, bool):
+            raise ValueError("p_value must be numeric, not boolean")
+        try:
+            normalized_p = None if p_value is None else float(p_value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("p_value must be numeric") from exc
         if normalized_p is not None and (not math.isfinite(normalized_p) or not 0 <= normalized_p <= 1):
             raise ValueError("p_value must be finite and in [0,1]")
         normalized_samples = []
