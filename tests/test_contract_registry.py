@@ -78,10 +78,12 @@ def test_stale_and_future_observations_fail_closed():
     stale = registry.resolve(venue="binance", instrument_id="BTCUSDT",
                              market_type="linear_perpetual", as_of=NOW,
                              max_observation_age_seconds=60)
-    future = registry.resolve(venue="binance", instrument_id="BTCUSDT",
-                              market_type="linear_perpetual", as_of=NOW - timedelta(days=3))
+    future_registry = ContractRegistry()
+    future_registry.register(metadata(observed_at=NOW + timedelta(seconds=5)))
+    future = future_registry.resolve(venue="binance", instrument_id="BTCUSDT",
+                                     market_type="linear_perpetual", as_of=NOW)
     assert stale["status"] == "CONTRACT_STALE"
-    assert future["status"] == "CONTRACT_NOT_FOUND"
+    assert future["status"] == "CONTRACT_OBSERVATION_FROM_FUTURE"
 
 
 def test_unknown_identity_and_bad_contract_metadata_fail_closed():
