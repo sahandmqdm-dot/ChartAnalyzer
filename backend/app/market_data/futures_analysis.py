@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.market_data.candle import Candle
+from app.market_data.mark_price import MarkPriceCandle
 from app.market_data.futures_history import FuturesHistory
 
 
@@ -45,12 +45,11 @@ def _change_pct(previous: Decimal, latest: Decimal) -> Decimal | None:
 
 def analyze_futures_context(
     history: FuturesHistory,
-    candles: list[Candle],
+    candles: list[MarkPriceCandle],
 ) -> FuturesAnalysis:
     """Create descriptive, rule-based futures context from recent series.
 
-    Price is supplied by the configured Spot OHLCV feed, so the result explicitly
-    treats it as a proxy rather than a futures mark-price return.
+    Price is supplied by the exchange's futures Mark Price OHLC feed.
     """
     closed = sorted((c for c in candles if c.is_closed), key=lambda c: c.timestamp)
     price_change = (
@@ -144,7 +143,7 @@ def analyze_futures_context(
         else "low"
     )
     caveats = [
-        "تغییر قیمت از کندل‌های Spot صرافی انتخاب‌شده محاسبه شده و جایگزین بازده Mark Price فیوچرز نیست.",
+        "تغییر قیمت از کندل‌های Mark Price قرارداد خطی محاسبه شده است؛ این قیمت مرجع محاسبات مارجین است و با آخرین قیمت معامله یکسان نیست.",
         "Open Interest، Funding و نسبت Long/Short از تعریف‌ها و پنجره‌های زمانی مختص هر صرافی پیروی می‌کنند.",
         "برچسب‌های Long/Short build-up و squeeze فقط تفسیر احتمالی‌اند؛ این داده‌ها سمت دقیق همه پوزیشن‌ها یا وقوع لیکوییدیشن را ثابت نمی‌کنند.",
         "آستانه Funding ثابت و اکتشافی است و هنوز برای هر نماد، صرافی و رژیم بازار کالیبره نشده است.",
