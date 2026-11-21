@@ -62,3 +62,10 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - Price return is a Spot proxy because historical futures mark-price candles are not yet wired into the common candle model. Funding thresholds are exploratory constants, not volatility-normalized or backtested parameters.
 - “Squeeze conditions” labels are heuristic conjunctions (e.g. rising OI, falling price, and strongly positive funding for long-squeeze conditions). They do not detect liquidations, identify who is trapped, or forecast a squeeze. Long/short account ratios are account counts/ratios, not position-size-weighted exposure.
 - The endpoint does not emit buy/sell orders or exchange actions. Treat output as a market-context annotation and not as a recommendation.
+
+
+## Futures mark-price history
+- `GET /api/v1/derivatives/mark-price-history` returns bounded linear-perpetual mark-price OHLC candles from Binance USDⓈ-M (`/fapi/v1/markPriceKlines`) or Bybit V5 (`/v5/market/mark-price-kline`). It is authenticated and read-only.
+- The adapters normalize exchange tuples into UTC timestamps, Decimal OHLC values, deterministic chronological order, and an explicit candle-closed flag. The API accepts `5m`, `15m`, `30m`, `1h`, `4h`, and `1d`, with a maximum of 200 rows and a 30-second process-local cache.
+- Mark-price candles contain no meaningful traded volume in these endpoints; the domain intentionally models only OHLC and timestamps rather than inventing volume.
+- The existing futures intelligence analyzer still uses Spot candles for its price/OI interpretation. Wiring Mark Price into that analyzer and validating its outputs is the next integration step. This endpoint alone does not estimate liquidation prices or identify liquidation clusters.
