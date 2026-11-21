@@ -84,3 +84,12 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - The collector is on-demand, reconnects after transport failures, deduplicates event IDs, and retains at most 2,000 events per symbol in process memory. The frontend polls the authenticated snapshot endpoint while the stream is active. Shutdown cancels active collectors.
 - The exchange streams are snapshots, not a complete historical liquidation tape: Binance emits at most the latest liquidation order per symbol per 1-second interval; Bybit pushes updates at 500ms. The collector cannot recover events missed while disconnected, and its memory buffer is cleared on process restart or explicit stop. No database persistence or historical backfill is claimed.
 - The UI includes the isolated liquidation estimator and a live liquidation tape. No trading permissions or order endpoints are involved.
+
+
+## PostgreSQL persistence for liquidation events
+- PostgreSQL is an optional durable store configured through `DATABASE_URL`; the API uses SQLAlchemy's async engine with asyncpg. Without the setting, the existing bounded in-memory behavior remains available.
+- `liquidation_events` stores normalized exchange event fields using Decimal-compatible `NUMERIC(38,18)` columns. `event_id` is the primary key for idempotent inserts; a composite provider/symbol/event-time index supports recent-event reads.
+- Alembic migration `0001_liquidation_events` creates the table and index. Docker Compose starts PostgreSQL with a named volume, waits for database health, applies migrations, then starts the single-worker API.
+- The collector updates its in-memory deque first and attempts persistence asynchronously. A database error is recorded as a sanitized exception class and does not terminate the exchange WebSocket loop. Once the database recovers, subsequent events are persisted; missed events during the outage are not backfilled.
+- The authenticated snapshot endpoint reads durable rows when configured and available; it falls back to the collector's bounded in-memory snapshot if the database is unavailable. Database shutdown is included in API lifespan cleanup.
+- This is event persistence only. General OHLCV, funding, open-interest, and long/short-ratio history are still not stored in PostgreSQL.
