@@ -9,7 +9,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, UTC
 from typing import Any
 
 from tiered_margin_engine import validate_margin_tiers
