@@ -226,3 +226,78 @@ def test_spot_provider_cannot_be_used_for_derivatives_history():
     )})
     with pytest.raises(MarketDataError, match="does not expose derivatives"):
         hub.fetch_derivatives("binance_spot", "BTCUSDT")
+
+
+def exchange_info_payload(status="TRADING"):
+    return {
+        "symbols": [{
+            "symbol": "BTCUSDT", "contractType": "PERPETUAL",
+            "contractStatus": status, "onboardDate": int((NOW - 86400) * 1000),
+            "baseAsset": "BTC", "quoteAsset": "USDT", "marginAsset": "USDT",
+            "filters": [
+                {"filterType": "PRICE_FILTER", "tickSize": "0.10"},
+                {"filterType": "LOT_SIZE", "minQty": "0.001", "maxQty": "1000", "stepSize": "0.001"},
+                {"filterType": "MARKET_LOT_SIZE", "minQty": "0.001", "maxQty": "100", "stepSize": "0.001"},
+                {"filterType": "MIN_NOTIONAL", "notional": "5"},
+            ],
+        }]
+    }
+
+
+def test_contract_metadata_public_exchange_info_is_incomplete_without_risk_brackets():
+    adapter = BinanceUSDMPublicAdapter(
+        transport=fake_transport(exchange_info_payload()), clock=lambda: NOW
+    )
+    result = adapter.fetch_contract_metadata("BTCUSDT")
+    assert result["status"] == "CONTRACT_METADATA_INCOMPLETE"
+    assert result["registration_ready"] is False
+    assert "maintenance_margin_tiers" in result["missing_components"]
+    assert result["contract"]["tick_size"] == "0.1"
+    assert result["contract"]["max_qty"] == "1000"
+
+
+def test_contract_metadata_normalizes_supplied_brackets_and_is_registry_ready():
+    from contract_registry import ContractRegistry
+
+    brackets = [
+        {"bracket": 1, "notionalFloor": "0", "notionalCap": "50000",
+         "maintMarginRatio": "0.004", "cum": "0", "initialLeverage": 125},
+        {"bracket": 2, "notionalFloor": "50000", "notionalCap": "250000",
+         "maintMarginRatio": "0.01", "cum": "300", "initialLeverage": 50},
+    ]
+    adapter = BinanceUSDMPublicAdapter(
+        transport=fake_transport(exchange_info_payload()), clock=lambda: NOW
+    )
+    result = adapter.fetch_contract_metadata(
+        "BTCUSDT", risk_brackets=brackets,
+        risk_bracket_source="separately-provided-risk-bracket-fixture",
+        risk_bracket_version="fixture-v1",
+    )
+    assert result["status"] == "CONTRACT_METADATA_COMPLETE"
+    assert result["registration_ready"] is True
+    assert result["contract"]["maintenance_margin_tiers"][1]["maintenance_amount"] == 300
+    assert result["contract"]["max_leverage"] == 125
+    snapshot = ContractRegistry().register(result["contract"])
+    assert snapshot.instrument_id == "BTCUSDT"
+
+
+def test_contract_metadata_rejects_missing_risk_bracket_provenance():
+    adapter = BinanceUSDMPublicAdapter(
+        transport=fake_transport(exchange_info_payload()), clock=lambda: NOW
+    )
+    with pytest.raises(DataValidationError, match="provenance"):
+        adapter.fetch_contract_metadata(
+            "BTCUSDT",
+            risk_brackets=[{"notionalCap": "50000", "maintMarginRatio": "0.004",
+                            "cum": "0", "initialLeverage": 100}],
+        )
+
+
+def test_contract_metadata_preserves_non_trading_exchange_state():
+    adapter = BinanceUSDMPublicAdapter(
+        transport=fake_transport(exchange_info_payload(status="PENDING_TRADING")),
+        clock=lambda: NOW,
+    )
+    result = adapter.fetch_contract_metadata("BTCUSDT")
+    assert result["contract"]["exchange_status"] == "PENDING_TRADING"
+    assert result["contract"]["status"] == "HALT"
