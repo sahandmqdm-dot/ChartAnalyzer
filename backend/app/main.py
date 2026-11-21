@@ -14,8 +14,8 @@ from app.auth import (
     current_user,
     revoke_session,
 )
-from app.settings import settings
 from app.market_data.routes import router as market_data_router
+from app.settings import settings
 
 app = FastAPI(
     title="ChartAnalyzer Next API",
