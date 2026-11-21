@@ -215,7 +215,7 @@ def test_execution_cost_result_is_registered_with_provenance_and_completeness(tm
     registry = ResearchRegistry(tmp_path / "research.db")
     registry.register("cost-hypothesis-v1", "Execution cost accounting",
                       {"purpose": "frozen execution cost model"})
-    complete_result = run(impact_bps=0)
+    complete_result = run(impact_bps=0, impact_source="validated impact model v1")
     recorded = record_execution_cost_experiment(
         registry, experiment_id="cost-exp-001", hypothesis_id="cost-hypothesis-v1",
         dataset_id="dataset-abc", config_hash="config-abc", source="binance_spot",
@@ -279,3 +279,23 @@ def test_l2_sweep_rejects_duplicate_crossed_and_invalid_sequence_levels():
     negative_sequence = {**base, "last_update_id": -1}
     with pytest.raises(ValueError, match="last_update_id"):
         market_sweep_fills(negative_sequence, **kwargs)
+
+
+def test_cost_completeness_requires_impact_and_applicable_funding_provenance():
+    missing_impact_source = run(impact_bps=0)
+    assert missing_impact_source["cost_breakdown"]["complete"] is False
+    assert "impact_source" in missing_impact_source["cost_breakdown"]["missing_inputs"]
+
+    missing_funding_source = run(
+        impact_bps=0, impact_source="impact model v1",
+        funding_rate=0.0001, funding_events=1,
+    )
+    assert missing_funding_source["cost_breakdown"]["complete"] is False
+    assert "funding_source" in missing_funding_source["cost_breakdown"]["missing_inputs"]
+
+    complete = run(
+        impact_bps=0, impact_source="impact model v1",
+        funding_rate=0.0001, funding_source="venue funding history",
+        funding_events=1,
+    )
+    assert complete["cost_breakdown"]["complete"] is True
