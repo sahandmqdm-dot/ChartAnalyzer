@@ -34,7 +34,7 @@ async def test_bybit_risk_tiers_are_normalized_with_cumulative_deduction():
     assert result.tiers[0].notional_floor == 0
     assert result.tiers[0].notional_cap == 100000
     assert result.tiers[1].notional_floor == 100000
-    assert result.tiers[1].notional_cap is None
+    assert result.tiers[1].notional_cap == 200000
     assert result.tiers[1].maintenance_margin_deduction == 500
 
 
