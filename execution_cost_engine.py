@@ -76,7 +76,9 @@ def evaluate_execution(
     best_bid: float,
     best_ask: float,
     impact_bps: float | None = None,
+    impact_source: str | None = None,
     funding_rate: float | None = None,
+    funding_source: str | None = None,
     funding_events: int = 0,
     latency_ms: float | None = None,
     fill_source: str | None = None,
@@ -108,6 +110,10 @@ def evaluate_execution(
         raise ValueError("funding_events must be an integer")
     events = int(events_value)
     probability = None if fill_probability is None else _number(fill_probability, "fill_probability", minimum=0.0)
+    if impact_source is not None and not str(impact_source).strip():
+        raise ValueError("impact_source must be non-empty when supplied")
+    if funding_source is not None and not str(funding_source).strip():
+        raise ValueError("funding_source must be non-empty when supplied")
     if probability is not None and probability > 1:
         raise ValueError("fill_probability must be <= 1")
     if probability is not None and order_type != "limit":
@@ -186,14 +192,18 @@ def evaluate_execution(
             "slippage_beyond_touch": slippage_cost, "market_impact": impact_cost,
             "funding": funding_cost, "total": total_cost,
             "effective_cost_rate": effective_cost_rate,
-            "complete": impact is not None and (events == 0 or funding is not None),
-            "missing_inputs": ([ "impact_bps" ] if impact is None else []) +
-                ([ "funding_rate" ] if events > 0 and funding is None else []),
+            "complete": (impact is not None and bool(impact_source)
+                         and (events == 0 or (funding is not None and bool(funding_source)))),
+            "missing_inputs": (["impact_bps"] if impact is None else []) +
+                (["impact_source"] if not impact_source else []) +
+                (["funding_rate"] if events > 0 and funding is None else []) +
+                (["funding_source"] if events > 0 and not funding_source else []),
         },
         "execution_context": {
             "reference_mid": mid, "best_bid": bid, "best_ask": ask,
             "quoted_spread_bps": (ask - bid) / mid * 10000.0,
-            "impact_bps_assumption": impact, "latency_ms": latency,
+            "impact_bps_assumption": impact, "impact_source": impact_source,
+            "funding_source": funding_source, "latency_ms": latency,
             "fill_source": fill_source, "assumptions": assumption_data,
             "fill_probability": probability,
             "fill_probability_source": fill_probability_source,
