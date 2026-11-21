@@ -120,3 +120,83 @@ def test_snapshot_prefers_durable_database_events(monkeypatch):
     assert body["storage_status"] == "available"
     assert body["retention"] == "postgresql_persistent"
     assert body["events"][0]["event_id"] == "c" * 24
+
+
+def test_liquidation_heatmap_requires_authentication():
+    response = TestClient(app).get(
+        "/api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT"
+    )
+    assert response.status_code == 401
+
+
+def test_liquidation_heatmap_aggregates_observed_events(monkeypatch):
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from app.market_data.liquidation_stream import LiquidationEvent
+
+    now = datetime.now(UTC)
+    events = [
+        LiquidationEvent(
+            event_id="d" * 24,
+            provider="binance_usdm_futures",
+            symbol="BTCUSDT",
+            event_time=now,
+            liquidation_side="long",
+            order_side="SELL",
+            quantity=Decimal("0.1"),
+            price=Decimal("100"),
+            notional=Decimal("10"),
+            price_kind="average_execution",
+        ),
+        LiquidationEvent(
+            event_id="e" * 24,
+            provider="bybit_linear_futures",
+            symbol="BTCUSDT",
+            event_time=now,
+            liquidation_side="short",
+            order_side="BUY",
+            quantity=Decimal("0.2"),
+            price=Decimal("110"),
+            notional=Decimal("22"),
+            price_kind="bankruptcy",
+        ),
+    ]
+
+    async def events_since(symbol, start_time, provider, limit):
+        assert symbol == "BTCUSDT"
+        assert provider is None
+        assert limit == 20001
+        return events
+
+    monkeypatch.setattr(liquidation_routes, "list_liquidation_events_since", events_since)
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT&price_bins=10"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_events"] == 2
+    assert body["total_notional"] == "32"
+    assert set(body["providers"]) == {"binance_usdm_futures", "bybit_linear_futures"}
+    assert sum(cell["long_events"] for cell in body["cells"]) == 1
+    assert sum(cell["short_events"] for cell in body["cells"]) == 1
+    assert "not estimated future liquidation levels" in body["data_semantics"]
+
+
+def test_liquidation_heatmap_reports_missing_database(monkeypatch):
+    async def no_database(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(liquidation_routes, "list_liquidation_events_since", no_database)
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT"
+    )
+    assert response.status_code == 503
+
+
+def test_liquidation_heatmap_validates_filters():
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations/heatmap?symbol=BTCUSDT&bucket_minutes=7"
+    )
+    assert response.status_code == 422
