@@ -128,7 +128,7 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
     current = float(now if now is not None else time.time())
     if not isinstance(record, dict):
         return {
-            "status": "MISSING", "eligible": False,
+            "status": "MISSING", "decision_class": "UNVERIFIED", "eligible": False,
             "reasons": ["No matching walk-forward evidence exists for this market and strategy configuration."],
             "policy": p,
         }
@@ -181,8 +181,49 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
     if bool(p.get("require_positive_oos_ci", True)) and (ci_lower is None or ci_lower <= 0):
         reasons.append("The moving-block bootstrap 95% CI does not have a strictly positive lower bound.")
 
+    gap_count = _finite(record.get("data_gap_count", 0))
+    ci_upper = _finite(ci[1]) if isinstance(ci, (list, tuple)) and len(ci) >= 2 else None
+    raw_p_value = _finite(record.get("raw_p_value"))
+    data_invalid = (
+        record.get("data_integrity_valid") is not True
+        or gap_count is None
+        or gap_count < 0
+        or gap_count > 0
+        or record.get("cohort_integrity") != "PASS"
+    )
+    # "Enough rows" is not enough: all essential OOS diagnostics must exist
+    # before a performance conclusion is classified as evidence-backed.
+    sample_complete = (
+        n >= int(p["min_oos_trades"])
+        and folds >= int(p["min_validation_folds"])
+        and ci_lower is not None and ci_upper is not None and ci_lower <= ci_upper
+        and q_value is not None and 0.0 <= q_value <= 1.0
+        and raw_p_value is not None and 0.0 <= raw_p_value <= 1.0
+        and expectancy is not None and pf is not None
+        and positive_ratio is not None and positive_ratio >= 0.0
+        and dd is not None
+        and record.get("cost_stress_1_5x_positive") in (True, False)
+        and bool(record.get("strategy_frozen", False))
+        and record.get("parameter_optimization") is False
+        and gap_count == 0
+    )
+    fresh_evidence = 0.0 <= age_hours <= float(p["validation_max_age_hours"])
+    if data_invalid:
+        decision_class = "DATA_INVALID"
+    elif not sample_complete:
+        decision_class = "INSUFFICIENT_EVIDENCE"
+    elif not fresh_evidence:
+        decision_class = "UNVERIFIED"
+    elif expectancy is not None and pf is not None and expectancy <= 0.0 and pf <= 1.0 and ci_upper < 0.0:
+        decision_class = "NO_EDGE"
+    elif not reasons:
+        decision_class = "PAPER_CANDIDATE"
+    else:
+        decision_class = "UNVERIFIED"
+
     return {
         "status": "ELIGIBLE" if not reasons else "BLOCKED",
+        "decision_class": decision_class,
         "eligible": not reasons,
         "reasons": reasons,
         "age_hours": round(max(0.0, age_hours), 2) if math.isfinite(age_hours) else None,
@@ -200,6 +241,72 @@ def evaluate_evidence(record: Optional[Dict[str, Any]], policy: Optional[Dict[st
         "run_id": record.get("run_id"),
         "dataset_id": record.get("dataset_id"),
         "policy": p,
+    }
+
+
+def evaluate_strategy_lifecycle(
+    windows: list[dict[str, Any]], *, min_trades_per_window: int = 200,
+    required_bad_windows: int = 2,
+) -> Dict[str, Any]:
+    """Assess retirement evidence from consecutive, disjoint, frozen OOS windows.
+
+    A single weak run, stale record, invalid dataset, or underpowered window can
+    never retire a strategy. Windows must be supplied oldest-to-newest and carry
+    numeric start/end timestamps. This function proposes a lifecycle state; it
+    does not mutate a registry or disable a strategy.
+    """
+    if required_bad_windows < 2:
+        raise ValueError("required_bad_windows must be at least 2")
+    if min_trades_per_window < 1:
+        raise ValueError("min_trades_per_window must be positive")
+    if not isinstance(windows, list) or len(windows) < required_bad_windows:
+        return {"lifecycle": "WATCH", "reason": "Not enough independent OOS windows."}
+
+    ordered = windows[-required_bad_windows:]
+    previous_end = None
+    previous_sequence = None
+    seen_window_ids = set()
+    expected_config = ordered[0].get("config_fingerprint") if isinstance(ordered[0], dict) else None
+    if not expected_config:
+        return {"lifecycle": "WATCH", "reason": "Strategy configuration identity is missing."}
+    for item in ordered:
+        if not isinstance(item, dict):
+            return {"lifecycle": "WATCH", "reason": "Malformed OOS window record."}
+        start = _finite(item.get("start_at"))
+        end = _finite(item.get("end_at"))
+        n = _finite(item.get("oos_trades"))
+        expectancy = _finite(item.get("net_expectancy_pct"))
+        pf = _finite(item.get("net_profit_factor"))
+        ci = item.get("bootstrap_ci_95_pct")
+        ci_lower = _finite(ci[0]) if isinstance(ci, (list, tuple)) and len(ci) >= 2 else None
+        ci_upper = _finite(ci[1]) if isinstance(ci, (list, tuple)) and len(ci) >= 2 else None
+        sequence = _finite(item.get("window_sequence"))
+        window_id = str(item.get("window_id") or "")
+        if (start is None or end is None or start >= end or sequence is None
+                or sequence < 0 or not sequence.is_integer() or not window_id
+                or window_id in seen_window_ids
+                or (previous_end is not None and start < previous_end)
+                or (previous_sequence is not None and sequence != previous_sequence + 1)):
+            return {"lifecycle": "WATCH", "reason": "OOS windows are not valid, unique, sequential and disjoint."}
+        previous_end = end
+        previous_sequence = int(sequence)
+        seen_window_ids.add(window_id)
+        if (item.get("config_fingerprint") != expected_config
+                or item.get("data_integrity_valid") is not True
+                or item.get("cohort_integrity") != "PASS"
+                or item.get("strategy_frozen") is not True
+                or item.get("parameter_optimization") is not False
+                or n is None or n < min_trades_per_window
+                or expectancy is None or pf is None or ci_lower is None or ci_upper is None
+                or ci_lower > ci_upper):
+            return {"lifecycle": "WATCH", "reason": "A window lacks sufficient trusted evidence."}
+        if not (expectancy < 0.0 and pf < 1.0 and ci_upper < 0.0):
+            return {"lifecycle": "ACTIVE_REVIEW", "reason": "Consecutive negative-edge retirement condition not met."}
+    return {
+        "lifecycle": "RETIRE_CANDIDATE",
+        "reason": f"{required_bad_windows} consecutive disjoint, sufficiently powered OOS windows show negative net expectancy, PF below 1, and a negative 95% CI upper bound.",
+        "windows_evaluated": required_bad_windows,
+        "automatic_deactivation": False,
     }
 
 
@@ -427,6 +534,6 @@ def deployment_status(path: str | os.PathLike[str], *, source: str, symbol: str,
     return out
 
 
-__all__ = ["ENGINE_VERSION", "DEFAULT_POLICY", "evidence_key", "build_evidence_record",
-           "evaluate_evidence", "save_evidence", "load_evidence", "deployment_status", "verify_evidence_signature",
-           "signing_key_source", "provision_signing_key"]
+__all__ = ["DEFAULT_POLICY", "ENGINE_VERSION", "build_evidence_record", "deployment_status",
+           "evaluate_evidence", "evaluate_strategy_lifecycle", "evidence_key", "load_evidence",
+           "provision_signing_key", "save_evidence", "signing_key_source", "verify_evidence_signature"]
