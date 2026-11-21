@@ -189,6 +189,13 @@ class AsyncOrderBookCapture:
         self._snapshot_task: asyncio.Task[DepthSnapshot] | None = None
         self._buffer: list[dict[str, Any]] = []
         self._closed = False
+        self.sequence_gap_count = 0
+        self.buffer_overflow_count = 0
+        self.dropped_buffered_events = 0
+        self.dropped_on_close_events = 0
+        self.snapshot_attempt_count = 0
+        self.snapshot_failure_count = 0
+        self.max_buffer_observed = 0
 
     def _state(self, state: str, **details: Any) -> None:
         self.store.append(
@@ -204,6 +211,7 @@ class AsyncOrderBookCapture:
             return
         if time.monotonic() < self._retry_at:
             return
+        self.snapshot_attempt_count += 1
         self._snapshot_task = asyncio.create_task(
             asyncio.to_thread(self.snapshot_fetch), name=f"depth-snapshot-{self.spec.market}"
         )
@@ -227,12 +235,14 @@ class AsyncOrderBookCapture:
             self._persist_snapshot(snapshot)
             applied = synchronize_buffered(self.book, snapshot, self._buffer)
         except (OrderBookError, SequenceGap, OSError, ValueError, RuntimeError) as exc:
+            self.snapshot_failure_count += 1
             self.book.sequence.valid = False
             self._state("invalid", reason=type(exc).__name__, message=str(exc))
             self._retry_at = time.monotonic() + self._retry_delay
             self._retry_delay = min(self.retry_max, self._retry_delay * 2)
             return False
         except Exception as exc:  # noqa: BLE001  # snapshot adapters may expose transport-specific exceptions
+            self.snapshot_failure_count += 1
             self.book.sequence.valid = False
             self._state("snapshot_error", reason=type(exc).__name__)
             self._retry_at = time.monotonic() + self._retry_delay
@@ -255,15 +265,32 @@ class AsyncOrderBookCapture:
                 applied = self.book.apply_diff(event)
             except (SequenceGap, OrderBookError, KeyError, TypeError, ValueError) as exc:
                 self._buffer = [event]
-                self._state("sequence_gap", reason=type(exc).__name__, message=str(exc))
+                self.sequence_gap_count += 1
+                self.max_buffer_observed = max(self.max_buffer_observed, len(self._buffer))
+                self._state(
+                    "sequence_gap",
+                    reason=type(exc).__name__,
+                    message=str(exc),
+                    sequence_gap_count=self.sequence_gap_count,
+                )
                 self._start_snapshot()
                 return "invalid"
             return "applied" if applied else "stale"
 
         self._buffer.append(event)
+        self.max_buffer_observed = max(self.max_buffer_observed, len(self._buffer))
         if len(self._buffer) > self.max_buffered_events:
+            dropped = len(self._buffer)
+            self.buffer_overflow_count += 1
+            self.dropped_buffered_events += dropped
             self._buffer.clear()
-            self._state("buffer_overflow", max_buffered_events=self.max_buffered_events)
+            self._state(
+                "buffer_overflow",
+                max_buffered_events=self.max_buffered_events,
+                dropped_events=dropped,
+                cumulative_dropped_events=self.dropped_buffered_events,
+                buffer_overflow_count=self.buffer_overflow_count,
+            )
             self._retry_at = max(self._retry_at, time.monotonic() + self._retry_delay)
             self._retry_delay = min(self.retry_max, self._retry_delay * 2)
 
@@ -272,6 +299,21 @@ class AsyncOrderBookCapture:
         self._start_snapshot()
         return "synchronized" if self.book.valid else "buffering"
 
+    def metrics(self) -> dict[str, int | bool]:
+        """Return cumulative order-book recovery and loss counters."""
+        return {
+            "book_valid": self.book.valid,
+            "sequence_gap_count": self.sequence_gap_count,
+            "buffer_overflow_count": self.buffer_overflow_count,
+            "dropped_buffered_events": self.dropped_buffered_events,
+            "dropped_on_close_events": self.dropped_on_close_events,
+            "snapshot_attempt_count": self.snapshot_attempt_count,
+            "snapshot_failure_count": self.snapshot_failure_count,
+            "max_buffer_observed": self.max_buffer_observed,
+            "buffered_events_current": len(self._buffer),
+            "max_buffered_events": self.max_buffered_events,
+        }
+
     async def close(self) -> None:
         """Cancel any outstanding snapshot task on disconnect or shutdown."""
         self._closed = True
@@ -279,6 +321,17 @@ class AsyncOrderBookCapture:
             self._snapshot_task.cancel()
             await asyncio.gather(self._snapshot_task, return_exceptions=True)
             self._snapshot_task = None
+        if self._buffer:
+            dropped = len(self._buffer)
+            self.dropped_on_close_events += dropped
+            self.dropped_buffered_events += dropped
+            self._state(
+                "buffer_discarded_on_close",
+                dropped_events=dropped,
+                cumulative_dropped_events=self.dropped_buffered_events,
+                dropped_on_close_events=self.dropped_on_close_events,
+            )
+            self._buffer.clear()
 
 
 __all__ = ["AsyncOrderBookCapture", "DepthSnapshot", "LocalOrderBook", "OrderBookError",
