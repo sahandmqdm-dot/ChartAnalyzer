@@ -138,6 +138,7 @@ def test_equity_curve_tracks_intra_trade_drawdown_and_final_liquidation():
     assert result.equity_curve[6].equity < result.initial_equity
     assert result.max_drawdown_pct > Decimal(60)
     assert result.trades[0].pnl > Decimal(0)
+    assert result.profit_factor is None
     assert result.equity_curve[-1].equity == result.final_equity
 
 
