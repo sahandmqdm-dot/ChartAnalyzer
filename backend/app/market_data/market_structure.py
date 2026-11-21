@@ -35,6 +35,23 @@ class FairValueGap(BaseModel):
     lower: Decimal
     upper: Decimal
     midpoint: Decimal
+    status: str
+    mitigation_time: datetime | None = None
+    invalidation_time: datetime | None = None
+
+
+class OrderBlock(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    direction: str
+    start_time: datetime
+    break_time: datetime
+    lower: Decimal
+    upper: Decimal
+    source_swing_level: Decimal
+    status: str
+    mitigation_time: datetime | None = None
+    invalidation_time: datetime | None = None
 
 
 class MarketStructureAnalysis(BaseModel):
@@ -48,6 +65,7 @@ class MarketStructureAnalysis(BaseModel):
     swings: list[StructureSwing]
     events: list[StructureEvent]
     fair_value_gaps: list[FairValueGap]
+    order_blocks: list[OrderBlock]
     liquidity_levels: list[Decimal]
     closed_candles: int
     pivot_window: int
@@ -77,6 +95,134 @@ def _pivots(
     return swings, indexed
 
 
+
+def _track_fvg(
+    *,
+    candles: list[MarkPriceCandle],
+    creation_index: int,
+    direction: str,
+    lower: Decimal,
+    upper: Decimal,
+    start_time: datetime,
+    end_time: datetime,
+) -> FairValueGap:
+    status = "active"
+    mitigation_time = None
+    invalidation_time = None
+    for candle in candles[creation_index + 1:]:
+        if direction == "bullish":
+            if candle.close < lower:
+                status = "invalidated"
+                invalidation_time = candle.timestamp
+                break
+            if candle.low <= lower:
+                status = "filled"
+                mitigation_time = mitigation_time or candle.timestamp
+                break
+            if candle.low < upper:
+                status = "partially_filled"
+                mitigation_time = mitigation_time or candle.timestamp
+        else:
+            if candle.close > upper:
+                status = "invalidated"
+                invalidation_time = candle.timestamp
+                break
+            if candle.high >= upper:
+                status = "filled"
+                mitigation_time = mitigation_time or candle.timestamp
+                break
+            if candle.high > lower:
+                status = "partially_filled"
+                mitigation_time = mitigation_time or candle.timestamp
+    return FairValueGap(
+        direction=direction,
+        start_time=start_time,
+        end_time=end_time,
+        lower=lower,
+        upper=upper,
+        midpoint=(lower + upper) / Decimal(2),
+        status=status,
+        mitigation_time=mitigation_time,
+        invalidation_time=invalidation_time,
+    )
+
+
+def _detect_order_blocks(
+    *,
+    candles: list[MarkPriceCandle],
+    indexed_swings: list[tuple[int, str, Decimal]],
+    pivot_window: int,
+) -> list[OrderBlock]:
+    blocks: list[OrderBlock] = []
+    for pivot_index, kind, level in indexed_swings:
+        confirmation_index = pivot_index + pivot_window
+        break_index = None
+        direction = "bullish" if kind == "high" else "bearish"
+        for index in range(confirmation_index + 1, len(candles)):
+            previous, current = candles[index - 1], candles[index]
+            crossed = (
+                previous.close <= level < current.close
+                if direction == "bullish"
+                else previous.close >= level > current.close
+            )
+            if crossed:
+                break_index = index
+                break
+        if break_index is None:
+            continue
+
+        search_start = max(confirmation_index, break_index - 5)
+        opposing_index = next(
+            (
+                index
+                for index in range(break_index - 1, search_start - 1, -1)
+                if (
+                    candles[index].close < candles[index].open
+                    if direction == "bullish"
+                    else candles[index].close > candles[index].open
+                )
+            ),
+            None,
+        )
+        if opposing_index is None:
+            continue
+
+        source = candles[opposing_index]
+        status = "active"
+        mitigation_time = None
+        invalidation_time = None
+        for later in candles[break_index + 1:]:
+            if direction == "bullish":
+                if later.close < source.low:
+                    status = "invalidated"
+                    invalidation_time = later.timestamp
+                    break
+                if later.low <= source.high:
+                    status = "mitigated"
+                    mitigation_time = mitigation_time or later.timestamp
+            else:
+                if later.close > source.high:
+                    status = "invalidated"
+                    invalidation_time = later.timestamp
+                    break
+                if later.high >= source.low:
+                    status = "mitigated"
+                    mitigation_time = mitigation_time or later.timestamp
+
+        blocks.append(OrderBlock(
+            direction=direction,
+            start_time=source.timestamp,
+            break_time=candles[break_index].timestamp,
+            lower=source.low,
+            upper=source.high,
+            source_swing_level=level,
+            status=status,
+            mitigation_time=mitigation_time,
+            invalidation_time=invalidation_time,
+        ))
+    return blocks
+
+
 def analyze_market_structure(
     *,
     symbol: str,
@@ -103,6 +249,7 @@ def analyze_market_structure(
             swings=[],
             events=[],
             fair_value_gaps=[],
+            order_blocks=[],
             liquidity_levels=[],
             closed_candles=len(closed),
             pivot_window=pivot_window,
@@ -174,24 +321,31 @@ def analyze_market_structure(
     for index in range(2, len(closed)):
         first, _middle, third = closed[index - 2:index + 1]
         if third.low > first.high:
-            gaps.append(FairValueGap(
+            gaps.append(_track_fvg(
+                candles=closed,
+                creation_index=index,
                 direction="bullish",
-                start_time=first.timestamp,
-                end_time=third.timestamp,
                 lower=first.high,
                 upper=third.low,
-                midpoint=(first.high + third.low) / Decimal(2),
-            ))
-        elif third.high < first.low:
-            gaps.append(FairValueGap(
-                direction="bearish",
                 start_time=first.timestamp,
                 end_time=third.timestamp,
+            ))
+        elif third.high < first.low:
+            gaps.append(_track_fvg(
+                candles=closed,
+                creation_index=index,
+                direction="bearish",
                 lower=third.high,
                 upper=first.low,
-                midpoint=(third.high + first.low) / Decimal(2),
+                start_time=first.timestamp,
+                end_time=third.timestamp,
             ))
 
+    order_blocks = _detect_order_blocks(
+        candles=closed,
+        indexed_swings=indexed_swings,
+        pivot_window=pivot_window,
+    )
     liquidity_levels = sorted(
         {item[2] for item in indexed_swings[-20:]},
     )
@@ -204,6 +358,7 @@ def analyze_market_structure(
         swings=swings[-40:],
         events=events,
         fair_value_gaps=gaps[-20:],
+        order_blocks=order_blocks[-20:],
         liquidity_levels=liquidity_levels,
         closed_candles=len(closed),
         pivot_window=pivot_window,
@@ -212,6 +367,8 @@ def analyze_market_structure(
             "تمام محاسبات فقط از کندل‌های بسته‌شده Mark Price انجام می‌شود؛ Mark Price ممکن است با آخرین قیمت معامله متفاوت باشد.",
             "Swingها با پنجره متقارن تأیید می‌شوند و به همین دلیل با تأخیر pivot_window کندلی قابل‌شناسایی‌اند.",
             "BOS، CHoCH، Liquidity Sweep و FVG تعاریف الگوریتمی ساده و قابل‌تنظیم‌اند؛ تعاریف رایج SMC یکسان و استاندارد رسمی ندارند.",
-            "FVGها صرفاً شکاف هندسی سه‌کندلی‌اند و در این نسخه وضعیت پرشدن/ابطال آن‌ها ردیابی نمی‌شود؛ Order Block و امتیازدهی چندتایم‌فریمی در مرحله بعد اضافه می‌شوند.",
+            "FVG و Order Block با قواعد هندسی و شکست ساختار تعریف شده‌اند؛ این تعاریف، استاندارد رسمی و یگانه SMC نیستند و وجود سفارش نهادی را اثبات نمی‌کنند.",
+            "Mitigation به معنی ورود قیمت به محدوده است؛ Filled یعنی رسیدن قیمت تا لبه دورتر ناحیه، و Invalidated یعنی بسته‌شدن قیمت در آن سوی لبه دورتر.",
+            "Order Block در این نسخه آخرین کندل مخالف در حداکثر پنج کندل پیش از شکست Swing تأییدشده است؛ محدوده آن کل High/Low همان کندل است."
         ],
     )
