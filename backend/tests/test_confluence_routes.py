@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import ClassVar
 
 from fastapi.testclient import TestClient
 
@@ -16,7 +17,7 @@ class FakeProvider:
 
 class FakeAdapter:
     name = "binance_usdm_futures"
-    periods: list[str] = []
+    periods: ClassVar[list[str]] = []
 
     async def fetch_mark_price_history(self, symbol, period, limit):
         self.periods.append(period)
