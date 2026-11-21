@@ -63,3 +63,69 @@ async def candles(
         "count": len(values),
         "candles": [candle.model_dump(mode="json") for candle in values],
     }
+
+
+
+@router.get("/candles/history")
+async def candle_history(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+    interval: str = Query(default="1h", max_length=5),
+    start_time: datetime = Query(...),
+    end_time: datetime = Query(...),
+    page_limit: int = Query(default=1000, ge=1, le=1000),
+    max_candles: int = Query(default=10_000, ge=1, le=10_000),
+    adapter: MarketDataProvider = Depends(get_market_data_provider),  # noqa: B008
+):
+    current_user(request)
+    try:
+        normalized_symbol = str(Symbol(symbol))
+        normalized_interval = Timeframe(interval).value
+        if start_time.tzinfo is None or start_time.utcoffset() is None:
+            raise ValueError("start_time must include a timezone")
+        if end_time.tzinfo is None or end_time.utcoffset() is None:
+            raise ValueError("end_time must include a timezone")
+        if start_time > end_time:
+            raise ValueError("start_time must be <= end_time")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    cache_key = "|".join(
+        (
+            "history",
+            normalized_symbol,
+            normalized_interval,
+            start_time.isoformat(),
+            end_time.isoformat(),
+            str(page_limit),
+            str(max_candles),
+        )
+    )
+    values = await _candle_cache.get(cache_key)
+    if values is None:
+        try:
+            fetched = await adapter.fetch_historical_ohlcv(
+                normalized_symbol,
+                normalized_interval,
+                start_time=start_time,
+                end_time=end_time,
+                page_limit=page_limit,
+                max_candles=max_candles,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except MarketDataProviderError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Market data provider unavailable or invalid",
+            ) from exc
+        values = tuple(fetched)
+        await _candle_cache.set(cache_key, values)
+
+    return {
+        "provider": adapter.name,
+        "symbol": normalized_symbol,
+        "interval": normalized_interval,
+        "count": len(values),
+        "candles": [candle.model_dump(mode="json") for candle in values],
+    }
