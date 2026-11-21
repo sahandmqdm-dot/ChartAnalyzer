@@ -77,6 +77,6 @@ def test_futures_analysis_returns_descriptive_context(monkeypatch):
     body = response.json()
     assert body["symbol"] == "BTCUSDT"
     assert body["positioning"] == "long_and_short_build_up_with_rising_price"
-    assert body["price_change_pct"] == "5"
-    assert body["open_interest_change_pct"] == "10"
+    assert Decimal(body["price_change_pct"]) == Decimal(5)
+    assert Decimal(body["open_interest_change_pct"]) == Decimal(10)
     assert any("Spot" in caveat for caveat in body["caveats"])
