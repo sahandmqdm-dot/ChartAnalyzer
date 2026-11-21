@@ -15,9 +15,9 @@ def sample_event():
         event_time=datetime(2026, 11, 21, tzinfo=UTC),
         liquidation_side="short",
         order_side="SELL",
-        quantity=Decimal("2"),
-        price=Decimal("90000"),
-        notional=Decimal("180000"),
+        quantity=Decimal(2),
+        price=Decimal(90000),
+        notional=Decimal(180000),
         price_kind="bankruptcy",
     )
 
