@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import _session_token
 from app.main import app
-from app.market_data.candle import Candle
+from app.market_data.mark_price import MarkPriceCandle, MarkPriceHistory
 from app.market_data.futures_history import FuturesHistory, FuturesSeriesPoint
 from app.settings import settings
 
@@ -36,16 +36,22 @@ class FakeFuturesProvider:
     name = "binance_usdm_futures"
 
 
-class FakeSpotProvider:
-    async def fetch_ohlcv(self, symbol: str, interval: str, *, limit: int):
-        return [
-            Candle(
-                timestamp=datetime(2026, 11, 21, hour, tzinfo=UTC),
-                open=Decimal(value), high=Decimal(value), low=Decimal(value),
-                close=Decimal(value), volume=Decimal(1),
-            )
-            for hour, value in [(10, "100"), (11, "105")]
-        ]
+class FakeMarkPriceAdapter:
+    async def fetch_mark_price_history(self, symbol: str, period: str, limit: int):
+        return MarkPriceHistory(
+            provider="binance_usdm_futures", market_type="linear_perpetual",
+            symbol=symbol, period=period,
+            candles=[
+                MarkPriceCandle(
+                    timestamp=datetime(2026, 11, 21, hour, tzinfo=UTC),
+                    close_time=datetime(2026, 11, 21, hour, 59, 59, 999000, tzinfo=UTC),
+                    is_closed=True, open=Decimal(value), high=Decimal(value),
+                    low=Decimal(value), close=Decimal(value),
+                )
+                for hour, value in [(10, "100"), (11, "105")]
+            ],
+            observed_at=datetime(2026, 11, 21, 12, tzinfo=UTC),
+        )
 
 
 def test_futures_analysis_requires_authentication():
@@ -64,7 +70,7 @@ def test_futures_analysis_returns_descriptive_context(monkeypatch):
         futures_analysis_routes, "BinanceUsdmFuturesHistoryAdapter", FakeHistoryAdapter
     )
     monkeypatch.setattr(
-        futures_analysis_routes, "get_market_data_provider", FakeSpotProvider
+        futures_analysis_routes, "BinanceUsdmMarkPriceAdapter", FakeMarkPriceAdapter
     )
     client = TestClient(app)
     client.cookies.set("ca_session", _session_token("admin"))
@@ -79,4 +85,4 @@ def test_futures_analysis_returns_descriptive_context(monkeypatch):
     assert body["positioning"] == "long_and_short_build_up_with_rising_price"
     assert Decimal(body["price_change_pct"]) == Decimal(5)
     assert Decimal(body["open_interest_change_pct"]) == Decimal(10)
-    assert any("Spot" in caveat for caveat in body["caveats"])
+    assert any("Mark Price" in caveat for caveat in body["caveats"])
