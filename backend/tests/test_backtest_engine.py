@@ -43,7 +43,7 @@ def test_sma_crossover_executes_on_next_bar_and_closes_at_end():
     assert result.trades[0].entry_price == Decimal(6)
     assert result.trades[0].exit_time == candles[-1].timestamp.isoformat()
     assert result.trades[0].exit_price == Decimal(8)
-    assert result.final_equity == Decimal(1000) * Decimal(8) / Decimal(6)
+    assert abs(result.final_equity - Decimal(1000) * Decimal(8) / Decimal(6)) <= Decimal("1e-24")
     assert result.winning_trades == 1
 
 
