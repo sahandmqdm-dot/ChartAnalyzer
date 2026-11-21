@@ -44,6 +44,16 @@ type FuturesAnalysis = {
 };
 
 
+
+type MarketStructureSwing = { kind: 'high' | 'low'; timestamp: string; price: string };
+type MarketStructureEvent = { code: string; direction: string; timestamp: string; level: string; explanation: string };
+type FairValueGap = { direction: string; start_time: string; end_time: string; lower: string; upper: string; midpoint: string };
+type MarketStructure = {
+  symbol: string; period: string; provider: string; trend: string; latest_close: string | null;
+  swings: MarketStructureSwing[]; events: MarketStructureEvent[]; fair_value_gaps: FairValueGap[];
+  liquidity_levels: string[]; closed_candles: number; pivot_window: number; observed_at: string; caveats: string[];
+};
+
 type RiskTier = {
   tier: number; notional_floor: string; notional_cap: string | null;
   maintenance_margin_rate: string; maintenance_margin_deduction: string; max_leverage?: string | null;
@@ -206,6 +216,11 @@ function App() {
   const [futuresAnalysis, setFuturesAnalysis] = useState<FuturesAnalysis | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [analysisError, setAnalysisError] = useState('');
+  const [marketStructurePeriod, setMarketStructurePeriod] = useState('1h');
+  const [pivotWindow, setPivotWindow] = useState('3');
+  const [marketStructure, setMarketStructure] = useState<MarketStructure | null>(null);
+  const [marketStructureBusy, setMarketStructureBusy] = useState(false);
+  const [marketStructureError, setMarketStructureError] = useState('');
 
   const [riskSide, setRiskSide] = useState<'long' | 'short'>('long');
   const [riskEntry, setRiskEntry] = useState('95000');
@@ -355,6 +370,30 @@ function App() {
       setAnalysisError(cause instanceof Error ? cause.message : 'Could not analyze futures context');
     } finally {
       setAnalysisBusy(false);
+    }
+  }
+
+
+  async function loadMarketStructure() {
+    setMarketStructureBusy(true);
+    setMarketStructureError('');
+    setMarketStructure(null);
+    try {
+      const query = new URLSearchParams({
+        symbol: symbol.trim(), period: marketStructurePeriod, limit: '200', pivot_window: pivotWindow,
+      });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/market-structure?' + query, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail || 'Market structure request failed (' + response.status + ')');
+      }
+      setMarketStructure(await response.json() as MarketStructure);
+    } catch (cause) {
+      setMarketStructureError(cause instanceof Error ? cause.message : 'Could not analyze market structure');
+    } finally {
+      setMarketStructureBusy(false);
     }
   }
 
@@ -841,6 +880,52 @@ function App() {
           <div className="caveat-list"><strong>Interpretation limits</strong><ul>{futuresAnalysis.caveats.map((item) => <li key={item}>{item}</li>)}</ul></div>
           <p className="footnote">Updated {new Date(futuresAnalysis.observed_at).toLocaleString()} · {futuresAnalysis.symbol} · {futuresAnalysis.period}</p>
         </>}
+      </section>
+
+
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">MARKET STRUCTURE INTELLIGENCE</p><h2>{symbol} structure map</h2></div>
+          <span className="pill">Closed Mark Price candles · Rule-based</span>
+        </div>
+        <div className="controls history-controls">
+          <label>Structure timeframe<select value={marketStructurePeriod} onChange={(event) => setMarketStructurePeriod(event.target.value)}>{['5m','15m','30m','1h','4h','1d'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>Pivot confirmation window<select value={pivotWindow} onChange={(event) => setPivotWindow(event.target.value)}>{['2','3','4','5','6','8','10'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <button onClick={() => void loadMarketStructure()} disabled={marketStructureBusy || busy}>{marketStructureBusy ? 'Analyzing…' : 'Analyze structure'}</button>
+        </div>
+        <p className="footnote">Detects confirmed swing highs/lows, close-through BOS/CHoCH, wick-rejection liquidity sweeps and three-candle Fair Value Gaps. Pivots are confirmed with a delay of the selected number of right-side candles.</p>
+        {marketStructureError && <p className="error" role="alert">{marketStructureError}</p>}
+        {marketStructure && <>
+          <div className="stats-grid">
+            <div><small>Structure bias</small><strong>{marketStructure.trend.replace(/_/g, ' ')}</strong></div>
+            <div><small>Latest Mark Price close</small><strong>{marketStructure.latest_close ? Number(marketStructure.latest_close).toLocaleString() : '—'}</strong></div>
+            <div><small>Confirmed swings</small><strong>{marketStructure.swings.length}</strong></div>
+            <div><small>Structure events</small><strong>{marketStructure.events.length}</strong></div>
+            <div><small>Detected FVG zones</small><strong>{marketStructure.fair_value_gaps.length}</strong></div>
+            <div><small>Closed candles</small><strong>{marketStructure.closed_candles}</strong></div>
+          </div>
+          {marketStructure.events.length ? <div className="signal-list">{marketStructure.events.map((event, index) => <article className="signal-item" key={event.code + event.timestamp + index}>
+            <div><strong>{event.code.replace(/_/g, ' ').toUpperCase()} · {event.direction}</strong><span>{Number(event.level).toLocaleString()} · {new Date(event.timestamp).toLocaleString()}</span></div>
+            <p>{event.explanation}</p>
+          </article>)}</div> : <div className="empty-state">No new structure break or sweep was confirmed on the latest closed candle.</div>}
+          <div className="table-wrap">
+            <table><thead><tr><th>FVG direction</th><th>Lower bound</th><th>Upper bound</th><th>Midpoint</th><th>Detected</th></tr></thead>
+              <tbody>{marketStructure.fair_value_gaps.slice(-10).reverse().map((gap, index) => <tr key={gap.start_time + gap.end_time + index}>
+                <td>{gap.direction.toUpperCase()}</td><td>{Number(gap.lower).toLocaleString()}</td><td>{Number(gap.upper).toLocaleString()}</td><td>{Number(gap.midpoint).toLocaleString()}</td><td>{new Date(gap.end_time).toLocaleString()}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="table-wrap">
+            <table><thead><tr><th>Swing type</th><th>Price</th><th>Confirmed at</th></tr></thead>
+              <tbody>{marketStructure.swings.slice(-12).reverse().map((swing, index) => <tr key={swing.timestamp + swing.kind + index}>
+                <td>{swing.kind.toUpperCase()}</td><td>{Number(swing.price).toLocaleString()}</td><td>{new Date(swing.timestamp).toLocaleString()}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="caveat-list"><strong>Method and limitations</strong><ul>{marketStructure.caveats.map((item) => <li key={item}>{item}</li>)}</ul></div>
+          <p className="footnote">Provider: {marketStructure.provider} · {marketStructure.symbol} · {marketStructure.period} · Updated {new Date(marketStructure.observed_at).toLocaleString()}</p>
+        </>}
+        {!marketStructure && !marketStructureBusy && !marketStructureError && <div className="empty-state">Run the structure analysis to inspect confirmed swings and structural events for this symbol.</div>}
       </section>
 
       <section className="panel">
