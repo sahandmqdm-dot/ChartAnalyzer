@@ -279,7 +279,12 @@ class BinanceUSDMPublicAdapter:
         base = {
             "exchange": "binance", "symbol": symbol, "market_type": self.market_type,
             "contract_type": "linear", "exchange_contract_type": contract_type,
-            "status": "TRADING" if contract_status == "TRADING" else contract_status,
+            "status": (
+                "TRADING" if contract_status == "TRADING"
+                else "REDUCE_ONLY" if contract_status == "REDUCE_ONLY"
+                else "DELISTED" if contract_status in {"DELIVERED", "DELISTED"}
+                else "HALT"
+            ),
             "base_asset": base_asset, "quote_asset": quote_asset,
             "margin_asset": margin_asset, "settlement_asset": quote_asset,
             "contract_multiplier": "1", "tick_size": str(tick),
