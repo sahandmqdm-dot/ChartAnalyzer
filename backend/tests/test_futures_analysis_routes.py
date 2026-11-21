@@ -4,9 +4,9 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 
 from app.auth import _session_token
+from app.main import app
 from app.market_data.candle import Candle
 from app.market_data.futures_history import FuturesHistory, FuturesSeriesPoint
-from app.main import app
 from app.settings import settings
 
 
@@ -42,7 +42,7 @@ class FakeSpotProvider:
             Candle(
                 timestamp=datetime(2026, 11, 21, hour, tzinfo=UTC),
                 open=Decimal(value), high=Decimal(value), low=Decimal(value),
-                close=Decimal(value), volume=Decimal("1"),
+                close=Decimal(value), volume=Decimal(1),
             )
             for hour, value in [(10, "100"), (11, "105")]
         ]
