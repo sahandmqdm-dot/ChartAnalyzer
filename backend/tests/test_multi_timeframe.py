@@ -8,7 +8,7 @@ from app.market_data.multi_timeframe import build_multi_timeframe_confluence
 def _analysis(period: str, trend: str) -> MarketStructureAnalysis:
     return MarketStructureAnalysis(
         symbol="BTCUSDT", period=period, provider="binance_usdm_futures",
-        trend=trend, latest_close=Decimal("100"), swings=[], events=[],
+        trend=trend, latest_close=Decimal(100), swings=[], events=[],
         fair_value_gaps=[], order_blocks=[], liquidity_levels=[], closed_candles=100,
         pivot_window=3, observed_at=datetime(2026, 11, 21, tzinfo=UTC), caveats=[],
     )
