@@ -1,3 +1,4 @@
+# ruff: noqa: I001  # Match the repository's flat-layout import convention.
 from datetime import datetime, timedelta, UTC
 
 from futures_reality_gate import evaluate_futures_reality_gate
