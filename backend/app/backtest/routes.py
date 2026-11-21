@@ -18,13 +18,13 @@ async def sma_crossover(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
     interval: str = Query(default="1h", max_length=5),
-    start_time: datetime = Query(...),
-    end_time: datetime = Query(...),
+    start_time: datetime = Query(...),  # noqa: B008
+    end_time: datetime = Query(...),  # noqa: B008
     fast_period: int = Query(default=10, ge=1, le=500),
     slow_period: int = Query(default=30, ge=2, le=1000),
-    initial_equity: Decimal = Query(default=Decimal("10000"), gt=0),
-    fee_rate: Decimal = Query(default=Decimal("0.001"), ge=0, lt=1),
-    slippage_rate: Decimal = Query(default=Decimal("0.0005"), ge=0, lt=1),
+    initial_equity: Decimal = Query(default=Decimal(10000), gt=0),  # noqa: B008
+    fee_rate: Decimal = Query(default=Decimal("0.001"), ge=0, lt=1),  # noqa: B008
+    slippage_rate: Decimal = Query(default=Decimal("0.0005"), ge=0, lt=1),  # noqa: B008
     adapter: MarketDataProvider = Depends(get_market_data_provider),  # noqa: B008
 ):
     current_user(request)
