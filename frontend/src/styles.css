@@ -14,3 +14,18 @@
 .futures-actions .quiet-button{background:transparent;border:1px solid #39465d;color:#cbd5e1}
 @media(max-width:850px){.risk-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.risk-controls{grid-template-columns:1fr}.futures-actions{align-items:stretch;flex-direction:column}.futures-actions .footnote{min-width:0}}
+
+
+.heatmap-controls{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:18px}
+.heatmap-scroll{overflow:auto;margin-top:18px;border:1px solid #263650;border-radius:10px;padding:12px;background:#0c1425}
+.heatmap-axis{display:flex;justify-content:space-between;gap:12px;color:#8291a8;font-size:11px;margin-bottom:10px}
+.heatmap-grid{display:grid;gap:2px;min-width:max-content;align-items:stretch}
+.heatmap-price-label{grid-column:1 / -1;color:#9aa9bf;font-size:10px;padding:3px 0 1px}
+.heat-cell{height:14px;min-width:12px;border-radius:2px}
+.heat-cell.long{background:#f59e0b}
+.heat-cell.short{background:#38bdf8}
+.heat-cell.mixed{background:#a78bfa}
+.heat-cell.empty{background:#263650}
+.heatmap-time-labels{display:flex;justify-content:space-between;color:#8291a8;font-size:10px;margin-top:10px}
+@media(max-width:850px){.heatmap-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.heatmap-controls button{grid-column:span 2}}
+@media(max-width:520px){.heatmap-controls{grid-template-columns:1fr}.heatmap-controls button{grid-column:auto}.heatmap-axis{flex-direction:column}}
