@@ -43,8 +43,6 @@ class IsolatedRiskEstimateRequest(BaseModel):
                 raise ValueError("risk tier cap must exceed its floor")
             if index < len(tiers) - 1 and tier.notional_cap is None:
                 raise ValueError("only the final risk tier may have no upper cap")
-        if tiers[-1].notional_cap is not None:
-            raise ValueError("the final risk tier must have no upper cap")
         return self
 
 
