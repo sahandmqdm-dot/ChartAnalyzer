@@ -14,8 +14,8 @@ class FakeBybitProvider:
 
 class FakeRiskTierAdapter:
     async def fetch_risk_tiers(self, symbol):
-        from app.market_data.risk_tiers import RiskTierSet
         from app.market_data.futures_risk import RiskTier
+        from app.market_data.risk_tiers import RiskTierSet
 
         return RiskTierSet(
             provider="bybit_linear_futures",
