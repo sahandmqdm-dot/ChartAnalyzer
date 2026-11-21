@@ -182,7 +182,7 @@ class LiquidationCollector:
                 self.last_error = "Connection closed by exchange"
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - reconnect on any transport or payload failure
                 self.last_error = type(exc).__name__
             self.state = "reconnecting"
             await asyncio.sleep(2)
