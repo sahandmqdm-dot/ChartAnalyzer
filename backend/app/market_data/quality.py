@@ -1,5 +1,5 @@
-from itertools import pairwise
 from collections.abc import Sequence
+from itertools import pairwise
 
 from app.market_data.candle import Candle
 
