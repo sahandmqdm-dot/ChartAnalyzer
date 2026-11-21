@@ -114,3 +114,42 @@ def test_malformed_timestamp_fails_closed_without_crashing():
     result = evaluate(**values)
     assert result["status"] == "NOT_READY"
     assert any("prices.observed_at must be an ISO-8601" in item for item in result["blockers"])
+
+
+def test_contract_registry_snapshot_flows_into_reality_gate():
+    from contract_registry import ContractRegistry
+
+    metadata = {
+        "exchange": "binance", "symbol": "BTCUSDT", "market_type": "linear_perpetual",
+        "contract_type": "linear", "status": "TRADING", "quote_asset": "USDT",
+        "margin_asset": "USDT", "settlement_asset": "USDT", "contract_multiplier": "1",
+        "tick_size": "0.1", "step_size": "0.001", "min_qty": "0.001",
+        "max_qty": "1000", "min_notional": "5", "max_leverage": "125",
+        "maintenance_margin_tiers": [
+            {"notional_cap": "50000", "maintenance_margin_rate": "0.004",
+             "maintenance_amount": "0", "max_leverage": "125"},
+        ],
+        "source": "exchangeInfo+risk-brackets", "version": "integration-v1",
+        "observed_at": NOW - timedelta(minutes=1),
+        "effective_from": NOW - timedelta(days=1), "effective_to": None,
+    }
+    registry = ContractRegistry()
+    registry.register(metadata)
+    resolved = registry.resolve(
+        venue="binance", instrument_id="BTCUSDT", market_type="linear_perpetual",
+        as_of=NOW, max_observation_age_seconds=300,
+    )
+    assert resolved["status"] == "CONTRACT_RESOLVED"
+    values = inputs()
+    values["contract"] = resolved["contract"]
+    result = evaluate_futures_reality_gate(**values)
+    assert result["status"] == "READY_FOR_RESEARCH"
+    assert result["actionable"] is False
+
+
+def test_reality_gate_rejects_non_trading_registry_contract():
+    values = inputs()
+    values["contract"]["status"] = "HALT"
+    result = evaluate_futures_reality_gate(**values)
+    assert result["status"] == "NOT_READY"
+    assert any("not in TRADING" in blocker for blocker in result["blockers"])
