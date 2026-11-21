@@ -5,7 +5,7 @@
 execution_cost_engine.py is a research accounting component. It does not send
 orders, tune signals, predict fills, or authorize deployment. It accounts for
 supplied observed or explicitly simulated fills. It is separate from the
-OHLCV backtest engine until a validated event-driven replay adapter exists.
+OHLCV backtest engine. A point-in-time L2 replay adapter is available for sealed capture sessions, but it does not yet replace the bar simulator or model queue-aware fills.
 
 ## Required inputs
 
@@ -42,15 +42,17 @@ OHLCV backtest engine until a validated event-driven replay adapter exists.
 ## Integration boundary
 
 The existing bar backtest remains a bar-level next-open simulator with
-configured fee/spread/slippage/impact inputs. This engine does not claim to
-replace it or reconstruct historical order-book execution. The market_sweep_fills helper can estimate a marketable order against a fresh,
-sequence-valid L2 snapshot and explicitly returns partial depth when the book
-is insufficient. This is a displayed-depth snapshot estimate, not historical
-realized execution. It does not model queue position or intervening events.
-Limit-order fill probability remains an externally supplied calibrated estimate;
-no limit fill is generated from price touch or probability alone. A future
-historical adapter must consume verified point-in-time book/trade replay, model
-queue position and partial fills, and pass independent tests before promotion.
+configured fee/spread/slippage/impact inputs. `replay_historical_market_orders`
+now replays hypothetical market orders against sealed, hash-verified L2 capture
+sessions. It uses only book events whose local `received_at` is no later than
+the decision timestamp, rejects incomplete or sequence-invalid sessions, and
+blocks decisions with stale or unavailable books. It estimates displayed depth
+and partial fills; it is not a realized execution replay. It does not model
+queue position, hidden liquidity, cancellations or intervening matching events.
+The adapter does not yet use tick trades to generate strategy decisions or
+validate signal forecasts. Limit-order fill probability remains an externally
+supplied calibrated estimate; no limit fill is generated from price touch or
+probability alone.
 
 ## Tests
 
