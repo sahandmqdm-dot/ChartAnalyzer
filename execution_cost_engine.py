@@ -300,10 +300,16 @@ def market_sweep_fills(
     opposite = book.get("bids" if side == "buy" else "asks")
     if not isinstance(opposite, (list, tuple)) or not opposite:
         raise ValueError("opposite side of the order book is empty")
-    opposite_prices = [_number(row[0], "opposite book price", minimum=0.0)
-                       for row in opposite if isinstance(row, (list, tuple)) and len(row) == 2]
-    if len(opposite_prices) != len(opposite) or any(price <= 0 for price in opposite_prices):
-        raise ValueError("malformed opposite order-book side")
+    opposite_levels = []
+    for row in opposite:
+        if not isinstance(row, (list, tuple)) or len(row) != 2:
+            raise ValueError("malformed opposite order-book side")
+        opposite_price = _number(row[0], "opposite book price", minimum=0.0)
+        opposite_quantity = _number(row[1], "opposite book quantity", minimum=0.0)
+        if opposite_price <= 0 or opposite_quantity <= 0:
+            raise ValueError("opposite book prices and quantities must be > 0")
+        opposite_levels.append((opposite_price, opposite_quantity))
+    opposite_prices = [price for price, _ in opposite_levels]
     if len(set(opposite_prices)) != len(opposite_prices):
         raise ValueError("opposite book levels must not contain duplicate prices")
     expected_opposite = sorted(opposite_prices, reverse=(side == "buy"))
