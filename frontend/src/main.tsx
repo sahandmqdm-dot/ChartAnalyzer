@@ -62,8 +62,9 @@ type LiquidationEvent = {
 };
 type LiquidationSnapshot = {
   status: { provider: string; symbol: string; state: string; event_count: number;
-    last_event_time: string | null; last_error: string | null };
-  events: LiquidationEvent[]; retention: string;
+    last_event_time: string | null; last_error: string | null;
+    persistence_state?: string; persistence_error?: string | null };
+  events: LiquidationEvent[]; retention: string; storage_status?: string;
 };
 
 type BacktestTrade = {
@@ -639,15 +640,17 @@ function App() {
           <span className="pill">{liquidationSnapshot?.status.state || 'Not started'}</span>
         </div>
         <div className="futures-actions">
-          <p className="footnote">Public exchange stream. The collector retains up to 2,000 events in this API process memory; it does not backfill events from before startup.</p>
+          <p className="footnote">Public exchange stream. Events are stored in PostgreSQL when configured; a bounded 2,000-event in-memory buffer remains as a fallback. No exchange backfill is available.</p>
           <button onClick={() => void startLiquidationStream()} disabled={liquidationBusy || liquidationLive}>{liquidationBusy ? 'Please wait…' : 'Start live stream'}</button>
           <button className="quiet-button" onClick={() => void stopLiquidationStream()} disabled={liquidationBusy || !liquidationLive}>Stop stream</button>
         </div>
         {liquidationError && <p className="error" role="alert">{liquidationError}</p>}
         {liquidationSnapshot?.status.last_error && <p className="footnote">Connection note: {liquidationSnapshot.status.last_error}</p>}
+        {liquidationSnapshot?.status.persistence_error && <p className="footnote">Storage note: {liquidationSnapshot.status.persistence_error}</p>}
         <div className="stats-grid">
           <div><small>Stream status</small><strong>{liquidationSnapshot?.status.state || 'Stopped'}</strong></div>
           <div><small>Events in memory</small><strong>{liquidationSnapshot?.status.event_count ?? 0}</strong></div>
+          <div><small>Durable storage</small><strong>{liquidationSnapshot?.storage_status || liquidationSnapshot?.status.persistence_state || 'Not configured'}</strong></div>
           <div><small>Last event (UTC)</small><strong>{liquidationSnapshot?.status.last_event_time ? new Date(liquidationSnapshot.status.last_event_time).toLocaleTimeString() : '—'}</strong></div>
         </div>
         {liquidationSnapshot?.events.length ? <div className="table-wrap"><table><thead><tr><th>Time (local)</th><th>Liquidated side</th><th>Qty</th><th>Price</th><th>Notional</th><th>Price basis</th></tr></thead><tbody>
