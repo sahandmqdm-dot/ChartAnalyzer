@@ -665,6 +665,7 @@ def replay_historical_market_orders(
     if not math.isfinite(age_limit) or age_limit < 0:
         raise ValueError("max_book_age_ms must be finite and >= 0")
     fees = validate_fee_schedule(fee_schedule)
+    fee_effective_at = _parse_replay_timestamp(fees["effective_at"], "fee_schedule.effective_at")
     if fees["market"] != market:
         raise ValueError("fee schedule market does not match replay market")
 
@@ -703,6 +704,8 @@ def replay_historical_market_orders(
         )
         if decision < start or decision > end:
             raise ValueError(f"order {order_id} decision is outside the capture session")
+        if decision < fee_effective_at:
+            raise ValueError(f"fee schedule was not effective at order {order_id} decision time")
         side = str(order.get("side", "")).lower()
         if side not in {"buy", "sell"}:
             raise ValueError(f"order {order_id} side must be buy or sell")
@@ -723,6 +726,26 @@ def replay_historical_market_orders(
             raise ValueError(f"order {order_id} impact_bps must be numeric") from exc
         if not math.isfinite(impact) or impact < 0:
             raise ValueError(f"order {order_id} impact_bps must be finite and >= 0")
+        raw_funding = order.get("funding_rate")
+        if raw_funding is not None:
+            if isinstance(raw_funding, bool):
+                raise ValueError(f"order {order_id} funding_rate must be numeric")
+            try:
+                funding_value = float(raw_funding)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"order {order_id} funding_rate must be numeric") from exc
+            if not math.isfinite(funding_value):
+                raise ValueError(f"order {order_id} funding_rate must be finite")
+        raw_latency = order.get("latency_ms")
+        if raw_latency is not None:
+            if isinstance(raw_latency, bool):
+                raise ValueError(f"order {order_id} latency_ms must be numeric")
+            try:
+                latency_value = float(raw_latency)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"order {order_id} latency_ms must be numeric") from exc
+            if not math.isfinite(latency_value) or latency_value < 0:
+                raise ValueError(f"order {order_id} latency_ms must be finite and >= 0")
         raw_events = order.get("funding_events", 0)
         if isinstance(raw_events, bool):
             raise ValueError(f"order {order_id} funding_events must be an integer")
