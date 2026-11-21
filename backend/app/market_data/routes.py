@@ -8,6 +8,8 @@ from app.market_data.cache import AsyncTTLCache
 from app.market_data.candle import Candle
 from app.market_data.provider import MarketDataProvider
 from app.market_data.registry import get_market_data_provider
+from app.market_data.symbol import Symbol
+from app.market_data.timeframe import Timeframe
 
 router = APIRouter(prefix="/api/v1/market-data", tags=["market-data"])
 _candle_cache: AsyncTTLCache[tuple[Candle, ...]] = AsyncTTLCache(ttl_seconds=15, max_entries=512)
@@ -24,11 +26,15 @@ async def candles(
     adapter: MarketDataProvider = Depends(get_market_data_provider),  # noqa: B008
 ):
     current_user(request)
-    normalized_symbol = symbol.strip().upper()
+    try:
+        normalized_symbol = str(Symbol(symbol))
+        normalized_interval = Timeframe(interval).value
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     cache_key = "|".join(
         (
             normalized_symbol,
-            interval,
+            normalized_interval,
             str(limit),
             start_time.isoformat() if start_time else "",
             end_time.isoformat() if end_time else "",
@@ -39,7 +45,7 @@ async def candles(
         try:
             fetched = await adapter.fetch_ohlcv(
                 normalized_symbol,
-                interval,
+                normalized_interval,
                 limit=limit,
                 start_time=start_time,
                 end_time=end_time,
@@ -53,7 +59,7 @@ async def candles(
     return {
         "provider": adapter.name,
         "symbol": normalized_symbol,
-        "interval": interval,
+        "interval": normalized_interval,
         "count": len(values),
         "candles": [candle.model_dump(mode="json") for candle in values],
     }
