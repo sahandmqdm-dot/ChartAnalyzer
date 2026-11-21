@@ -94,7 +94,7 @@ CI runs backend lint/tests and the frontend production build. Exchange API tests
 - Login throttling, session revocation, and caching are in-memory and reset on restart.
 - One worker per API instance; no shared Redis cache or distributed rate limiter.
 - No PostgreSQL history store, WebSocket feed, backtesting engine, portfolio/risk engine, or order execution.
-- Exchange interval support differs; Bybit Spot does not provide the 3-day interval.
+- Exchange interval support differs; Bybit Spot does not provide the 3-day or 8-hour intervals; unsupported intervals return a validation error.
 - No production deployment hardening, observability stack, backup/restore, or external penetration test.
 
 ## Project layout
