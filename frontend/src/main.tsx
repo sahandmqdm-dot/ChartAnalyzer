@@ -434,11 +434,11 @@ function App() {
           <label>Analysis interval<select value={historyPeriod} onChange={(event) => setHistoryPeriod(event.target.value)}>{['5m','15m','30m','1h','4h','1d'].map((value) => <option key={value}>{value}</option>)}</select></label>
           <button onClick={() => void loadFuturesAnalysis()} disabled={analysisBusy || busy}>{analysisBusy ? 'Analyzing…' : 'Analyze futures context'}</button>
         </div>
-        <p className="footnote">Combines Spot price movement with futures Open Interest, Funding Rate and account ratio. It is descriptive, not predictive.</p>
+        <p className="footnote">Combines futures Mark Price movement with Open Interest, Funding Rate and account ratio. It is descriptive, not predictive.</p>
         {analysisError && <p className="error" role="alert">{analysisError}</p>}
         {futuresAnalysis && <>
           <div className="stats-grid">
-            <div><small>Price change (Spot proxy)</small><strong>{futuresAnalysis.price_change_pct === null ? '—' : Number(futuresAnalysis.price_change_pct).toFixed(3) + '%'}</strong></div>
+            <div><small>Mark Price change</small><strong>{futuresAnalysis.price_change_pct === null ? '—' : Number(futuresAnalysis.price_change_pct).toFixed(3) + '%'}</strong></div>
             <div><small>Open interest change</small><strong>{futuresAnalysis.open_interest_change_pct === null ? '—' : Number(futuresAnalysis.open_interest_change_pct).toFixed(3) + '%'}</strong></div>
             <div><small>Latest funding</small><strong>{futuresAnalysis.latest_funding_rate === null ? '—' : (Number(futuresAnalysis.latest_funding_rate) * 100).toFixed(4) + '%'}</strong></div>
             <div><small>Long / short ratio</small><strong>{futuresAnalysis.latest_long_short_ratio === null ? '—' : Number(futuresAnalysis.latest_long_short_ratio).toFixed(3)}</strong></div>
