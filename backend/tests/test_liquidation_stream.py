@@ -1,5 +1,3 @@
-from datetime import UTC, datetime
-
 from app.market_data.liquidation_stream import (
     LiquidationCollector,
     parse_binance_liquidation,
