@@ -74,6 +74,19 @@ async def test_postgres_migration_and_liquidation_repository_round_trip():
         assert sum(cell["long_events"] for cell in filtered["cells"]) == 1
         assert sum(cell["events"] for cell in filtered["cells"]) == 1
         assert filtered["total_notional"] == "11375.031250000000000000"
+        price_bands = await repository.aggregate_liquidation_price_bands(
+            "BTCUSDT",
+            datetime.now(UTC) - timedelta(days=1),
+            40,
+            "integration_test",
+            "long",
+            10,
+        )
+        assert price_bands is not None
+        assert price_bands["total_events"] == 1
+        assert len(price_bands["bands"]) == 1
+        assert price_bands["bands"][0]["long_events"] == 1
+        assert price_bands["bands"][0]["total_notional"] == "11375.031250000000000000"
         stored = next(row for row in rows if row.event_id == event_id)
         assert stored.quantity == Decimal("0.125")
         assert stored.price == Decimal("91000.250000000000000000")
