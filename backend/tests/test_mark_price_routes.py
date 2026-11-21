@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 
 from app.auth import _session_token
 from app.main import app
-from app.market_data.mark_price import MarkPriceCandle, MarkPriceHistory
 from app.market_data import mark_price_routes
+from app.market_data.mark_price import MarkPriceCandle, MarkPriceHistory
 from app.settings import settings
 
 
