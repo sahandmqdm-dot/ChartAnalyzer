@@ -695,7 +695,10 @@ def replay_historical_market_orders(
     for index, order in enumerate(orders):
         if not isinstance(order, dict):
             raise TypeError(f"orders[{index}] must be an object")
-        order_id = str(order.get("order_id", "")).strip()
+        raw_order_id = order.get("order_id")
+        if not isinstance(raw_order_id, str):
+            raise TypeError(f"orders[{index}].order_id must be a string")
+        order_id = raw_order_id.strip()
         if not order_id or order_id in seen_ids:
             raise ValueError("each order must have a unique non-empty order_id")
         seen_ids.add(order_id)
@@ -706,7 +709,10 @@ def replay_historical_market_orders(
             raise ValueError(f"order {order_id} decision is outside the capture session")
         if decision < fee_effective_at:
             raise ValueError(f"fee schedule was not effective at order {order_id} decision time")
-        side = str(order.get("side", "")).lower()
+        raw_side = order.get("side")
+        if not isinstance(raw_side, str):
+            raise TypeError(f"order {order_id} side must be a string")
+        side = raw_side.lower()
         if side not in {"buy", "sell"}:
             raise ValueError(f"order {order_id} side must be buy or sell")
         raw_quantity = order.get("quantity")
@@ -729,6 +735,11 @@ def replay_historical_market_orders(
             raise ValueError(f"order {order_id} impact_bps must be numeric") from exc
         if not math.isfinite(impact) or impact < 0:
             raise ValueError(f"order {order_id} impact_bps must be finite and >= 0")
+        raw_funding_source = order.get("funding_source")
+        if raw_funding_source is not None and not isinstance(raw_funding_source, str):
+            raise TypeError(f"order {order_id} funding_source must be a string")
+        if raw_funding_source is not None and not raw_funding_source.strip():
+            raise ValueError(f"order {order_id} funding_source must be non-empty")
         raw_funding = order.get("funding_rate")
         if raw_funding is not None:
             if isinstance(raw_funding, bool):
