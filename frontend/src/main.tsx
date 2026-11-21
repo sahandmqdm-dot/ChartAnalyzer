@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -77,6 +77,15 @@ type LiquidationCluster = {
   long_notional: string; short_notional: string; total_notional: string;
   strength_pct: string; dominant_side: 'long' | 'short' | 'balanced'; last_event_time: string;
 };
+type MarkPriceCandle = {
+  timestamp: string; close_time: string; is_closed: boolean;
+  open: string; high: string; low: string; close: string;
+};
+type MarkPriceHistory = {
+  provider: string; market_type: string; symbol: string; period: string;
+  candles: MarkPriceCandle[]; observed_at: string;
+};
+type LiquidationAlert = { id: string; createdAt: string; kind: 'proximity' | 'concentration'; message: string };
 type LiquidationClusters = {
   symbol: string; window: string; provider_filter: string; side_filter: string;
   min_strength_pct: number; min_events_per_band: number; total_events: number;
@@ -225,6 +234,11 @@ function App() {
   const [clusterData, setClusterData] = useState<LiquidationClusters | null>(null);
   const [clusterBusy, setClusterBusy] = useState(false);
   const [clusterError, setClusterError] = useState('');
+  const [markPriceHistory, setMarkPriceHistory] = useState<MarkPriceHistory | null>(null);
+  const [clusterMonitoring, setClusterMonitoring] = useState(false);
+  const [proximityThreshold, setProximityThreshold] = useState('0.5');
+  const [liquidationAlerts, setLiquidationAlerts] = useState<LiquidationAlert[]>([]);
+  const previousClustersRef = useRef<LiquidationClusters | null>(null);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -466,6 +480,16 @@ function App() {
       const body = await response.json().catch(() => ({})) as LiquidationClusters & { detail?: string };
       if (!response.ok) throw new Error(body.detail || 'Liquidation cluster analysis failed (' + response.status + ')');
       setClusterData(body);
+      const [overviewResult, markResult] = await Promise.allSettled([
+        fetch(API_BASE + '/api/v1/derivatives/overview?' + new URLSearchParams({ symbol: symbol.trim() }), { credentials: 'include' }),
+        fetch(API_BASE + '/api/v1/derivatives/mark-price-history?' + new URLSearchParams({ symbol: symbol.trim(), period: interval === '1m' || interval === '3m' ? '5m' : ['5m','15m','30m','1h','4h','1d'].includes(interval) ? interval : '1h', limit: '100' }), { credentials: 'include' }),
+      ]);
+      if (overviewResult.status === 'fulfilled' && overviewResult.value.ok) {
+        setFuturesData(await overviewResult.value.json() as FuturesOverview);
+      }
+      if (markResult.status === 'fulfilled' && markResult.value.ok) {
+        setMarkPriceHistory(await markResult.value.json() as MarkPriceHistory);
+      }
     } catch (cause) {
       setClusterError(cause instanceof Error ? cause.message : 'Could not load liquidation clusters');
     } finally {
@@ -579,6 +603,111 @@ function App() {
     if (!heatmapData?.cells.length) return 1;
     return Math.max(...heatmapData.cells.map((cell) => Number(cell.total_notional)), 1);
   }, [heatmapData]);
+
+
+  useEffect(() => {
+    if (!authenticated || !clusterMonitoring) return undefined;
+    let active = true;
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const clusterQuery = new URLSearchParams({
+          symbol: symbol.trim(), window: clusterWindow, side: clusterSide,
+          min_strength_pct: clusterStrength, include_market_context: 'true',
+        });
+        const markPeriod = ['5m','15m','30m','1h','4h','1d'].includes(interval) ? interval : '1h';
+        const [clusterResponse, overviewResponse, markResponse] = await Promise.all([
+          fetch(API_BASE + '/api/v1/derivatives/liquidations/clusters?' + clusterQuery, { credentials: 'include' }),
+          fetch(API_BASE + '/api/v1/derivatives/overview?' + new URLSearchParams({ symbol: symbol.trim() }), { credentials: 'include' }),
+          fetch(API_BASE + '/api/v1/derivatives/mark-price-history?' + new URLSearchParams({ symbol: symbol.trim(), period: markPeriod, limit: '100' }), { credentials: 'include' }),
+        ]);
+        if (!active) return;
+        if (clusterResponse.ok) {
+          const next = await clusterResponse.json() as LiquidationClusters;
+          const previous = previousClustersRef.current;
+          if (previous && previous.symbol === next.symbol) {
+            const messages: LiquidationAlert[] = [];
+            for (const cluster of next.clusters) {
+              const midpoint = Number(cluster.mid_price);
+              const match = previous.clusters.find((old) =>
+                midpoint >= Number(old.price_from) && midpoint <= Number(old.price_to)
+                || Number(old.mid_price) >= Number(cluster.price_from) && Number(old.mid_price) <= Number(cluster.price_to)
+              );
+              if (!match) continue;
+              const before = Number(match.total_notional);
+              const after = Number(cluster.total_notional);
+              if (before > 0 && after >= before * 1.5) {
+                messages.push({
+                  id: 'concentration-' + cluster.price_from + '-' + Date.now(),
+                  createdAt: new Date().toISOString(),
+                  kind: 'concentration',
+                  message: 'Observed liquidation notional rose by at least 50% in the ' + cluster.price_from + '–' + cluster.price_to + ' price zone between monitor snapshots.',
+                });
+              }
+            }
+            if (messages.length) setLiquidationAlerts((current) => [...messages, ...current].slice(0, 10));
+          }
+          previousClustersRef.current = next;
+          setClusterData(next);
+        }
+        if (overviewResponse.ok) setFuturesData(await overviewResponse.json() as FuturesOverview);
+        if (markResponse.ok) setMarkPriceHistory(await markResponse.json() as MarkPriceHistory);
+      } catch {
+        // A missed monitor cycle does not invalidate the last successful snapshot.
+      } finally {
+        refreshing = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [authenticated, clusterMonitoring, symbol, clusterWindow, clusterSide, clusterStrength, interval]);
+
+  const markPriceChart = useMemo(() => {
+    const candles = markPriceHistory?.candles || [];
+    if (!candles.length) return { points: '', bands: [] as { key: string; y: number; height: number; label: string }[], min: 0, max: 0 };
+    const prices = candles.flatMap((candle) => [Number(candle.low), Number(candle.high)]);
+    const clusters = clusterData?.clusters || [];
+    const min = Math.min(...prices, ...clusters.map((cluster) => Number(cluster.price_from)));
+    const max = Math.max(...prices, ...clusters.map((cluster) => Number(cluster.price_to)));
+    const span = max - min || 1;
+    const yFor = (price: number) => 172 - ((price - min) / span) * 150;
+    const points = candles.map((candle, index) => {
+      const x = 8 + (index / Math.max(candles.length - 1, 1)) * 784;
+      return x.toFixed(1) + ',' + yFor(Number(candle.close)).toFixed(1);
+    }).join(' ');
+    const bands = clusters.map((cluster) => {
+      const top = yFor(Number(cluster.price_to));
+      const bottom = yFor(Number(cluster.price_from));
+      return {
+        key: cluster.price_from + '-' + cluster.price_to,
+        y: Math.min(top, bottom),
+        height: Math.max(2, Math.abs(bottom - top)),
+        label: cluster.dominant_side,
+      };
+    });
+    return { points, bands, min, max };
+  }, [markPriceHistory, clusterData]);
+
+  const proximityAlert = useMemo(() => {
+    if (!futuresData || !clusterData?.clusters.length) return null;
+    const mark = Number(futuresData.mark_price);
+    if (!Number.isFinite(mark) || mark <= 0) return null;
+    const threshold = Number(proximityThreshold);
+    const candidates = clusterData.clusters.map((cluster) => {
+      const low = Number(cluster.price_from);
+      const high = Number(cluster.price_to);
+      const gap = mark < low ? low - mark : mark > high ? mark - high : 0;
+      return { cluster, distancePct: gap / mark * 100 };
+    }).sort((a, b) => a.distancePct - b.distancePct);
+    const nearest = candidates[0];
+    return { ...nearest, triggered: nearest.distancePct <= threshold };
+  }, [futuresData, clusterData, proximityThreshold]);
 
   const points = useMemo(() => {
     if (!data?.candles.length) return '';
@@ -830,6 +959,33 @@ function App() {
           <button onClick={() => void loadLiquidationClusters()} disabled={clusterBusy}>{clusterBusy ? 'Analyzing…' : 'Detect clusters'}</button>
         </div>
         {clusterError && <p className="error" role="alert">{clusterError}</p>}
+        {clusterData && <>
+          <div className="intelligence-toolbar">
+            <div><small>Futures Mark Price</small><strong>{futuresData ? Number(futuresData.mark_price).toLocaleString(undefined, { maximumFractionDigits: 4 }) : 'Not loaded'}</strong></div>
+            <label>Proximity threshold<select value={proximityThreshold} onChange={(event) => setProximityThreshold(event.target.value)}>{['0.25','0.5','1','2'].map((value) => <option key={value} value={value}>{value}%</option>)}</select></label>
+            <button className={clusterMonitoring ? 'monitor-active' : 'quiet-button'} onClick={() => setClusterMonitoring((value) => !value)}>{clusterMonitoring ? 'Stop 30s monitor' : 'Start 30s monitor'}</button>
+          </div>
+          {proximityAlert && <div className={proximityAlert.triggered ? 'proximity-alert triggered' : 'proximity-alert'}>
+            <strong>{proximityAlert.triggered ? 'Price near an observed liquidation zone' : 'Nearest observed liquidation zone'}</strong>
+            <span>Mark Price is {proximityAlert.distancePct.toFixed(3)}% from {proximityAlert.cluster.price_from}–{proximityAlert.cluster.price_to} ({proximityAlert.cluster.dominant_side} event cluster).</span>
+            <small>This is proximity to historical observed events, not a prediction of open-position liquidation levels.</small>
+          </div>}
+          {markPriceHistory?.candles.length ? <div className="mark-chart-wrap">
+            <div className="chart-legend"><span><i className="legend-price" /> Mark Price close</span><span><i className="legend-long" /> Long-dominant event cluster</span><span><i className="legend-short" /> Short-dominant event cluster</span></div>
+            <svg viewBox="0 0 800 190" role="img" aria-label={symbol + ' futures mark price with observed liquidation event clusters'}>
+              <line x1="8" y1="20" x2="792" y2="20" /><line x1="8" y1="95" x2="792" y2="95" /><line x1="8" y1="172" x2="792" y2="172" />
+              {markPriceChart.bands.map((band) => <rect key={band.key} x="8" y={band.y} width="784" height={band.height} className={band.label === 'long' ? 'mark-cluster-long' : band.label === 'short' ? 'mark-cluster-short' : 'mark-cluster-balanced'} />)}
+              <polyline points={markPriceChart.points} />
+            </svg>
+            <div className="chart-range"><span>{markPriceChart.max.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span><span>{markPriceChart.min.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></div>
+            <p className="footnote">Futures Mark Price candles and recorded liquidation price bands use the selected futures venue. Cluster bands are historical event concentrations, not estimated liquidation levels.</p>
+          </div> : <div className="empty-state">Load cluster analysis to retrieve the matching futures Mark Price chart.</div>}
+          {liquidationAlerts.length > 0 && <div className="alert-history">
+            <strong>Recent monitor alerts · current browser session</strong>
+            {liquidationAlerts.map((alert) => <div key={alert.id}><span>{alert.kind === 'concentration' ? 'Concentration change' : 'Proximity'}</span><small>{new Date(alert.createdAt).toLocaleTimeString()} · {alert.message}</small></div>)}
+          </div>}
+
+        </>}
         {clusterData && <>
           <div className="stats-grid">
             <div><small>Observed events</small><strong>{clusterData.total_events.toLocaleString()}</strong></div>
