@@ -103,9 +103,9 @@ def test_snapshot_prefers_durable_database_events(monkeypatch):
                 event_time=datetime(2026, 11, 21, tzinfo=UTC),
                 liquidation_side="long",
                 order_side="BUY",
-                quantity=Decimal("1"),
-                price=Decimal("100"),
-                notional=Decimal("100"),
+                quantity=Decimal(1),
+                price=Decimal(100),
+                notional=Decimal(100),
                 price_kind="bankruptcy",
             )
         ]
