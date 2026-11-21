@@ -1,6 +1,9 @@
+from __future__ import annotations
+
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import httpx
 
@@ -11,6 +14,7 @@ from app.market_data.timeframe import Timeframe
 
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 SUPPORTED_INTERVALS = frozenset(item.value for item in Timeframe)
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
 class MarketDataProviderError(RuntimeError):
@@ -22,9 +26,52 @@ class BinanceSpotAdapter:
 
     name = "binance_spot"
 
-    def __init__(self, client: httpx.AsyncClient | None = None, *, timeout: float = 10.0):
+    def __init__(
+        self,
+        client: httpx.AsyncClient | None = None,
+        *,
+        timeout: float = 10.0,
+        max_retries: int = 2,
+        retry_base_delay: float = 0.25,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ):
+        if max_retries < 0:
+            raise ValueError("max_retries must be >= 0")
+        if retry_base_delay < 0:
+            raise ValueError("retry_base_delay must be >= 0")
         self._client = client
         self._timeout = timeout
+        self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
+        self._sleep = sleep
+
+    def _retry_delay(self, response: httpx.Response, attempt: int) -> float:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return min(max(float(retry_after), 0.0), 30.0)
+            except ValueError:
+                pass
+        return min(self._retry_base_delay * (2**attempt), 5.0)
+
+    async def _get_with_retries(
+        self,
+        client: httpx.AsyncClient,
+        params: dict[str, Any],
+    ) -> httpx.Response:
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await client.get(BINANCE_KLINES_URL, params=params)
+            except httpx.TransportError:
+                if attempt >= self._max_retries:
+                    raise
+                await self._sleep(min(self._retry_base_delay * (2**attempt), 5.0))
+                continue
+
+            if response.status_code not in RETRYABLE_STATUS_CODES or attempt >= self._max_retries:
+                return response
+            await self._sleep(self._retry_delay(response, attempt))
+        raise RuntimeError("unreachable retry state")
 
     async def fetch_ohlcv(
         self,
@@ -60,7 +107,7 @@ class BinanceSpotAdapter:
         if own_client:
             client = httpx.AsyncClient(timeout=self._timeout)
         try:
-            response = await client.get(BINANCE_KLINES_URL, params=params)
+            response = await self._get_with_retries(client, params)
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
