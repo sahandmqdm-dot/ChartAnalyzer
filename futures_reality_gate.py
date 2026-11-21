@@ -5,6 +5,8 @@ does not calculate fills, PnL, funding cashflows or liquidation prices.
 """
 from __future__ import annotations
 
+# ruff: noqa: I001  # Flat-layout first-party imports are not consistently classified.
+
 import hashlib
 import json
 import math
