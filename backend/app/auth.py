@@ -32,15 +32,26 @@ def _sign(payload: str) -> str:
 
 
 def _verify(token: str) -> dict | None:
+    if not token or len(token) > 4096:
+        return None
     try:
         payload, signature = token.rsplit(".", 1)
         expected = hmac.new(settings.app_secret.encode(), payload.encode(), hashlib.sha256).digest()
         if not hmac.compare_digest(expected, _unb64(signature)):
             return None
         data = json.loads(_unb64(payload))
-        if not isinstance(data, dict) or time.time() - data.get("iat", 0) > settings.session_ttl_seconds:
+        if not isinstance(data, dict):
             return None
-        if data.get("sub") != settings.admin_username or data.get("sid") in _revoked_sessions:
+        issued_at = data.get("iat")
+        session_id = data.get("sid")
+        if isinstance(issued_at, bool) or not isinstance(issued_at, int):
+            return None
+        now = int(time.time())
+        if issued_at > now + 30 or now - issued_at > settings.session_ttl_seconds:
+            return None
+        if data.get("sub") != settings.admin_username or not isinstance(session_id, str) or not session_id:
+            return None
+        if session_id in _revoked_sessions:
             return None
         return data
     except (ValueError, TypeError, json.JSONDecodeError):
