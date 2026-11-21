@@ -70,6 +70,43 @@ async def list_recent_liquidation_events(
     ]
 
 
+async def list_liquidation_events_since(
+    symbol: str,
+    start_time: datetime,
+    provider: str | None = None,
+    limit: int = 50001,
+) -> list[LiquidationEvent] | None:
+    """Return bounded durable events for aggregation, or None without PostgreSQL."""
+    factory = get_session_factory()
+    if factory is None:
+        return None
+    statement = select(LiquidationEventRecord).where(
+        LiquidationEventRecord.symbol == symbol,
+        LiquidationEventRecord.event_time >= start_time,
+    )
+    if provider is not None:
+        statement = statement.where(LiquidationEventRecord.provider == provider)
+    statement = statement.order_by(
+        LiquidationEventRecord.event_time.desc(), LiquidationEventRecord.event_id.desc()
+    ).limit(limit)
+    async with factory() as session:
+        rows = (await session.scalars(statement)).all()
+    return [
+        LiquidationEvent(
+            event_id=row.event_id,
+            provider=row.provider,
+            symbol=row.symbol,
+            event_time=row.event_time,
+            liquidation_side=row.liquidation_side,
+            order_side=row.order_side,
+            quantity=row.quantity,
+            price=row.price,
+            notional=row.notional,
+            price_kind=row.price_kind,
+        )
+        for row in rows
+    ]
+
 
 async def delete_expired_liquidation_events(retention_days: int) -> int | None:
     """Delete persisted events older than the configured retention window.
