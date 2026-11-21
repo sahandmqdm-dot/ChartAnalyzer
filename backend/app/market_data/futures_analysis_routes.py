@@ -15,7 +15,6 @@ from app.market_data.mark_price import (
     BybitLinearMarkPriceAdapter,
 )
 from app.market_data.symbol import Symbol
-from app.market_data.timeframe import Timeframe
 
 router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
 _PERIODS = {"5m", "15m", "30m", "1h", "4h", "1d"}
@@ -31,7 +30,6 @@ async def futures_analysis(
     current_user(request)
     try:
         normalized = str(Symbol(symbol))
-        interval = Timeframe(period).value
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if period not in _PERIODS:
