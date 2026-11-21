@@ -104,3 +104,8 @@ CI runs backend lint/tests and the frontend production build. Exchange API tests
 - `backend/tests/`: deterministic backend tests.
 - `frontend/src/`: React research workspace.
 - `docs/ARCHITECTURE.md`: boundaries and technical decisions.
+
+
+## SMA crossover backtest
+
+The authenticated `GET /api/v1/backtest/sma-crossover` endpoint runs a deterministic, long-only SMA crossover over historical closed candles. Signals are calculated from completed closes and executed at the following candle open; any open position is liquidated at the final close. Configure `fast_period`, `slow_period`, `initial_equity`, `fee_rate`, and `slippage_rate` as query parameters. This is a research tool, not a live-trading system. The initial implementation reports trade-based drawdown and does not model funding, spread, partial fills, taxes, or exchange-specific fee tiers.
