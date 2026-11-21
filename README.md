@@ -26,7 +26,7 @@ Development API docs: http://127.0.0.1:8000/docs
 - Basic login attempt throttling
 - OHLCV candle domain schema with UTC normalization and OHLC invariants
 - Candle-series timestamp quality validation
-- Provider-neutral market-data protocol with Binance Spot as the initial registered implementation
+- Provider-neutral market-data protocol with Binance Spot and Bybit Spot adapters, selected by configuration
 - Authenticated candles API with a bounded process-local cache
 - React + TypeScript + Vite scaffold
 - Docker Compose and CI checks
@@ -35,9 +35,9 @@ Development API docs: http://127.0.0.1:8000/docs
 This is an early development scaffold. Authentication is a single configured admin account. Throttle/session revocation are in-memory and reset on process restart; multi-process deployment is not supported. Do not expose to the internet or use for trading. Database-backed users/sessions, persistent throttling, complete authorization, audit trail, hardened deployment, and security review are still pending.
 
 
-## Market data API (initial)
+## Market data API
 
-The authenticated endpoint retrieves public Binance Spot candles. Set a strong local admin password and APP_SECRET in .env before starting the backend.
+The authenticated endpoint retrieves public Spot candles from the configured provider (`binance_spot` by default; `bybit_spot` is also supported). Set a strong local admin password and APP_SECRET in .env before starting the backend.
 
 ```http
 GET /api/v1/market-data/candles?symbol=BTCUSDT&interval=1h&limit=300
