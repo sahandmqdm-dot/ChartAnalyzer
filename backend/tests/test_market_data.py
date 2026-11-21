@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.market_data.candle import Candle
-from app.market_data.quality import validate_candle_series
+from app.market_data.quality import find_missing_timestamps, validate_candle_series
 
 
 def make_candle(minute: int, *, open_: str = "10", high: str = "12", low: str = "9", close: str = "11", volume: str = "5"):
@@ -52,3 +52,15 @@ def test_series_rejects_duplicate_time():
 
 def test_series_valid():
     assert len(validate_candle_series([make_candle(0), make_candle(1)])) == 2
+
+
+def test_gap_detector_finds_missing_bars():
+    missing = find_missing_timestamps([make_candle(0), make_candle(3)], 60)
+    assert len(missing) == 2
+    assert missing[0].minute == 1
+    assert missing[1].minute == 2
+
+
+def test_gap_detector_rejects_bad_interval():
+    with pytest.raises(ValueError, match="positive"):
+        find_missing_timestamps([make_candle(0), make_candle(1)], 0)
