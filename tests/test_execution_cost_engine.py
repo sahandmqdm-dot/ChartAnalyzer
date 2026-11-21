@@ -120,7 +120,9 @@ def test_rejected_order_is_distinct_from_unfilled_order():
 def test_missing_impact_and_funding_inputs_are_flagged_incomplete():
     result = run(funding_events=2)
     assert result["cost_breakdown"]["complete"] is False
-    assert result["cost_breakdown"]["missing_inputs"] == ["impact_bps", "funding_rate"]
+    assert result["cost_breakdown"]["missing_inputs"] == [
+        "impact_bps", "impact_source", "funding_rate", "funding_source"
+    ]
 
 
 def test_fill_probability_requires_calibration_and_source():
