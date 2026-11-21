@@ -39,9 +39,9 @@ async def test_binance_history_adapter_normalizes_three_series():
     assert result.symbol == "BTCUSDT"
     assert result.period == "1h"
     assert result.funding_rate[0].value == Decimal("0.0001")
-    assert result.funding_rate[0].secondary_value == Decimal("100")
+    assert result.funding_rate[0].secondary_value == Decimal(100)
     assert result.open_interest[0].value == Decimal("12.5")
-    assert result.open_interest[0].secondary_value == Decimal("1250")
+    assert result.open_interest[0].secondary_value == Decimal(1250)
     assert result.long_short_ratio[0].value == Decimal("1.5")
 
 
@@ -68,7 +68,7 @@ async def test_bybit_history_adapter_normalizes_v5_series():
 
     assert result.provider == "bybit_linear_futures"
     assert result.funding_rate[0].value == Decimal("-0.0002")
-    assert result.open_interest[0].value == Decimal("42")
+    assert result.open_interest[0].value == Decimal(42)
     assert result.long_short_ratio[0].value == Decimal("1.5")
 
 
