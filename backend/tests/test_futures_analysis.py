@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from app.market_data.candle import Candle
+from app.market_data.mark_price import MarkPriceCandle
 from app.market_data.futures_analysis import analyze_futures_context
 from app.market_data.futures_history import FuturesHistory, FuturesSeriesPoint
 
@@ -26,17 +26,21 @@ def history(funding: str, oi_previous: str, oi_latest: str, ratio: str) -> Futur
     )
 
 
-def candles(previous: str, latest: str) -> list[Candle]:
+def candles(previous: str, latest: str) -> list[MarkPriceCandle]:
     return [
-        Candle(
+        MarkPriceCandle(
             timestamp=datetime(2026, 11, 21, 11, tzinfo=UTC),
+            close_time=datetime(2026, 11, 21, 11, 59, 59, 999000, tzinfo=UTC),
+            is_closed=True,
             open=Decimal(previous), high=Decimal(previous), low=Decimal(previous),
-            close=Decimal(previous), volume=Decimal(1),
+            close=Decimal(previous),
         ),
-        Candle(
+        MarkPriceCandle(
             timestamp=datetime(2026, 11, 21, 12, tzinfo=UTC),
+            close_time=datetime(2026, 11, 21, 12, 59, 59, 999000, tzinfo=UTC),
+            is_closed=True,
             open=Decimal(latest), high=Decimal(latest), low=Decimal(latest),
-            close=Decimal(latest), volume=Decimal(1),
+            close=Decimal(latest),
         ),
     ]
 
@@ -76,14 +80,14 @@ def test_rising_price_with_falling_open_interest_is_not_called_new_long_build_up
     assert result.squeeze_risk == "no_strong_rule_based_condition"
 
 
-def test_missing_series_reduces_confidence_and_discloses_proxy_price():
+def test_missing_series_reduces_confidence_and_discloses_mark_price():
     data = history("0", "100", "100", "1")
     data = data.model_copy(update={"funding_rate": [], "long_short_ratio": []})
     result = analyze_futures_context(data, candles("100", "101"))
 
     assert result.confidence == "low"
     assert result.funding_bias == "unknown"
-    assert any("Spot" in item for item in result.caveats)
+    assert any("Mark Price" in item for item in result.caveats)
 
 
 def test_no_candle_change_or_zero_previous_open_interest_is_handled():
