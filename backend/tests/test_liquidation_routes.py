@@ -19,6 +19,10 @@ class FakeCollector:
     async def stop(self):
         self.stopped = True
 
+    def clear(self):
+        self.events.clear()
+        self._seen.clear()
+
     def snapshot(self, limit=100):
         return {
             "status": {
