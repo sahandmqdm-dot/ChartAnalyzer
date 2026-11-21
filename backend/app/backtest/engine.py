@@ -1,6 +1,6 @@
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from decimal import Decimal
-from collections.abc import Sequence
 
 from app.market_data.candle import Candle
 
