@@ -21,7 +21,7 @@ async def candles(
     limit: int = Query(default=500, ge=1, le=1000),
     start_time: datetime | None = None,
     end_time: datetime | None = None,
-    adapter: MarketDataProvider = Depends(get_market_data_provider),
+    adapter: MarketDataProvider = Depends(get_market_data_provider),  # noqa: B008
 ):
     current_user(request)
     normalized_symbol = symbol.strip().upper()
