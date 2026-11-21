@@ -220,6 +220,137 @@ class BinanceUSDMPublicAdapter:
             raise ValueError("symbol must be a canonical alphanumeric exchange symbol")
         return symbol
 
+    def fetch_contract_metadata(
+        self,
+        symbol: str,
+        *,
+        risk_brackets: Sequence[Mapping[str, Any]] | None = None,
+        risk_bracket_source: str | None = None,
+        risk_bracket_version: str | None = None,
+    ) -> dict[str, Any]:
+        """Normalize public exchangeInfo into a temporal contract snapshot candidate.
+
+        Binance exchangeInfo publishes symbol filters but not the complete
+        account-specific leverage/risk bracket table. Without separately
+        supplied, provenance-labelled risk brackets this method returns
+        INCOMPLETE and must not be registered as a complete contract snapshot.
+        No signed/account endpoint is called here.
+        """
+        symbol = self._symbol(symbol)
+        raw, retrieved = self._get("/fapi/v1/exchangeInfo", {})
+        if not isinstance(raw, Mapping) or not isinstance(raw.get("symbols"), list):
+            raise DataValidationError("exchangeInfo payload must contain a symbols list")
+        matches = [row for row in raw["symbols"]
+                   if isinstance(row, Mapping) and str(row.get("symbol", "")).upper() == symbol]
+        if len(matches) != 1:
+            raise DataValidationError(f"exchangeInfo must contain exactly one record for {symbol}")
+        row = matches[0]
+        filters = row.get("filters")
+        if not isinstance(filters, list):
+            raise DataValidationError("exchangeInfo symbol filters are missing")
+        by_type = {str(item.get("filterType")): item for item in filters if isinstance(item, Mapping)}
+        required_filters = ("PRICE_FILTER", "LOT_SIZE", "MIN_NOTIONAL")
+        missing = [name for name in required_filters if name not in by_type]
+        if missing:
+            raise DataValidationError("exchangeInfo missing filters: " + ", ".join(missing))
+        price_filter, lot_filter, notional_filter = (
+            by_type["PRICE_FILTER"], by_type["LOT_SIZE"], by_type["MIN_NOTIONAL"]
+        )
+        try:
+            tick = _number(price_filter["tickSize"], "tickSize", positive=True)
+            step = _number(lot_filter["stepSize"], "stepSize", positive=True)
+            min_qty = _number(lot_filter["minQty"], "minQty", positive=True)
+            max_qty = _number(lot_filter["maxQty"], "maxQty", positive=True)
+            min_notional = _number(notional_filter.get("notional", notional_filter.get("minNotional")),
+                                   "minNotional", positive=True)
+            onboard_ms = int(row["onboardDate"])
+            contract_status = str(row["contractStatus"]).upper()
+            contract_type = str(row["contractType"]).upper()
+            quote_asset = str(row["quoteAsset"]).strip()
+            margin_asset = str(row["marginAsset"]).strip()
+            base_asset = str(row["baseAsset"]).strip()
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise DataValidationError("exchangeInfo contract fields are malformed") from exc
+        if contract_type != "PERPETUAL" or not quote_asset or not margin_asset or not base_asset:
+            raise DataValidationError("only fully identified USD-M perpetual contracts are supported")
+        if contract_status not in {"TRADING", "PENDING_TRADING", "SETTLING", "CLOSE", "PRE_DELIVERING", "DELIVERING", "DELIVERED"}:
+            raise DataValidationError(f"unsupported Binance contract status: {contract_status}")
+
+        base = {
+            "exchange": "binance", "symbol": symbol, "market_type": self.market_type,
+            "contract_type": "linear", "exchange_contract_type": contract_type,
+            "status": "TRADING" if contract_status == "TRADING" else contract_status,
+            "base_asset": base_asset, "quote_asset": quote_asset,
+            "margin_asset": margin_asset, "settlement_asset": quote_asset,
+            "contract_multiplier": "1", "tick_size": str(tick),
+            "step_size": str(step), "min_qty": str(min_qty), "max_qty": str(max_qty),
+            "min_notional": str(min_notional), "source": "binance:/fapi/v1/exchangeInfo",
+            "version": str(row.get("onboardDate", "exchangeInfo-current")),
+            "observed_at": retrieved,
+            "effective_from": datetime.fromtimestamp(onboard_ms / 1000, UTC),
+            "effective_to": None,
+            "exchange_status": contract_status,
+            "market_lot_size": dict(by_type["MARKET_LOT_SIZE"]) if "MARKET_LOT_SIZE" in by_type else None,
+            "price_filter": dict(price_filter),
+            "lot_size_filter": dict(lot_filter),
+            "min_notional_filter": dict(notional_filter),
+        }
+
+        if not risk_brackets:
+            return {
+                "status": "CONTRACT_METADATA_INCOMPLETE",
+                "registration_ready": False,
+                "contract": base,
+                "missing_components": [
+                    "maintenance_margin_tiers", "max_leverage",
+                    "risk_bracket_source", "risk_bracket_version",
+                ],
+                "warnings": [
+                    "Public exchangeInfo does not provide the complete leverage/risk bracket table.",
+                    "No leverage or maintenance tier was inferred or fabricated.",
+                ],
+                "retrieved_at": retrieved,
+                "endpoint": "/fapi/v1/exchangeInfo",
+            }
+        if not risk_bracket_source or not risk_bracket_version:
+            raise DataValidationError("risk bracket provenance source and version are required")
+
+        normalized_tiers = []
+        for index, bracket in enumerate(risk_brackets):
+            if not isinstance(bracket, Mapping):
+                raise DataValidationError(f"risk bracket {index} must be an object")
+            try:
+                cap = _number(bracket["notionalCap"], f"bracket[{index}].notionalCap", positive=True)
+                mmr = _number(bracket["maintMarginRatio"], f"bracket[{index}].maintMarginRatio")
+                deduction = _number(bracket["cum"], f"bracket[{index}].cum")
+                leverage = _number(bracket["initialLeverage"], f"bracket[{index}].initialLeverage", positive=True)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise DataValidationError(f"risk bracket {index} is incomplete") from exc
+            normalized_tiers.append({
+                "notional_cap": cap, "maintenance_margin_rate": mmr,
+                "maintenance_amount": deduction, "max_leverage": leverage,
+            })
+        normalized_tiers.sort(key=lambda item: item["notional_cap"])
+        base.update({
+            "max_leverage": max(item["max_leverage"] for item in normalized_tiers),
+            "maintenance_margin_tiers": normalized_tiers,
+            "source": base["source"] + "+" + str(risk_bracket_source),
+            "version": base["version"] + "+" + str(risk_bracket_version),
+            "risk_bracket_source": str(risk_bracket_source),
+            "risk_bracket_version": str(risk_bracket_version),
+        })
+        return {
+            "status": "CONTRACT_METADATA_COMPLETE",
+            "registration_ready": True,
+            "contract": base,
+            "retrieved_at": retrieved,
+            "endpoint": "/fapi/v1/exchangeInfo",
+            "risk_bracket_provenance": {
+                "source": str(risk_bracket_source), "version": str(risk_bracket_version),
+                "record_count": len(normalized_tiers),
+            },
+        }
+
     def fetch_ohlcv(self, symbol: str, interval: str = "1h", limit: int = 500) -> OHLCVBatch:
         symbol = self._symbol(symbol)
         if interval not in self.intervals:
