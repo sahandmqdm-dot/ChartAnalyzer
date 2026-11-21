@@ -43,6 +43,9 @@ def validate_fee_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     missing = [key for key in required if schedule.get(key) in (None, "")]
     if missing:
         raise ValueError("missing fee schedule fields: " + ", ".join(missing))
+    for field in ("venue", "account_tier", "market", "source", "effective_at"):
+        if not isinstance(schedule[field], str):
+            raise TypeError(f"fee schedule {field} must be a string")
     effective_at = schedule["effective_at"]
     if not isinstance(effective_at, str):
         raise TypeError("fee schedule effective_at must be an ISO-8601 string")
@@ -110,10 +113,18 @@ def evaluate_execution(
         raise ValueError("funding_events must be an integer")
     events = int(events_value)
     probability = None if fill_probability is None else _number(fill_probability, "fill_probability", minimum=0.0)
-    if impact_source is not None and not str(impact_source).strip():
+    if impact_source is not None and not isinstance(impact_source, str):
+        raise TypeError("impact_source must be a string")
+    if impact_source is not None and not impact_source.strip():
         raise ValueError("impact_source must be non-empty when supplied")
-    if funding_source is not None and not str(funding_source).strip():
+    if funding_source is not None and not isinstance(funding_source, str):
+        raise TypeError("funding_source must be a string")
+    if funding_source is not None and not funding_source.strip():
         raise ValueError("funding_source must be non-empty when supplied")
+    if fill_probability_source is not None and not isinstance(fill_probability_source, str):
+        raise TypeError("fill_probability_source must be a string")
+    if assumptions is not None and not isinstance(assumptions, dict):
+        raise TypeError("assumptions must be an object")
     if probability is not None and probability > 1:
         raise ValueError("fill_probability must be <= 1")
     if probability is not None and order_type != "limit":
@@ -128,8 +139,8 @@ def evaluate_execution(
     schedule = validate_fee_schedule(fee_schedule)
     if not isinstance(fills, list):
         raise TypeError("fills must be a list")
-    if fills and not fill_source:
-        raise ValueError("fill_source is required when fills are supplied")
+    if fills and (not isinstance(fill_source, str) or not fill_source.strip()):
+        raise ValueError("fill_source is required as a non-empty string when fills are supplied")
 
     parsed = []
     for index, fill in enumerate(fills):
