@@ -34,8 +34,8 @@ def test_sma_crossover_executes_on_next_bar_and_closes_at_end():
         fast_period=2,
         slow_period=3,
         initial_equity=Decimal("1000"),
-        fee_rate=Decimal("0"),
-        slippage_rate=Decimal("0"),
+        fee_rate=Decimal(0),
+        slippage_rate=Decimal(0),
     )
 
     assert result.trade_count == 1
