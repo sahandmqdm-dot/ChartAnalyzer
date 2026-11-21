@@ -13,6 +13,8 @@ class LiquidationEventRecord(Base):
     __tablename__ = "liquidation_events"
     __table_args__ = (
         Index("ix_liquidation_events_provider_symbol_time", "provider", "symbol", "event_time"),
+        Index("ix_liquidation_events_symbol_time_side", "symbol", "event_time", "liquidation_side"),
+        Index("ix_liquidation_events_event_time", "event_time"),
     )
 
     event_id: Mapped[str] = mapped_column(String(24), primary_key=True)
