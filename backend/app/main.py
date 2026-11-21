@@ -15,8 +15,8 @@ from app.auth import (
     revoke_session,
 )
 from app.backtest.routes import router as backtest_router
-from app.market_data.futures_routes import router as derivatives_router
 from app.market_data.futures_history_routes import router as derivatives_history_router
+from app.market_data.futures_routes import router as derivatives_router
 from app.market_data.routes import router as market_data_router
 from app.settings import settings
 
