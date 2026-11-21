@@ -1,12 +1,16 @@
 from app.market_data.binance import BinanceSpotAdapter
+from app.market_data.bybit import BybitSpotAdapter
 from app.market_data.provider import MarketDataProvider
+from app.settings import settings
 
 
 def get_market_data_provider() -> MarketDataProvider:
-    """Return the configured market-data provider.
-
-    Binance Spot is the initial default. Keeping construction behind this
-    function lets the API route and tests swap providers without changing
-    domain or HTTP code.
-    """
-    return BinanceSpotAdapter()
+    """Construct the configured public market-data provider."""
+    providers: dict[str, type[MarketDataProvider]] = {
+        "binance_spot": BinanceSpotAdapter,
+        "bybit_spot": BybitSpotAdapter,
+    }
+    provider_type = providers.get(settings.market_data_provider.strip().lower())
+    if provider_type is None:
+        raise RuntimeError("Unsupported MARKET_DATA_PROVIDER configuration")
+    return provider_type()
