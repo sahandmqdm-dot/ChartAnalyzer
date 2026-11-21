@@ -12,6 +12,7 @@ from app.auth import (
     _session_token,
     csrf_check,
     current_user,
+    revoke_session,
 )
 from app.settings import settings
 
@@ -76,6 +77,7 @@ def me(request: Request):
 def logout(request: Request, response: Response):
     current_user(request)
     csrf_check(request)
+    revoke_session(request.cookies.get(SESSION_COOKIE, ""))
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=settings.environment == "production", samesite="strict")
     response.delete_cookie(CSRF_COOKIE, path="/", secure=settings.environment == "production", samesite="strict")
     return {"authenticated": False}
