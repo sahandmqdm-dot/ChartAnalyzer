@@ -1,8 +1,0 @@
-numpy>=2.5.4
-pandas>=3.1.1
-requests>=2.34.2
-pytest>=9.2.0
-# Optional: ccxt for additional exchanges
-# scipy is useful for future statistical extensions but not required for core V6
-websockets>=15.0,<16.0
-# Optional cloud object-storage archival client: python -m pip install boto3

@@ -1,48 +1,10 @@
-# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
-.coverage
-htmlcov/
-
-# Virtual environments
 .venv/
-venv/
-env/
-
-# Secrets and local configuration
 .env
 .env.*
 !.env.example
-config.json
-secrets*.json
-credentials*.json
-token*.json
-.secrets/
-*.pem
-*.key
-*.p12
-*.pfx
-id_rsa*
-id_ed25519*
-
-# Runtime data and local state
-data/
-logs/
-*.log
-*.tmp
-*.bak*
-*.db
-*.db-wal
-*.db-shm
-holdout_vault.json
-holdout_vault.json.lock
-strategy_validation_evidence.json
-
-# Operating system / editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
+node_modules/
+dist/
