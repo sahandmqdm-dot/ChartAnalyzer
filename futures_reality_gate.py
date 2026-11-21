@@ -36,7 +36,11 @@ def _number(value: Any, name: str, *, positive: bool = False) -> float:
 
 
 def _age(now: datetime, observed: Any, name: str, maximum: float, blockers: list[str]) -> None:
-    stamp = _time(observed, name)
+    try:
+        stamp = _time(observed, name)
+    except ValueError as exc:
+        blockers.append(str(exc))
+        return
     seconds = (now - stamp).total_seconds()
     if seconds < 0:
         blockers.append(f"{name} is in the future")
