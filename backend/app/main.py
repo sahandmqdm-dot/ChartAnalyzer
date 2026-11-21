@@ -19,8 +19,8 @@ from app.market_data.futures_analysis_routes import router as derivatives_analys
 from app.market_data.futures_history_routes import router as derivatives_history_router
 from app.market_data.futures_risk_routes import router as futures_risk_router
 from app.market_data.futures_routes import router as derivatives_router
-from app.market_data.mark_price_routes import router as mark_price_router
 from app.market_data.liquidation_routes import router as liquidation_router
+from app.market_data.mark_price_routes import router as mark_price_router
 from app.market_data.routes import router as market_data_router
 from app.settings import settings
 
