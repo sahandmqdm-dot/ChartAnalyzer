@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -20,7 +20,7 @@ class FakeAdapter:
     async def fetch_mark_price_history(self, symbol, period, limit):
         candles = []
         for index in range(30):
-            stamp = datetime(2026, 11, 20, tzinfo=UTC).replace(hour=index % 24)
+            stamp = datetime(2026, 11, 20, tzinfo=UTC) + timedelta(hours=index)
             base = Decimal(100 + (index % 7))
             candles.append(MarkPriceCandle(
                 timestamp=stamp,
