@@ -78,7 +78,7 @@ function App() {
 
   useEffect(() => {
     if (authenticated) void loadCandles();
-  }, [authenticated, loadCandles]);
+  }, [authenticated]);
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
