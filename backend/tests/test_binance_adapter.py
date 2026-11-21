@@ -142,3 +142,42 @@ def test_adapter_rejects_negative_retry_configuration():
         BinanceSpotAdapter(max_retries=-1)
     with pytest.raises(ValueError, match="retry_base_delay"):
         BinanceSpotAdapter(retry_base_delay=-0.1)
+
+
+@pytest.mark.asyncio
+async def test_binance_marks_candle_open_before_close_time():
+    open_time = 1_700_000_000_000
+    close_time = open_time + 60_000
+    now = __import__("datetime").datetime.fromtimestamp(
+        (close_time - 1) / 1000, tz=UTC
+    )
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200, json=kline(timestamp=open_time)
+        )
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await BinanceSpotAdapter(client, clock=lambda: now).fetch_ohlcv(
+            "BTCUSDT", "1m"
+        )
+
+    assert result[0].is_closed is False
+    assert result[0].close_time.timestamp() == close_time / 1000
+
+
+@pytest.mark.asyncio
+async def test_binance_marks_candle_closed_after_close_time():
+    from datetime import datetime, timedelta
+
+    open_time = 1_700_000_000_000
+    close_time = open_time + 60_000
+    now = datetime.fromtimestamp(close_time / 1000, tz=UTC) + timedelta(milliseconds=1)
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json=kline(timestamp=open_time))
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await BinanceSpotAdapter(client, clock=lambda: now).fetch_ohlcv(
+            "BTCUSDT", "1m"
+        )
+
+    assert result[0].is_closed is True
