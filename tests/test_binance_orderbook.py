@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import pytest
 
@@ -120,7 +121,14 @@ def test_async_capture_recovers_after_sequence_gap_with_fresh_snapshot(tmp_path)
             {"U": 105, "u": 106, "b": [], "a": []}
         )
         assert not capture.book.valid
-        await asyncio.sleep(0.005)
+        retry_at = capture._retry_at
+        assert retry_at > time.monotonic()
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < retry_at:
+            remaining = retry_at - time.monotonic()
+            if time.monotonic() >= deadline:
+                raise AssertionError("order-book retry gate did not expire within 2 seconds")
+            await asyncio.sleep(min(0.01, max(0.001, remaining)))
         await capture.ingest(
             {"U": 107, "u": 108, "b": [], "a": []}
         )
