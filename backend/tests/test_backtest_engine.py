@@ -113,3 +113,46 @@ def test_sma_crossover_applies_fees_and_slippage():
         slippage_rate=Decimal("0.0005"),
     )
     assert costed_result.final_equity < free_result.final_equity
+
+
+def test_equity_curve_tracks_intra_trade_drawdown_and_final_liquidation():
+    candles = make_candles([5, 4, 3, 4, 5, 6, 2, 5, 8])
+    candles[7] = Candle(
+        **{
+            **candles[7].model_dump(),
+            "open": Decimal(8),
+            "high": Decimal(9),
+            "low": Decimal(4),
+            "close": Decimal(5),
+        }
+    )
+    result = run_sma_crossover(
+        candles,
+        fast_period=2,
+        slow_period=3,
+        fee_rate=Decimal(0),
+        slippage_rate=Decimal(0),
+    )
+
+    assert len(result.equity_curve) == len(candles)
+    assert result.equity_curve[6].equity < result.initial_equity
+    assert result.max_drawdown_pct > Decimal(60)
+    assert result.trades[0].pnl > Decimal(0)
+    assert result.equity_curve[-1].equity == result.final_equity
+
+
+def test_backtest_reports_trade_quality_metrics():
+    candles = make_candles([5, 4, 3, 4, 5, 6, 5, 3, 2])
+    result = run_sma_crossover(
+        candles,
+        fast_period=2,
+        slow_period=3,
+        fee_rate=Decimal(0),
+        slippage_rate=Decimal(0),
+    )
+
+    assert result.trade_count == 1
+    assert result.expectancy == result.trades[0].pnl
+    assert result.average_loss == result.trades[0].pnl
+    assert result.profit_factor is None
+    assert Decimal(0) <= result.exposure_pct <= Decimal(100)
