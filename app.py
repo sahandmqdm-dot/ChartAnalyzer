@@ -1603,7 +1603,8 @@ def api_futures_scenarios(symbol: str = "BTCUSDT", tf: str = "1h", limit: int = 
     """Read-only Binance USD-M context plus research-only LONG/SHORT watch scenarios."""
     from datetime import UTC, datetime, timedelta
     from futures_signal_engine import analyze_futures_scenarios
-    from market_data_hub import BinanceUSDMPublicAdapter, ProviderConfig
+    from market_data_hub import (BinanceUSDMPublicAdapter, ProviderConfig,
+                              ProviderRateLimitError, ProviderUnavailableError)
 
     symbol = str(symbol).strip().upper()
     intervals = {"5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
@@ -1690,9 +1691,17 @@ def api_futures_scenarios(symbol: str = "BTCUSDT", tf: str = "1h", limit: int = 
         return result
     except HTTPException:
         raise
+    except ProviderRateLimitError as exc:
+        print("[futures-intelligence]", redact(f"{type(exc).__name__}: {exc}")[:300])
+        raise HTTPException(503, "Binance USD-M rate limit reached. Wait before retrying; spot analysis is unaffected.")
+    except ProviderUnavailableError as exc:
+        print("[futures-intelligence]", redact(f"{type(exc).__name__}: {exc}")[:300])
+        raise HTTPException(502, "Binance USD-M provider is unavailable (network, proxy, HTTP or upstream outage). "
+                                 "If Binance is blocked on this network, configure HTTPS_PROXY and restart the app. "
+                                 "Futures context is optional; spot analysis is unaffected.")
     except Exception as exc:
         print("[futures-intelligence]", redact(f"{type(exc).__name__}: {exc}")[:300])
-        raise HTTPException(502, "Binance USD-M data unavailable or invalid; inspect local application logs.")
+        raise HTTPException(502, "Binance USD-M returned invalid or unexpected data; inspect local application logs.")
 
 
 @app.get("/api/iran-crypto/status")
@@ -3125,6 +3134,8 @@ local model <input id=lm list=lml placeholder="auto" size=22><datalist id=lml></
 const $=id=>document.getElementById(id);
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 let last=null,FC=null,SF=true,TRD=null,ST=true,TIM=new Map(),LV=[],D=[],V={start:0,count:100},DR=[],mode=null,pend=null,M=null,drag=null;
+let GATE_NO=false,GATE_CONFIDENCE_CAP='low';
+function confidenceMarkup(label){return GATE_NO?'<b>capped: '+esc(GATE_CONFIDENCE_CAP)+'</b> <span class=w>(descriptive only - NO TRADE, not a signal)</span>':'<b>'+esc(label)+'</b>';}
 const CV=$('cv'),X2=CV.getContext('2d'),AX=64;
 function toggleTR(){ST=!ST;render();}
 function dirc(d){return d=='Up'?'b':d=='Down'?'s':'n'}
@@ -3135,7 +3146,7 @@ async function fetchTrend(){
  }catch(e){el.textContent='trend failed: '+e;}}
 function showTrend(j){
  const s=j.structure,q=j.quality,e=j.edge||{},c=j.components,z=j.momentum_z;
- let h='<b>Trend ('+esc(j.tf)+', closed candles)</b> &nbsp; <span class='+dirc(j.direction)+' style="font-size:16px">'+esc(j.label)+'</span> &nbsp; score '+j.score+bar(j.score)+' confidence <b>'+esc(j.conf_label)+'</b> &nbsp; trendiness '+j.trendiness+'<br>';
+ let h='<b>Trend ('+esc(j.tf)+', closed candles)</b> &nbsp; <span class='+dirc(j.direction)+' style="font-size:16px">'+esc(j.label)+'</span> &nbsp; score '+j.score+bar(j.score)+' confidence '+confidenceMarkup(j.conf_label)+' &nbsp; trendiness '+j.trendiness+'<br>';
  h+='Structure: <b>'+esc(s.state)+'</b>, bias by last break: <b>'+esc(s.bias_by_last_break)+'</b>';
  if(s.last_event)h+=' ('+esc(s.last_event.type)+(s.last_event.dir>0?' up':' down')+' @ '+fmt(s.last_event.lvl)+', '+s.bars_since_last_break+' bars ago)';
  h+='<br>Swing high '+(s.swing_high==null?'n/a':fmt(s.swing_high))+' / swing low '+(s.swing_low==null?'n/a':fmt(s.swing_low))+'<br>';
@@ -3204,7 +3215,7 @@ async function run(){
  last={...j,symbol:$('symbol').value,tf:$('tf').value};FC=null;LV=j.levels||[];setData(j.candles);showAll(j);fetchMtf();fetchTrend();fetchTrendMtf();fetchForecast();
 }
 function showAll(j){
- $('v').innerHTML='<span class='+sc(j.score)+'>'+esc(j.verdict)+'</span> &nbsp; score '+j.score+' &nbsp; confidence <b>'+esc(j.conf_label)+'</b> ('+j.agree_n+'/'+j.active_n+' groups agree) &nbsp; last '+fmt(j.last);
+ $('v').innerHTML='<span class='+sc(j.score)+'>'+esc(j.verdict)+'</span> &nbsp; score '+j.score+' &nbsp; confidence '+confidenceMarkup(j.conf_label)+' ('+j.agree_n+'/'+j.active_n+' groups agree) &nbsp; last '+fmt(j.last);
  showCtx(j);showGroups(j);}
 function showCtx(j){
  const p=j.plan||{};
@@ -3269,10 +3280,13 @@ function showFC(s){
  h+='<span class=n>'+esc(s.warning)+'</span>';
  $('fc').innerHTML=h;showGate(s.gate);}
 function showGate(g){
- const el=$('gate');if(!g){el.innerHTML='';return;}
+ const el=$('gate');
+ if(!g){GATE_NO=false;GATE_CONFIDENCE_CAP='low';el.innerHTML='';if(last)showAll(last);if(last&&last.trend)showTrend(last.trend);return;}
  const no=g.state!='ALLOWED',e=g.ev||{};
+ GATE_NO=no;GATE_CONFIDENCE_CAP=g.confidence_cap||'low';
  $('v').style.opacity=no?0.5:1;
- if(no){const vv=$('v');vv.innerHTML=vv.innerHTML.replace(/confidence <b>[^<]*<\/b>/,'confidence <b>capped: '+esc(g.confidence_cap||'low')+'</b> <span class=w>(descriptive only - NO TRADE, not a signal)</span>');}
+ if(last)showAll(last);
+ if(last&&last.trend)showTrend(last.trend);
  let h='<div class=box style="border-left:4px solid '+(no?'#f87171':'#4ade80')+'"><b class='+(no?'s':'b')+' style="font-size:18px">'+(no?'NO TRADE':'TRADE ALLOWED')+'</b> &nbsp; confidence cap: '+esc(g.confidence_cap);
  if(g.reasons&&g.reasons.length)h+='<ul style="margin:6px 0">'+g.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')+'</ul>';
  if(e.ev!=null)h+='<div>EV after costs: <b class='+(e.ev>0?'b':'s')+'>'+(e.ev*100).toFixed(2)+'%</b> | gross R:R '+(e.rr_gross==null?'n/a':e.rr_gross.toFixed(2))+' | net R:R '+(e.rr_net==null?'n/a':e.rr_net.toFixed(2))+' | breakeven win rate '+(e.breakeven_winrate==null?'n/a':(e.breakeven_winrate*100).toFixed(1)+'%')+' | round-trip fee '+(g.fee_rt*100).toFixed(2)+'% | spread/slippage '+((g.spread_slippage_rt||0)*100).toFixed(2)+'%</div>';
