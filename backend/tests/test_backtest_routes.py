@@ -82,6 +82,9 @@ def test_backtest_endpoint_runs_against_historical_provider(monkeypatch):
     assert body["candles_used"] == 7
     assert body["result"]["trade_count"] == 1
     assert body["result"]["trades"][0]["entry_price"] == "6"
+    assert len(body["result"]["equity_curve"]) == body["candles_used"]
+    assert "profit_factor" in body["result"]
+    assert "exposure_pct" in body["result"]
 
 
 def test_backtest_endpoint_rejects_invalid_periods(monkeypatch):
