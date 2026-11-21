@@ -187,10 +187,12 @@ class BinanceSpotAdapter:
             if not page:
                 break
 
+            range_start = start_time.astimezone(UTC)
             new_candles = [
                 candle
                 for candle in page
-                if (last_timestamp is None or candle.timestamp > last_timestamp)
+                if candle.timestamp >= range_start
+                and (last_timestamp is None or candle.timestamp > last_timestamp)
                 and candle.timestamp <= range_end
             ]
             if not new_candles:
