@@ -71,8 +71,8 @@ async def candle_history(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
     interval: str = Query(default="1h", max_length=5),
-    start_time: datetime = Query(...),
-    end_time: datetime = Query(...),
+    start_time: datetime = Query(...),  # noqa: B008
+    end_time: datetime = Query(...),  # noqa: B008
     page_limit: int = Query(default=1000, ge=1, le=1000),
     max_candles: int = Query(default=10_000, ge=1, le=10_000),
     adapter: MarketDataProvider = Depends(get_market_data_provider),  # noqa: B008
