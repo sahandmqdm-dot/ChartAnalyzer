@@ -246,7 +246,7 @@ def test_liquidation_clusters_groups_adjacent_strong_price_bands(monkeypatch):
 
     monkeypatch.setattr(liquidation_routes, "aggregate_liquidation_price_bands", aggregate)
     response = authenticated_client().get(
-        "/api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT&min_strength_pct=35&min_events=2"
+        "/api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT&min_strength_pct=30&min_events=2"
     )
     assert response.status_code == 200
     body = response.json()
