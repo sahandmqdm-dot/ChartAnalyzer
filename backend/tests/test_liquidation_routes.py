@@ -131,37 +131,8 @@ def test_liquidation_heatmap_requires_authentication():
 
 def test_liquidation_heatmap_aggregates_observed_events(monkeypatch):
     from datetime import UTC, datetime
-    from decimal import Decimal
-
-    from app.market_data.liquidation_stream import LiquidationEvent
 
     now = datetime.now(UTC)
-    events = [
-        LiquidationEvent(
-            event_id="d" * 24,
-            provider="binance_usdm_futures",
-            symbol="BTCUSDT",
-            event_time=now,
-            liquidation_side="long",
-            order_side="SELL",
-            quantity=Decimal("0.1"),
-            price=Decimal(100),
-            notional=Decimal(10),
-            price_kind="average_execution",
-        ),
-        LiquidationEvent(
-            event_id="e" * 24,
-            provider="bybit_linear_futures",
-            symbol="BTCUSDT",
-            event_time=now,
-            liquidation_side="short",
-            order_side="BUY",
-            quantity=Decimal("0.2"),
-            price=Decimal(110),
-            notional=Decimal(22),
-            price_kind="bankruptcy",
-        ),
-    ]
 
     async def aggregate(symbol, start_time, bucket_seconds, price_bins, provider, side, limit):
         assert symbol == "BTCUSDT"
@@ -179,12 +150,30 @@ def test_liquidation_heatmap_aggregates_observed_events(monkeypatch):
             "price_step": "1",
             "truncated": False,
             "cells": [
-                {"time_bucket": now.isoformat(), "price_bin": 0, "price_from": "100",
-                 "price_to": "101", "events": 1, "long_events": 1, "short_events": 0,
-                 "long_notional": "10", "short_notional": "0", "total_notional": "10"},
-                {"time_bucket": now.isoformat(), "price_bin": 9, "price_from": "109",
-                 "price_to": "110", "events": 1, "long_events": 0, "short_events": 1,
-                 "long_notional": "0", "short_notional": "22", "total_notional": "22"},
+                {
+                    "time_bucket": now.isoformat(),
+                    "price_bin": 0,
+                    "price_from": "100",
+                    "price_to": "101",
+                    "events": 1,
+                    "long_events": 1,
+                    "short_events": 0,
+                    "long_notional": "10",
+                    "short_notional": "0",
+                    "total_notional": "10",
+                },
+                {
+                    "time_bucket": now.isoformat(),
+                    "price_bin": 9,
+                    "price_from": "109",
+                    "price_to": "110",
+                    "events": 1,
+                    "long_events": 0,
+                    "short_events": 1,
+                    "long_notional": "0",
+                    "short_notional": "22",
+                    "total_notional": "22",
+                },
             ],
         }
 
