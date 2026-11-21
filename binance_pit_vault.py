@@ -77,17 +77,21 @@ def _session_source_files(
             raise PITVaultError("partition_path_escapes_data_root")
         record_count = 0
         session_count = 0
+        session_digest = hashlib.sha256()
+        session_chain_head = None
         try:
-            with path.open("r", encoding="utf-8") as handle:
-                for line in handle:
-                    if not line.strip():
+            with path.open("rb") as handle:
+                for raw_line in handle:
+                    if not raw_line.strip():
                         continue
-                    record = json.loads(line)
+                    record = json.loads(raw_line.decode("utf-8"))
                     if not isinstance(record, dict):
                         raise PITVaultError("partition_record_must_be_an_object")
                     record_count += 1
                     if record.get("session_id") == session_id:
                         session_count += 1
+                        session_digest.update(raw_line)
+                        session_chain_head = record.get("event_hash")
         except (OSError, ValueError, TypeError) as exc:
             raise PITVaultError(f"unreadable_or_malformed_partition: {path.name}") from exc
         if not session_count:
@@ -98,11 +102,16 @@ def _session_source_files(
         relative = path.relative_to(root).as_posix()
         files.append({
             "path": relative,
+            # Full-partition values are an audit snapshot at manifest creation.
+            # Verification below binds the session-specific byte range so later
+            # sessions appended to the same daily partition do not invalidate it.
             "sha256": _sha256_file(path),
             "bytes": path.stat().st_size,
             "records": verified_count,
             "session_records": session_count,
             "chain_head": head,
+            "session_sha256": session_digest.hexdigest(),
+            "session_chain_head": session_chain_head,
         })
     if not files:
         raise PITVaultError(f"no records found for session {session_id}")
@@ -315,11 +324,38 @@ def verify_session_manifest(
         path = (root / relative_path).resolve()
         if root not in path.parents:
             raise PITVaultError("manifest source path escapes data root")
-        if not path.is_file() or _sha256_file(path) != source["sha256"]:
-            raise PITVaultError(f"source_file_digest_mismatch: {source['path']}")
+        if not path.is_file():
+            raise PITVaultError(f"source_file_missing: {source['path']}")
         valid, count, head = HashChainJSONLStore.verify_file(path)
-        if not valid or count != source["records"] or head != source["chain_head"]:
+        if not valid:
             raise PITVaultError(f"source_hash_chain_mismatch: {source['path']}")
+        if "session_sha256" in source:
+            # Daily partitions may grow as later sessions append. Bind this session's
+            # exact raw bytes and chain head while still validating the full hash chain.
+            session_digest = hashlib.sha256()
+            session_count = 0
+            session_head = None
+            try:
+                with path.open("rb") as handle:
+                    for raw_line in handle:
+                        if not raw_line.strip():
+                            continue
+                        record = json.loads(raw_line.decode("utf-8"))
+                        if record.get("session_id") == document.get("session_id"):
+                            session_digest.update(raw_line)
+                            session_count += 1
+                            session_head = record.get("event_hash")
+            except (OSError, UnicodeDecodeError, ValueError, TypeError, AttributeError) as exc:
+                raise PITVaultError(f"source_session_records_unreadable: {source['path']}") from exc
+            if (
+                session_count != source["session_records"]
+                or session_digest.hexdigest() != source["session_sha256"]
+                or session_head != source["session_chain_head"]
+            ):
+                raise PITVaultError(f"source_session_digest_mismatch: {source['path']}")
+        elif count != source["records"] or head != source["chain_head"] or _sha256_file(path) != source["sha256"]:
+            # Backward compatibility for manifests created before session-scoped digests.
+            raise PITVaultError(f"source_file_digest_mismatch: {source['path']}")
 
     return {
         "valid": True,
