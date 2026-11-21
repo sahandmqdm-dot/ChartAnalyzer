@@ -24,6 +24,8 @@ Development API docs: http://127.0.0.1:8000/docs
 - Local bootstrap admin login
 - Signed session cookie, CSRF token, logout invalidation (single-process memory)
 - Basic login attempt throttling
+- OHLCV candle domain schema with UTC normalization and OHLC invariants
+- Candle-series timestamp quality validation
 - React + TypeScript + Vite scaffold
 - Docker Compose and CI checks
 
