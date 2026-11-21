@@ -10,8 +10,10 @@ from app.market_data.futures_history import (
     BybitLinearFuturesHistoryAdapter,
 )
 from app.market_data.futures_routes import get_futures_provider
-from app.market_data.provider import MarketDataProviderError
-from app.market_data.registry import get_market_data_provider
+from app.market_data.mark_price import (
+    BinanceUsdmMarkPriceAdapter,
+    BybitLinearMarkPriceAdapter,
+)
 from app.market_data.symbol import Symbol
 from app.market_data.timeframe import Timeframe
 
@@ -46,23 +48,21 @@ async def futures_analysis(
     else:
         raise HTTPException(status_code=503, detail="No historical futures provider configured")
 
-    spot_adapter = get_market_data_provider()
+    if configured.name == "binance_usdm_futures":
+        price_adapter = BinanceUsdmMarkPriceAdapter()
+    else:
+        price_adapter = BybitLinearMarkPriceAdapter()
     try:
-        history, candles = await asyncio.gather(
+        history, mark_price = await asyncio.gather(
             history_adapter.fetch_history(normalized, period, 200),
-            spot_adapter.fetch_ohlcv(normalized, interval, limit=3),
+            price_adapter.fetch_mark_price_history(normalized, period, 3),
         )
     except FuturesMarketDataError as exc:
         raise HTTPException(
             status_code=502,
             detail="Futures history provider unavailable or returned invalid data",
         ) from exc
-    except MarketDataProviderError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Spot price context provider unavailable or returned invalid data",
-        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return analyze_futures_context(history, candles).model_dump(mode="json")
+    return analyze_futures_context(history, mark_price.candles).model_dump(mode="json")
