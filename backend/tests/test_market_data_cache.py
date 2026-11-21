@@ -1,4 +1,6 @@
-import asyncio\n\nimport pytest
+import asyncio
+
+import pytest
 
 from app.market_data.cache import AsyncTTLCache
 
