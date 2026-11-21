@@ -71,6 +71,25 @@ type LiquidationHeatmapCell = {
   events: number; long_events: number; short_events: number;
   long_notional: string; short_notional: string; total_notional: string;
 };
+type LiquidationCluster = {
+  price_from: string; price_to: string; mid_price: string; price_bins: number;
+  events: number; long_events: number; short_events: number;
+  long_notional: string; short_notional: string; total_notional: string;
+  strength_pct: string; dominant_side: 'long' | 'short' | 'balanced'; last_event_time: string;
+};
+type LiquidationClusters = {
+  symbol: string; window: string; provider_filter: string; side_filter: string;
+  min_strength_pct: number; min_events_per_band: number; total_events: number;
+  truncated: boolean; price_min: string | null; price_max: string | null;
+  price_step: string | null; total_notional: string; clusters: LiquidationCluster[];
+  method: string;
+  market_context: {
+    status: string; provider?: string; funding_rate?: string | null;
+    funding_timestamp?: string | null; open_interest?: string | null;
+    open_interest_change_pct?: string | null; open_interest_timestamp?: string | null;
+    long_short_ratio?: string | null; observed_at?: string; note: string;
+  };
+};
 type LiquidationHeatmap = {
   symbol: string; window: string; bucket_minutes: number; price_bins: number;
   provider_filter: string; side_filter: string; start_time: string; end_time: string;
@@ -200,6 +219,12 @@ function App() {
   const [heatmapData, setHeatmapData] = useState<LiquidationHeatmap | null>(null);
   const [heatmapBusy, setHeatmapBusy] = useState(false);
   const [heatmapError, setHeatmapError] = useState('');
+  const [clusterWindow, setClusterWindow] = useState('24h');
+  const [clusterSide, setClusterSide] = useState('all');
+  const [clusterStrength, setClusterStrength] = useState('35');
+  const [clusterData, setClusterData] = useState<LiquidationClusters | null>(null);
+  const [clusterBusy, setClusterBusy] = useState(false);
+  const [clusterError, setClusterError] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -420,6 +445,31 @@ function App() {
       setLiquidationError(cause instanceof Error ? cause.message : 'Could not stop liquidation stream');
     } finally {
       setLiquidationBusy(false);
+    }
+  }
+
+  async function loadLiquidationClusters() {
+    setClusterBusy(true);
+    setClusterError('');
+    setClusterData(null);
+    try {
+      const query = new URLSearchParams({
+        symbol: symbol.trim(),
+        window: clusterWindow,
+        side: clusterSide,
+        min_strength_pct: clusterStrength,
+        include_market_context: 'true',
+      });
+      const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/clusters?' + query, {
+        credentials: 'include',
+      });
+      const body = await response.json().catch(() => ({})) as LiquidationClusters & { detail?: string };
+      if (!response.ok) throw new Error(body.detail || 'Liquidation cluster analysis failed (' + response.status + ')');
+      setClusterData(body);
+    } catch (cause) {
+      setClusterError(cause instanceof Error ? cause.message : 'Could not load liquidation clusters');
+    } finally {
+      setClusterBusy(false);
     }
   }
 
@@ -765,6 +815,54 @@ function App() {
           <p className="footnote">{heatmapData.data_semantics} · {heatmapData.truncated ? 'Result capped' : 'All queried rows included'} · {heatmapData.window} window</p>
         </>}
         {!heatmapData && !heatmapBusy && !heatmapError && <div className="empty-state">Load the heatmap to inspect persisted liquidation events by price and time. PostgreSQL storage is required.</div>}
+      </section>
+
+
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">LIQUIDATION CLUSTER ANALYSIS</p><h2>{symbol} observed price concentrations</h2></div>
+          <span className="pill">Descriptive · Not a forecast</span>
+        </div>
+        <div className="controls cluster-controls">
+          <label>Lookback<select value={clusterWindow} onChange={(event) => setClusterWindow(event.target.value)}>{['1h','6h','24h','3d','7d'].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>Liquidated side<select value={clusterSide} onChange={(event) => setClusterSide(event.target.value)}><option value="all">Long + Short</option><option value="long">Long</option><option value="short">Short</option></select></label>
+          <label>Minimum band strength<select value={clusterStrength} onChange={(event) => setClusterStrength(event.target.value)}>{['20','35','50','65','80'].map((value) => <option key={value} value={value}>{value}% of strongest band</option>)}</select></label>
+          <button onClick={() => void loadLiquidationClusters()} disabled={clusterBusy}>{clusterBusy ? 'Analyzing…' : 'Detect clusters'}</button>
+        </div>
+        {clusterError && <p className="error" role="alert">{clusterError}</p>}
+        {clusterData && <>
+          <div className="stats-grid">
+            <div><small>Observed events</small><strong>{clusterData.total_events.toLocaleString()}</strong></div>
+            <div><small>Detected clusters</small><strong>{clusterData.clusters.length}</strong></div>
+            <div><small>Observed notional</small><strong>{Number(clusterData.total_notional).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></div>
+          </div>
+          <div className="cluster-context">
+            <div><small>Funding rate · {clusterData.market_context.status}</small><strong>{clusterData.market_context.funding_rate ?? '—'}</strong></div>
+            <div><small>Open interest</small><strong>{clusterData.market_context.open_interest ? Number(clusterData.market_context.open_interest).toLocaleString() : '—'}</strong></div>
+            <div><small>OI change · 2 recent points</small><strong>{clusterData.market_context.open_interest_change_pct ? Number(clusterData.market_context.open_interest_change_pct).toFixed(2) + '%' : '—'}</strong></div>
+            <div><small>Long / Short ratio</small><strong>{clusterData.market_context.long_short_ratio ?? '—'}</strong></div>
+          </div>
+          <p className="footnote">{clusterData.market_context.note}</p>
+          {clusterData.truncated && <p className="footnote">The query reached its event cap; the detected clusters may omit older events in this window.</p>}
+          {clusterData.clusters.length ? <div className="cluster-list">
+            {clusterData.clusters.map((cluster, index) => <article className="cluster-card" key={cluster.price_from + '-' + cluster.price_to}>
+              <div className="cluster-card-head">
+                <strong>Cluster {index + 1} · {cluster.dominant_side.toUpperCase()}</strong>
+                <span>{Number(cluster.strength_pct).toFixed(1)}% strength</span>
+              </div>
+              <div className="cluster-price">{Number(cluster.price_from).toLocaleString()} – {Number(cluster.price_to).toLocaleString()}</div>
+              <div className="cluster-bar"><span style={{ width: Math.min(100, Number(cluster.strength_pct)) + '%' }} /></div>
+              <div className="cluster-stats">
+                <span>{cluster.events} events</span>
+                <span>Long {Number(cluster.long_notional).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                <span>Short {Number(cluster.short_notional).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </div>
+              <small className="muted">Last observed: {new Date(cluster.last_event_time).toLocaleString()}</small>
+            </article>)}
+          </div> : <div className="empty-state">No price bands met the selected strength and minimum-event filters.</div>}
+          <p className="footnote">{clusterData.method} · Context fields are from the configured derivatives venue; no causal relationship is inferred.</p>
+        </>}
+        {!clusterData && !clusterBusy && !clusterError && <div className="empty-state">Detect clusters from persisted liquidation events. PostgreSQL storage is required.</div>}
       </section>
 
       <section className="panel">
