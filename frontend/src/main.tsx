@@ -649,7 +649,7 @@ function App() {
         {liquidationSnapshot?.status.persistence_error && <p className="footnote">Storage note: {liquidationSnapshot.status.persistence_error}</p>}
         <div className="stats-grid">
           <div><small>Stream status</small><strong>{liquidationSnapshot?.status.state || 'Stopped'}</strong></div>
-          <div><small>Events in memory</small><strong>{liquidationSnapshot?.status.event_count ?? 0}</strong></div>
+          <div><small>Events returned</small><strong>{liquidationSnapshot?.status.event_count ?? 0}</strong></div>
           <div><small>Durable storage</small><strong>{liquidationSnapshot?.storage_status || liquidationSnapshot?.status.persistence_state || 'Not configured'}</strong></div>
           <div><small>Last event (UTC)</small><strong>{liquidationSnapshot?.status.last_event_time ? new Date(liquidationSnapshot.status.last_event_time).toLocaleTimeString() : '—'}</strong></div>
         </div>
