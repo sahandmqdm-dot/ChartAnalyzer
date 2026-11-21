@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import BigInteger, Integer, case, cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
