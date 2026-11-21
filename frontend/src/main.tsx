@@ -916,7 +916,7 @@ function App() {
             </table>
           </div>
           <div className="table-wrap">
-            <table><thead><tr><th>Swing type</th><th>Price</th><th>Confirmed at</th></tr></thead>
+            <table><thead><tr><th>Swing type</th><th>Price</th><th>Swing candle</th></tr></thead>
               <tbody>{marketStructure.swings.slice(-12).reverse().map((swing, index) => <tr key={swing.timestamp + swing.kind + index}>
                 <td>{swing.kind.toUpperCase()}</td><td>{Number(swing.price).toLocaleString()}</td><td>{new Date(swing.timestamp).toLocaleString()}</td>
               </tr>)}</tbody>
