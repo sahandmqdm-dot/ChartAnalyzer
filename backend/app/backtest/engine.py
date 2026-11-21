@@ -1,11 +1,11 @@
 from dataclasses import asdict, dataclass
 from decimal import Decimal
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.market_data.candle import Candle
 
-ZERO = Decimal("0")
-ONE = Decimal("1")
+ZERO = Decimal(0)
+ONE = Decimal(1)
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,7 @@ def run_sma_crossover(
     *,
     fast_period: int = 10,
     slow_period: int = 30,
-    initial_equity: Decimal = Decimal("10000"),
+    initial_equity: Decimal = Decimal(10000),
     fee_rate: Decimal = Decimal("0.001"),
     slippage_rate: Decimal = Decimal("0.0005"),
 ) -> BacktestResult:
@@ -120,7 +120,7 @@ def run_sma_crossover(
             gross_value = quantity * exit_price
             net_value = gross_value * (ONE - fee_rate)
             pnl = net_value - equity
-            trade_return = (net_value / equity - ONE) * Decimal("100")
+            trade_return = (net_value / equity - ONE) * Decimal(100)
             equity = net_value
             trades.append(
                 BacktestTrade(
@@ -137,7 +137,7 @@ def run_sma_crossover(
             entry_time = None
             quantity = ZERO
             peak_equity = max(peak_equity, equity)
-            drawdown = (peak_equity - equity) / peak_equity * Decimal("100")
+            drawdown = (peak_equity - equity) / peak_equity * Decimal(100)
             max_drawdown = max(max_drawdown, drawdown)
 
     if entry_price is not None:
@@ -145,7 +145,7 @@ def run_sma_crossover(
         exit_price = final_candle.close * (ONE - slippage_rate)
         net_value = quantity * exit_price * (ONE - fee_rate)
         pnl = net_value - equity
-        trade_return = (net_value / equity - ONE) * Decimal("100")
+        trade_return = (net_value / equity - ONE) * Decimal(100)
         equity = net_value
         trades.append(
             BacktestTrade(
@@ -159,13 +159,13 @@ def run_sma_crossover(
             )
         )
         peak_equity = max(peak_equity, equity)
-        drawdown = (peak_equity - equity) / peak_equity * Decimal("100")
+        drawdown = (peak_equity - equity) / peak_equity * Decimal(100)
         max_drawdown = max(max_drawdown, drawdown)
 
     wins = sum(trade.pnl > ZERO for trade in trades)
     losses = len(trades) - wins
-    net_return = (equity / initial_equity - ONE) * Decimal("100")
-    win_rate = Decimal(wins) / Decimal(len(trades)) * Decimal("100") if trades else ZERO
+    net_return = (equity / initial_equity - ONE) * Decimal(100)
+    win_rate = Decimal(wins) / Decimal(len(trades)) * Decimal(100) if trades else ZERO
     return BacktestResult(
         initial_equity=initial_equity,
         final_equity=equity,
