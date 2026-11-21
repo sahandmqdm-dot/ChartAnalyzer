@@ -2608,6 +2608,15 @@ def _prospective_identity(payload):
     market_type = str((conf().get("backtest") or {}).get("market_type", "spot")).lower()
     if market_type != "spot":
         raise ValueError("prospective PMI collection is currently spot-only; futures requires a separate price-basis contract")
+    use_microstructure = payload.get("use_binance_microstructure", False)
+    if not isinstance(use_microstructure, bool):
+        raise ValueError("use_binance_microstructure must be a boolean")
+    if use_microstructure and not (
+        source == "ccxt" and exchange == "binance" and symbol == "BTCUSDT"
+    ):
+        raise ValueError(
+            "Binance microstructure evidence currently requires CCXT Binance Spot BTCUSDT"
+        )
     model_id, model_version = "chartanalyzer-pmi-bootstrap", "5.0.0"
     code_hashes = {}
     for label, path in (
@@ -2619,6 +2628,10 @@ def _prospective_identity(payload):
         ("iran_crypto_market", os.path.join(BASE_DIR, "iran_crypto_market.py")),
         ("prospective_ledger", os.path.join(BASE_DIR, "prospective_holdout.py")),
         ("prospective_baselines", os.path.join(BASE_DIR, "prospective_baselines.py")),
+        ("binance_stream_collector", os.path.join(BASE_DIR, "binance_stream_collector.py")),
+        ("binance_pit_vault", os.path.join(BASE_DIR, "binance_pit_vault.py")),
+        ("binance_microstructure_features", os.path.join(BASE_DIR, "binance_microstructure_features.py")),
+        ("binance_live_microstructure", os.path.join(BASE_DIR, "binance_live_microstructure.py")),
     ):
         if not path or not os.path.isfile(path):
             raise ValueError("cannot fingerprint required model component: " + label)
@@ -2653,6 +2666,10 @@ def _prospective_identity(payload):
         "paired_bootstrap_seed": 19,
         "input_policy": "closed_candles_only",
         "target_kind": "log_return",
+        "microstructure_evidence_required": use_microstructure,
+        "microstructure_evidence_policy": "auxiliary_audit_only_v1" if use_microstructure else "disabled",
+        "microstructure_windows_seconds": [5, 60, 300],
+        "microstructure_book_depth": 10,
     }
     encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest(), identity
@@ -2661,6 +2678,64 @@ def _prospective_identity(payload):
 def _prospective_ledger(cohort_id):
     from prospective_holdout import ProspectiveHoldoutLedger
     return ProspectiveHoldoutLedger(_prospective_cohort_path(cohort_id))
+
+
+def _prospective_binance_microstructure_provenance(identity, data_cutoff_at):
+    """Build and archive exact-cutoff Spot microstructure evidence for one forecast."""
+    from binance_live_microstructure import (
+        build_active_session_snapshot,
+        find_latest_active_session,
+        persist_snapshot_content_addressed,
+        verify_snapshot_artifact,
+    )
+
+    data_root = os.getenv(
+        "CHARTANALYZER_DATA_DIR",
+        os.path.join(BASE_DIR, "data", "binance_raw"),
+    )
+    decision_time = data_cutoff_at.isoformat()
+    session_id = find_latest_active_session(
+        data_root,
+        "spot",
+        identity["symbol"],
+        decision_time=decision_time,
+    )
+    dataset = build_active_session_snapshot(
+        data_root,
+        "spot",
+        session_id,
+        decision_time,
+        window_seconds=tuple(identity["microstructure_windows_seconds"]),
+        book_depth=identity["microstructure_book_depth"],
+    )
+    feature = dataset["snapshots"][0]
+    artifact = persist_snapshot_content_addressed(dataset, data_root)
+    verify_snapshot_artifact(data_root, artifact["artifact_path"], artifact["artifact_sha256"])
+    return {
+        "schema": feature["schema"],
+        "snapshot_mode": dataset["snapshot_mode"],
+        "market": feature["market"],
+        "symbol": feature["symbol"],
+        "session_id": feature["session_id"],
+        "manifest_hash": feature["manifest_hash"],
+        "feature_hash": feature["feature_hash"],
+        "dataset_hash": dataset["dataset_hash"],
+        **artifact,
+        "decision_time": feature["decision_time"],
+        "available_at": feature["available_at"],
+        "source_event_watermark": feature["source_event_watermark"],
+        "snapshot_created_at": dataset["snapshot_created_at"],
+        "point_in_time_valid": feature["point_in_time_valid"],
+        "book_valid": feature["book"]["valid"],
+        "session_complete": dataset["session_complete"],
+        "session_closed": dataset["session_closed"],
+        "book_sequence_gaps": feature["book_sequence_gaps"],
+        "book_buffer_overflows": feature["book_buffer_overflows"],
+        "collector_sequence_gaps": feature["collector_sequence_gaps"],
+        "collector_buffer_overflows": feature["collector_buffer_overflows"],
+        "collector_dropped_events": feature["collector_dropped_events"],
+        "collector_snapshot_failures": feature["collector_snapshot_failures"],
+    }
 
 
 def _prospective_source_parts(input_source):
@@ -2811,13 +2886,20 @@ def api_prospective_holdout_tick(payload: dict):
             q10, q50, q90 = (math.log1p(value) for value in q_values)
             bar_seconds = TF_MIN[identity["timeframe"]] * 60
             data_cutoff = float(frame["time"].iloc[-1]) + bar_seconds
-            issued_at = _prospective_now()
-            data_cutoff_at = datetime.fromtimestamp(data_cutoff, tz=issued_at.tzinfo)
+            clock_now = _prospective_now()
+            data_cutoff_at = datetime.fromtimestamp(data_cutoff, tz=clock_now.tzinfo)
             target_at = data_cutoff_at + timedelta(seconds=bar_seconds * identity["horizon_bars"])
             fingerprint = dataset_fingerprint(
                 frame, source=source, symbol=identity["symbol"], timeframe=identity["timeframe"])
             baseline_quantiles = build_baseline_quantiles(
                 frame["close"].to_numpy(dtype=float), identity["horizon_bars"])
+            microstructure_provenance = None
+            if identity["microstructure_evidence_required"]:
+                # Archive auxiliary evidence before the forecast's issuance timestamp.
+                microstructure_provenance = _prospective_binance_microstructure_provenance(
+                    identity, data_cutoff_at
+                )
+            issued_at = _prospective_now()
             forecast = create_forecast_record(
                 instrument_id=identity["symbol"], market_type=identity["market_type"],
                 timeframe=identity["timeframe"], horizon_bars=identity["horizon_bars"],
@@ -2833,10 +2915,23 @@ def api_prospective_holdout_tick(payload: dict):
                 forecast, config_fingerprint=config_hash, input_source=input_source,
                 reference_price=float(frame["close"].iloc[-1]),
                 baseline_quantiles=baseline_quantiles, recorded_at=recorded_at,
+                microstructure_provenance=microstructure_provenance,
             )
-            issued = {"forecast_id": forecast.forecast_id, "issued_at": forecast.issued_at.isoformat(),
-                      "data_cutoff_at": forecast.data_cutoff_at.isoformat(),
-                      "target_at": forecast.target_at.isoformat()}
+            issued = {
+                "forecast_id": forecast.forecast_id,
+                "issued_at": forecast.issued_at.isoformat(),
+                "data_cutoff_at": forecast.data_cutoff_at.isoformat(),
+                "target_at": forecast.target_at.isoformat(),
+                "microstructure_evidence": (
+                    {
+                        "dataset_hash": microstructure_provenance["dataset_hash"],
+                        "feature_hash": microstructure_provenance["feature_hash"],
+                        "artifact_path": microstructure_provenance["artifact_path"],
+                        "book_valid": microstructure_provenance["book_valid"],
+                    }
+                    if microstructure_provenance else None
+                ),
+            }
         return {
             "cohort": ledger.status(),
             "resolved_this_tick": resolved_count,
