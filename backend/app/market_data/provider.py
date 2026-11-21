@@ -4,6 +4,10 @@ from typing import Protocol
 from app.market_data.candle import Candle
 
 
+class MarketDataProviderError(RuntimeError):
+    """Raised when a market data provider request fails or returns invalid data."""
+
+
 class MarketDataProvider(Protocol):
     """Provider-neutral contract for normalized OHLCV data."""
 
