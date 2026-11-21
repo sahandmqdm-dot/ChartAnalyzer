@@ -17,7 +17,7 @@ ENGINE_VERSION = "ExecutionCostEngine 1.0"
 
 def _number(value: Any, name: str, *, minimum: float | None = None) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{name} must be numeric, not boolean")
+        raise TypeError(f"{name} must be numeric, not boolean")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
