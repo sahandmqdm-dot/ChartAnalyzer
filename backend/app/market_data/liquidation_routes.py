@@ -57,6 +57,5 @@ async def stop_liquidation_stream(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     collector = _collector_for(normalized)
     await collector.stop()
-    collector.events.clear()
-    collector._seen.clear()
+    collector.clear()
     return collector.snapshot()
