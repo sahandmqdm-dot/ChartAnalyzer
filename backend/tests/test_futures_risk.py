@@ -18,7 +18,7 @@ def tiers():
             maintenance_margin_deduction=Decimal(0), max_leverage=Decimal(50),
         ),
         RiskTier(
-            tier=2, notional_floor=Decimal(1000), notional_cap=None,
+            tier=2, notional_floor=Decimal(1000), notional_cap=Decimal(2000),
             maintenance_margin_rate=Decimal("0.05"),
             maintenance_margin_deduction=Decimal(30), max_leverage=Decimal(20),
         ),
