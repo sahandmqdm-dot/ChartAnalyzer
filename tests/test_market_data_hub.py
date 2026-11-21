@@ -1,3 +1,4 @@
+# ruff: noqa: I001  # Match the repository's flat-layout import convention.
 import json
 from datetime import datetime, UTC
 
