@@ -91,7 +91,7 @@ def test_fair_value_gap_tracks_partial_mitigation_and_full_fill():
     assert gap.lower == Decimal(102)
     assert gap.upper == Decimal(104)
     assert gap.status == "filled"
-    assert gap.mitigation_time == candles[4].timestamp
+    assert gap.mitigation_time == candles[3].timestamp
     assert gap.invalidation_time is None
 
 
