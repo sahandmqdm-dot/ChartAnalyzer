@@ -35,6 +35,7 @@ Do not expose this application to the public internet or use it for live trading
 - Authenticated endpoint: `GET /api/v1/market-data/candles`.
 - Process-local async TTL/LRU cache: 15 seconds, up to 512 keys. It is not shared across worker processes.
 - Binance adapter classifies each candle as open or closed using the exchange-provided Kline close time and an injectable UTC clock; one clock snapshot is used per response batch.
+- Bounded historical pagination is implemented in the Binance adapter with page limits, a total candle cap, close-time-based cursor advancement, duplicate filtering, and a no-progress guard. It is not yet exposed through an API route.
 - Bounded retry/backoff was added for transport errors, HTTP 429, and selected 5xx responses. Numeric `Retry-After` is honored (capped); otherwise exponential delay is used. Client errors are not retried. The sleep function is injectable for deterministic tests.
 - Tests use `httpx.MockTransport`; they should not rely on live Binance.
 
@@ -72,7 +73,7 @@ Work through these in order, checking existing code and tests before implementat
 1. Verify the latest CI after commit `4b61e7c`; fix any remaining failures.
 2. Review retry semantics and add coverage for transport exceptions and exhausted retry attempts. Consider parsing HTTP-date Retry-After only if justified by provider behavior.
 3. Candle completeness semantics are implemented with `close_time` and `is_closed`; next, ensure API consumers and future backtests explicitly filter open candles where appropriate.
-4. Implement safe historical pagination with explicit page/record bounds, deterministic ordering, duplicate-boundary handling, and rate-limit cooperation.
+4. Bounded historical pagination is implemented at the Binance adapter level; next expose it through the provider-neutral contract and an authenticated API endpoint, then verify bounds and authorization.
 5. Strengthen quality validation and document gap semantics per timeframe, especially calendar month.
 6. Only after the ingestion contract stabilizes, consider persistence (PostgreSQL) and shared cache (Redis).
 7. Later: WebSocket streaming, UI charting, quant indicators, backtesting, portfolio/risk, research and AI assistance. Keep AI out of deterministic execution paths.
