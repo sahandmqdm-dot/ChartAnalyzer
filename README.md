@@ -12,6 +12,7 @@ A local, read-only quantitative market research MVP. It includes a FastAPI backe
 - Binance Spot and Bybit Spot public market-data adapters behind one provider protocol.
 - Provider selection using `MARKET_DATA_PROVIDER` (`binance_spot` or `bybit_spot`).
 - Read-only Binance USDⓈ-M and Bybit linear-perpetual overview: mark/index price, current funding rate, open interest, notional open interest, and next funding time.
+- Historical derivatives series for funding rate, open interest, and global long/short account ratio on Binance USDⓈ-M and Bybit Linear.
 - Bounded historical pagination, transient-error retries, sanitized provider errors, and `closed_only=true`.
 - Process-local asynchronous TTL/LRU cache with single-flight request coalescing.
 - React + TypeScript workspace for login, selecting symbol/timeframe, viewing a close-price line chart, and inspecting recent OHLCV rows.
@@ -73,10 +74,11 @@ POST /api/v1/auth/logout
 GET /api/v1/market-data/candles?symbol=BTCUSDT&interval=1h&limit=300&closed_only=true
 GET /api/v1/market-data/candles/history?symbol=BTCUSDT&interval=1h&start_time=2026-01-01T00:00:00Z&end_time=2026-01-02T00:00:00Z
 GET /api/v1/derivatives/overview?symbol=BTCUSDT
+GET /api/v1/derivatives/history?symbol=BTCUSDT&period=1h&limit=100
 GET /api/v1/backtest/sma-crossover?symbol=BTCUSDT&interval=1h&start_time=2026-01-01T00:00:00Z&end_time=2026-02-01T00:00:00Z&fast_period=10&slow_period=30
 ```
 
-Market-data and derivatives endpoints require a valid session. The derivatives overview is a current linear-perpetual snapshot and uses the same configured exchange family as Spot; it does not provide historical funding/OI series, long/short ratios, liquidation feeds, or derivatives backtesting yet. Public exchange endpoints do not require exchange API keys. The history endpoint requires timezone-aware bounds and enforces a maximum of 10,000 candles. The cache has a 15-second TTL and 512-key bound; it is per process and not durable.
+Market-data and derivatives endpoints require a valid session. The derivatives overview is a current linear-perpetual snapshot. The derivatives history endpoint returns bounded funding-rate, open-interest, and global long/short account-ratio series for common periods (`5m`, `15m`, `30m`, `1h`, `4h`, `1d`). It uses the same configured exchange family as Spot. Exchange retention windows and returned sample counts differ; Binance open-interest history is limited to the latest month and its global long/short ratio to the latest 30 days. This endpoint does not yet provide liquidation feeds, order-book liquidation heatmaps, or futures-aware backtesting. Public exchange endpoints do not require exchange API keys. The history endpoint requires timezone-aware bounds and enforces a maximum of 10,000 candles. The cache has a 15-second TTL and 512-key bound; it is per process and not durable.
 
 ## Verification
 
@@ -96,7 +98,7 @@ CI runs backend lint/tests and the frontend production build. Exchange API tests
 - One configured administrator; no user management or role-based access control.
 - Login throttling, session revocation, and caching are in-memory and reset on restart.
 - One worker per API instance; no shared Redis cache or distributed rate limiter.
-- No PostgreSQL history store, WebSocket feed, portfolio-level risk engine, or order execution. Futures analytics currently expose a current overview only; historical derivatives series and funding-aware futures backtests remain future work.
+- No PostgreSQL history store, WebSocket feed, portfolio-level risk engine, or order execution. Futures analytics currently expose a current overview and bounded historical funding/OI/long-short series; liquidation feeds, durable derivatives history, and funding-aware futures backtests remain future work.
 - Exchange interval support differs; Bybit Spot does not provide the 3-day or 8-hour intervals; unsupported intervals return a validation error.
 - No production deployment hardening, observability stack, backup/restore, or external penetration test.
 
