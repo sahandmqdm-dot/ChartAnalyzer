@@ -45,7 +45,7 @@ def validate_fee_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("missing fee schedule fields: " + ", ".join(missing))
     effective_at = schedule["effective_at"]
     if not isinstance(effective_at, str):
-        raise ValueError("fee schedule effective_at must be an ISO-8601 string")
+        raise TypeError("fee schedule effective_at must be an ISO-8601 string")
     try:
         effective_dt = datetime.datetime.fromisoformat(effective_at)
     except ValueError as exc:
