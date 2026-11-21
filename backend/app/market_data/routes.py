@@ -1,9 +1,9 @@
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.auth import current_user
 from app.market_data.binance import BinanceSpotAdapter, MarketDataProviderError
-from fastapi import Request
 
 router = APIRouter(prefix="/api/v1/market-data", tags=["market-data"])
 
