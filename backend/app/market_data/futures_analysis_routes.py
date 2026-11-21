@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.auth import current_user
@@ -46,7 +48,7 @@ async def futures_analysis(
 
     spot_adapter = get_market_data_provider()
     try:
-        history, candles = await __import__("asyncio").gather(
+        history, candles = await asyncio.gather(
             history_adapter.fetch_history(normalized, period, 200),
             spot_adapter.fetch_ohlcv(normalized, interval, limit=3),
         )
