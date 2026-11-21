@@ -23,6 +23,7 @@ Fixed-interval missing timestamps are detectable and returned without auto-filli
 
 ## Market data provider boundary
 - `BinanceSpotAdapter` implements a public Spot Kline provider with bounded limit and interval validation, time-aware optional start/end filters, Decimal conversion, UTC timestamps, and provider error normalization.
+- Binance requests use bounded retries for transport failures, HTTP 429, and selected transient 5xx responses. `Retry-After` is honored when numeric; otherwise capped exponential backoff is used. Client errors are not retried, and retry sleep is injectable for deterministic tests.
 - `GET /api/v1/market-data/candles` requires the local authenticated session and provides sanitized provider errors.
 - The provider is tested using HTTP mock transport; CI must not depend on live exchange availability.
 - Provider selection is centralized in `market_data.registry`; Binance Spot is currently the only configured provider.
@@ -32,4 +33,4 @@ Fixed-interval missing timestamps are detectable and returned without auto-filli
 The candles API uses a process-local asynchronous TTL/LRU cache with a 15-second lifetime and a 512-key bound. Cache keys include normalized symbol, interval, limit, and optional time bounds. The cache is intentionally non-durable and per-process; shared Redis caching and request coalescing remain future work.
 
 ## Remaining market data work
-Rate-limit-aware retry/backoff, incomplete-candle policy, historical pagination, persistent storage, and live streaming are not implemented yet.
+Incomplete-candle policy, historical pagination, persistent storage, and live streaming are not implemented yet. Retry/backoff is implemented but still needs operational tuning against exchange behavior.
