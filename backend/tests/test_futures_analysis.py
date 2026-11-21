@@ -31,12 +31,12 @@ def candles(previous: str, latest: str) -> list[Candle]:
         Candle(
             timestamp=datetime(2026, 11, 21, 11, tzinfo=UTC),
             open=Decimal(previous), high=Decimal(previous), low=Decimal(previous),
-            close=Decimal(previous), volume=Decimal("1"),
+            close=Decimal(previous), volume=Decimal(1),
         ),
         Candle(
             timestamp=datetime(2026, 11, 21, 12, tzinfo=UTC),
             open=Decimal(latest), high=Decimal(latest), low=Decimal(latest),
-            close=Decimal(latest), volume=Decimal("1"),
+            close=Decimal(latest), volume=Decimal(1),
         ),
     ]
 
@@ -48,8 +48,8 @@ def test_rising_price_and_open_interest_is_descriptive_buildup():
     )
 
     assert result.positioning == "long_and_short_build_up_with_rising_price"
-    assert result.price_change_pct == Decimal("5")
-    assert result.open_interest_change_pct == Decimal("10")
+    assert result.price_change_pct == Decimal(5)
+    assert result.open_interest_change_pct == Decimal(10)
     assert result.confidence == "medium"
     assert any(signal.code == "price_up_oi_up" for signal in result.signals)
 
