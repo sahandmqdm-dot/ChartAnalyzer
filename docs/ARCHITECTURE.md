@@ -146,3 +146,10 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - Missing first observations are reported as `waiting_for_data`, not stale. Stopped feeds are reported as stopped and do not degrade an otherwise idle service.
 - Overall status is `idle`, `starting`, `healthy`, or `degraded`; reconnecting, stale, future-clock-skewed, or persistence-unavailable feeds degrade the report.
 - The UI refreshes this report while live feeds are enabled and shows per-feed age and persistence status.
+
+
+## Safe live-feed lifecycle methods
+- Starting and stopping live market or Open Interest collectors are state-changing operations. They use authenticated `POST` and `DELETE` requests with the double-submit `X-CSRF-Token` header.
+- `GET /live-market` and `GET /open-interest-live` only return the current snapshot; they never start network activity.
+- Liquidation stream start/stop endpoints use the same CSRF requirement. Read-only market, history, health, and snapshot endpoints remain GET requests.
+- The React client sends the CSRF cookie value on lifecycle requests and polls snapshots separately.
