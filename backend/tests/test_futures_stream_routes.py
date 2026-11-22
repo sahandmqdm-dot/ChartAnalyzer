@@ -84,3 +84,11 @@ def test_market_history_returns_service_unavailable_without_database(monkeypatch
         "/api/v1/derivatives/market-history", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 503
+
+
+def test_stream_factory_selects_bybit_from_independent_futures_setting(monkeypatch):
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+    monkeypatch.setattr(futures_stream, "_streams", {})
+    stream = futures_stream.get_futures_market_stream("btcusdt")
+    assert isinstance(stream, futures_stream.BybitLinearFuturesMarketStream)
+    assert stream.snapshot()["provider"] == "bybit_linear_futures"
