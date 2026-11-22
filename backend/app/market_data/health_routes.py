@@ -4,7 +4,6 @@ from app.auth import current_user
 from app.market_data import futures_stream, health, open_interest
 from app.settings import settings
 
-
 router = APIRouter(prefix="/api/v1/health", tags=["system"])
 
 
