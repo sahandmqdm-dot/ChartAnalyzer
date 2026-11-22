@@ -45,7 +45,7 @@ def test_live_market_endpoint_starts_stream_and_returns_snapshot(monkeypatch):
 def test_market_history_endpoint_returns_persisted_rows(monkeypatch):
     async def fake_list(symbol, start_time, limit, provider):
         assert symbol == "BTCUSDT"
-        assert provider == "binance_usdm_futures"
+        assert provider == settings.futures_market_data_provider
         assert limit == 50
         assert start_time.tzinfo is not None
         return [{
@@ -92,3 +92,21 @@ def test_stream_factory_selects_bybit_from_independent_futures_setting(monkeypat
     stream = futures_stream.get_futures_market_stream("btcusdt")
     assert isinstance(stream, futures_stream.BybitLinearFuturesMarketStream)
     assert stream.snapshot()["provider"] == "bybit_linear_futures"
+
+
+def test_market_history_uses_independent_bybit_provider(monkeypatch):
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+
+    async def fake_list(symbol, start_time, limit, provider):
+        assert provider == "bybit_linear_futures"
+        return []
+
+    monkeypatch.setattr(
+        "app.market_data.futures_snapshot_repository.list_futures_mark_snapshots",
+        fake_list,
+    )
+    response = authenticated_client(monkeypatch).get(
+        "/api/v1/derivatives/market-history", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["provider"] == "bybit_linear_futures"
