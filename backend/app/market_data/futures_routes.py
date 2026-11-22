@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.auth import current_user
 from app.market_data.cache import AsyncTTLCache
-from app.market_data.futures_risk import IsolatedRiskEstimateRequest, estimate_isolated_liquidation
+from app.market_data.futures_risk import (
+    IsolatedRiskEstimateRequest,
+    estimate_isolated_liquidation,
+)
 from app.market_data.futures import (
     BinanceUsdmFuturesAdapter,
     BybitLinearFuturesAdapter,
