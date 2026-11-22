@@ -235,13 +235,30 @@ class LiquidationCollector:
                             await self.ingest(event)
 
 
+_MAX_REGISTERED_LIQUIDATION_COLLECTORS = 500
 _collectors: dict[tuple[str, str], LiquidationCollector] = {}
+
+
+def find_collector(provider: str, symbol: str) -> LiquidationCollector | None:
+    return _collectors.get((provider, str(Symbol(symbol))))
+
+
+def _prune_stopped_liquidation_collectors() -> None:
+    if len(_collectors) < _MAX_REGISTERED_LIQUIDATION_COLLECTORS:
+        return
+    for key, collector in list(_collectors.items()):
+        if collector.state == "stopped":
+            del _collectors[key]
+            if len(_collectors) < _MAX_REGISTERED_LIQUIDATION_COLLECTORS:
+                return
+    raise RuntimeError("Liquidation collector registry is at capacity")
 
 
 def get_collector(provider: str, symbol: str) -> LiquidationCollector:
     key = (provider, str(Symbol(symbol)))
     collector = _collectors.get(key)
     if collector is None:
+        _prune_stopped_liquidation_collectors()
         collector = LiquidationCollector(*key)
         _collectors[key] = collector
     return collector
