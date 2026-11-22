@@ -116,8 +116,9 @@ def test_open_interest_live_stop_endpoint_stops_collector(monkeypatch):
 
     collector = FakeCollector()
     monkeypatch.setattr(
-        "app.market_data.open_interest.get_open_interest_collector",
-        lambda _symbol: collector,
+        open_interest,
+        "_collectors",
+        {(settings.futures_market_data_provider, "BTCUSDT"): collector},
     )
     response = client_with_auth(monkeypatch).delete(
         "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
@@ -139,8 +140,9 @@ def test_open_interest_get_does_not_start_collector(monkeypatch):
 
     collector = FakeCollector()
     monkeypatch.setattr(
-        "app.market_data.open_interest.get_open_interest_collector",
-        lambda _symbol: collector,
+        open_interest,
+        "_collectors",
+        {(settings.futures_market_data_provider, "BTCUSDT"): collector},
     )
     response = client_with_auth(monkeypatch).get(
         "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
