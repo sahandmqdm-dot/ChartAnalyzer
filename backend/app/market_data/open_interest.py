@@ -9,7 +9,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
-from app.auth import current_user
+from app.auth import csrf_check, current_user
 from app.market_data.symbol import Symbol
 from app.settings import settings
 
@@ -237,7 +237,22 @@ async def live_open_interest(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
 ):
+    """Return the latest Open Interest snapshot without starting a poller."""
     current_user(request)
+    try:
+        collector = get_open_interest_collector(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return collector.snapshot()
+
+
+@router.post("/open-interest-live")
+async def start_live_open_interest(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+):
+    current_user(request)
+    csrf_check(request)
     try:
         collector = get_open_interest_collector(symbol)
     except ValueError as exc:
@@ -252,6 +267,7 @@ async def stop_live_open_interest(
     symbol: str = Query(min_length=2, max_length=30),
 ):
     current_user(request)
+    csrf_check(request)
     try:
         collector = get_open_interest_collector(symbol)
     except ValueError as exc:
