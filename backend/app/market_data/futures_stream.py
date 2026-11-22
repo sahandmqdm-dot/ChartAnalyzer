@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 from websockets.asyncio.client import connect
 
-from app.auth import current_user
+from app.auth import csrf_check, current_user
 from app.market_data.symbol import Symbol
 from app.settings import settings
 
@@ -396,8 +396,23 @@ async def live_futures_market(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
 ):
-    """Start and return the configured read-only linear-perpetual market stream."""
+    """Return the latest live-market snapshot without starting a collector."""
     current_user(request)
+    try:
+        stream = get_futures_market_stream(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return stream.snapshot()
+
+
+@router.post("/live-market")
+async def start_live_futures_market(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+):
+    """Start the configured public market stream after CSRF validation."""
+    current_user(request)
+    csrf_check(request)
     try:
         stream = get_futures_market_stream(symbol)
     except ValueError as exc:
@@ -413,6 +428,7 @@ async def stop_live_futures_market(
 ):
     """Stop the selected public market stream while retaining its last snapshot."""
     current_user(request)
+    csrf_check(request)
     try:
         stream = get_futures_market_stream(symbol)
     except ValueError as exc:
