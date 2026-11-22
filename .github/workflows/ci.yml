@@ -54,6 +54,8 @@ jobs:
           backend/tests/test_open_interest_repository.py
           backend/tests/test_open_interest_routes.py
           backend/tests/test_market_pressure.py
+          backend/app/auth.py
+          backend/tests/test_auth.py
           backend/app/settings.py
           backend/app/market_data/futures_routes.py
           backend/tests/test_settings.py
