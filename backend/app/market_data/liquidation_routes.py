@@ -12,10 +12,10 @@ from app.market_data.liquidation_repository import (
     list_recent_liquidation_events,
 )
 from app.market_data.liquidation_stream import (
+    LiquidationCollector,
     _collectors,
     find_collector,
     get_collector,
-    LiquidationCollector,
 )
 from app.market_data.symbol import Symbol
 from app.settings import settings
