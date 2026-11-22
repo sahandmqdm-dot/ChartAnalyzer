@@ -204,6 +204,7 @@ def run_futures_sma_crossover(
             event = simulate_mark_price_liquidation(
                 account.position, [mark_candles[index]], maintenance_margin_rate,
                 liquidation_fee_rate,
+                margin_adjustment=account.funding_total,
             )
             if event.liquidated:
                 net_pnl = account.settle_liquidation(event)
