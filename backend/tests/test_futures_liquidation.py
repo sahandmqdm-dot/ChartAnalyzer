@@ -52,3 +52,26 @@ def test_funding_adjustment_moves_short_liquidation_threshold():
 def test_funding_adjustment_must_be_finite_decimal():
     with pytest.raises(ValueError, match="margin_adjustment"):
         estimate_liquidation_price(position(), D("0.005"), D("NaN"))
+
+
+
+def test_liquidation_fee_reserve_moves_threshold_earlier_for_both_sides():
+    long_position = position("long")
+    short_position = position("short")
+    long_without_fee = estimate_liquidation_price(long_position, D("0.005"))
+    long_with_fee = estimate_liquidation_price(
+        long_position, D("0.005"), liquidation_fee_rate=D("0.01")
+    )
+    short_without_fee = estimate_liquidation_price(short_position, D("0.005"))
+    short_with_fee = estimate_liquidation_price(
+        short_position, D("0.005"), liquidation_fee_rate=D("0.01")
+    )
+    assert long_with_fee > long_without_fee
+    assert short_with_fee < short_without_fee
+
+
+def test_liquidation_fee_reserve_rejects_incompatible_rates():
+    with pytest.raises(ValueError, match="plus liquidation_fee_rate"):
+        estimate_liquidation_price(
+            position(), D("0.6"), liquidation_fee_rate=D("0.4")
+        )
