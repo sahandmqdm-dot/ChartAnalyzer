@@ -362,7 +362,19 @@ class BybitLinearFuturesMarketStream(BinanceFuturesMarketStream):
             delay = min(delay * 2, self.max_reconnect_delay)
 
 
+_MAX_REGISTERED_FUTURES_STREAMS = 500
 _streams: dict[tuple[str, str], BinanceFuturesMarketStream] = {}
+
+
+def _prune_stopped_futures_streams() -> None:
+    if len(_streams) < _MAX_REGISTERED_FUTURES_STREAMS:
+        return
+    for key, stream in list(_streams.items()):
+        if stream.state == "stopped":
+            del _streams[key]
+            if len(_streams) < _MAX_REGISTERED_FUTURES_STREAMS:
+                return
+    raise RuntimeError("Futures stream registry is at capacity")
 
 
 def get_futures_market_stream(symbol: str) -> BinanceFuturesMarketStream:
@@ -371,6 +383,7 @@ def get_futures_market_stream(symbol: str) -> BinanceFuturesMarketStream:
     key = (provider, normalized)
     stream = _streams.get(key)
     if stream is None:
+        _prune_stopped_futures_streams()
         providers = {
             "binance_usdm_futures": BinanceFuturesMarketStream,
             "bybit_linear_futures": BybitLinearFuturesMarketStream,
@@ -403,12 +416,20 @@ async def live_futures_market(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
 ):
-    """Return the latest live-market snapshot without starting a collector."""
+    """Return the latest snapshot without creating or starting a collector."""
     current_user(request)
     try:
-        stream = get_futures_market_stream(symbol)
+        normalized = str(Symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    provider = settings.futures_market_data_provider
+    stream = _streams.get((provider, normalized))
+    if stream is None:
+        return FuturesStreamSnapshot(
+            provider=provider,
+            symbol=normalized,
+            state="stopped",
+        ).model_dump(mode="json")
     return stream.snapshot()
 
 
@@ -424,6 +445,8 @@ async def start_live_futures_market(
         stream = get_futures_market_stream(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     if (
         stream.state == "stopped"
         and active_futures_market_stream_count(stream.provider)
@@ -442,13 +465,21 @@ async def stop_live_futures_market(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
 ):
-    """Stop the selected public market stream while retaining its last snapshot."""
+    """Stop the selected stream without creating a collector when it is absent."""
     current_user(request)
     csrf_check(request)
     try:
-        stream = get_futures_market_stream(symbol)
+        normalized = str(Symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    provider = settings.futures_market_data_provider
+    stream = _streams.get((provider, normalized))
+    if stream is None:
+        return FuturesStreamSnapshot(
+            provider=provider,
+            symbol=normalized,
+            state="stopped",
+        ).model_dump(mode="json")
     await stream.stop()
     return stream.snapshot()
 
