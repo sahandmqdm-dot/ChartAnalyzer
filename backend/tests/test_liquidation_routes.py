@@ -295,3 +295,23 @@ def test_liquidation_stop_requires_csrf():
         "/api/v1/derivatives/liquidations/stop?symbol=BTCUSDT"
     )
     assert response.status_code == 403
+
+
+def test_liquidation_start_enforces_per_provider_capacity(monkeypatch):
+    active = FakeCollector()
+    active.start()
+    candidate = FakeCollector()
+    monkeypatch.setattr(settings, "max_active_liquidation_streams", 1)
+    monkeypatch.setattr(
+        liquidation_routes,
+        "_collectors",
+        {("bybit_linear_futures", "ETHUSDT"): active},
+    )
+    monkeypatch.setattr(liquidation_routes, "_collector_for", lambda _symbol: candidate)
+
+    response = authenticated_client().post(
+        "/api/v1/derivatives/liquidations/start?symbol=BTCUSDT"
+    )
+
+    assert response.status_code == 429
+    assert candidate.started is False
