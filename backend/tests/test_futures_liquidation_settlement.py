@@ -40,12 +40,11 @@ def test_liquidation_settlement_updates_wallet_and_clears_position():
     account, event = liquidation_event()
     assert event.liquidated
     realized = account.settle_liquidation(event)
-    expected = event.gross_pnl - D("1") - event.liquidation_fee
-    assert realized == expected
+    assert realized == D("-501")
     assert account.position is None
     assert account.entry_fee_paid == D("0")
     assert account.funding_total == D("0")
-    assert account.wallet_balance == D("9999") + event.gross_pnl - event.liquidation_fee
+    assert account.wallet_balance == D("9499")
 
 
 def test_non_liquidation_event_cannot_be_settled():
