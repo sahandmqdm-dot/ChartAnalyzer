@@ -67,6 +67,31 @@ type MultiTimeframeConfluence = {
   caveats: string[]; unavailable_timeframes: string[];
 };
 
+type LiveRiskAssessment = {
+  provider: string;
+  symbol: string;
+  mark_price: string;
+  mark_price_observed_at: string;
+  risk_tiers_source: string;
+  risk_tiers_observed_at: string;
+  freshness_seconds: number;
+  assessment_status: string;
+  estimate: RiskEstimate & {
+    liquidation_price_estimate: string;
+    distance_to_liquidation_from_mark: string | null;
+    distance_to_liquidation_from_mark_percent: string | null;
+    bankruptcy_price_estimate: string;
+    liquidation_tier: number;
+  };
+  alert: {
+    level: 'normal' | 'warning' | 'critical' | 'liquidation_near';
+    title: string;
+    message: string;
+    distance_percent: string;
+    triggered: boolean;
+  };
+  thresholds: Record<string, string>;
+};
 type RiskTier = {
   tier: number; notional_floor: string; notional_cap: string | null;
   maintenance_margin_rate: string; maintenance_margin_deduction: string; max_leverage?: string | null;
@@ -248,6 +273,9 @@ function App() {
   const [riskBusy, setRiskBusy] = useState(false);
   const [riskError, setRiskError] = useState('');
   const [riskResult, setRiskResult] = useState<RiskEstimate | null>(null);
+  const [liveRiskAssessment, setLiveRiskAssessment] = useState<LiveRiskAssessment | null>(null);
+  const [liveRiskBusy, setLiveRiskBusy] = useState(false);
+  const [liveRiskError, setLiveRiskError] = useState('');
   const [liquidationLive, setLiquidationLive] = useState(false);
   const [liquidationBusy, setLiquidationBusy] = useState(false);
   const [liquidationError, setLiquidationError] = useState('');
@@ -495,6 +523,32 @@ function App() {
       setRiskError(cause instanceof Error ? cause.message : 'Could not calculate liquidation estimate');
     } finally {
       setRiskBusy(false);
+    }
+  }
+
+  async function runLiveRiskAssessment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLiveRiskBusy(true);
+    setLiveRiskError('');
+    setLiveRiskAssessment(null);
+    try {
+      const response = await fetch(API_BASE + '/api/v1/derivatives/risk-assessment/live', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: symbol.trim(), side: riskSide, entry_price: riskEntry,
+          quantity: riskQuantity, leverage: riskLeverage,
+          extra_margin: riskExtraMargin, estimated_close_fee_rate: riskFee,
+        }),
+      });
+      const body = await response.json().catch(() => ({})) as LiveRiskAssessment & { detail?: string };
+      if (!response.ok) throw new Error(body.detail || 'Live risk assessment failed (' + response.status + ')');
+      setLiveRiskAssessment(body);
+    } catch (cause) {
+      setLiveRiskError(cause instanceof Error ? cause.message : 'Could not assess live futures risk');
+    } finally {
+      setLiveRiskBusy(false);
     }
   }
 
@@ -1006,6 +1060,41 @@ function App() {
           <p className="footnote">Provider: {marketStructure.provider} · {marketStructure.symbol} · {marketStructure.period} · Updated {new Date(marketStructure.observed_at).toLocaleString()}</p>
         </>}
         {!marketStructure && !marketStructureBusy && !marketStructureError && <div className="empty-state">Run the structure analysis to inspect confirmed swings and structural events for this symbol.</div>}
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">FUTURES RISK ENGINE V3</p><h2>{symbol} live position risk</h2></div>
+          <span className="pill">Exchange Mark Price + Bybit Risk Tiers</span>
+        </div>
+        <p className="footnote">The integrated assessment fetches a fresh Mark Price snapshot and exchange-provided Bybit Linear risk tiers. It does not accept manual tiers and does not place orders.</p>
+        <form className="controls risk-controls" onSubmit={runLiveRiskAssessment}>
+          <label>Position side<select value={riskSide} onChange={(event) => setRiskSide(event.target.value as 'long' | 'short')}><option value="long">Long</option><option value="short">Short</option></select></label>
+          <label>Entry price<input type="number" min="0" step="any" value={riskEntry} onChange={(event) => setRiskEntry(event.target.value)} required /></label>
+          <label>Quantity (base asset)<input type="number" min="0" step="any" value={riskQuantity} onChange={(event) => setRiskQuantity(event.target.value)} required /></label>
+          <label>Leverage<input type="number" min="1" step="any" value={riskLeverage} onChange={(event) => setRiskLeverage(event.target.value)} required /></label>
+          <label>Extra isolated margin<input type="number" min="0" step="any" value={riskExtraMargin} onChange={(event) => setRiskExtraMargin(event.target.value)} /></label>
+          <label>Estimated close-fee rate<input type="number" min="0" step="any" value={riskFee} onChange={(event) => setRiskFee(event.target.value)} /></label>
+          <button disabled={liveRiskBusy || busy}>{liveRiskBusy ? 'Assessing…' : 'Assess live risk'}</button>
+        </form>
+        {liveRiskError && <p className="error" role="alert">{liveRiskError}</p>}
+        {liveRiskAssessment && <>
+          <div className={'risk-alert risk-' + liveRiskAssessment.alert.level} role="status">
+            <div><strong>{liveRiskAssessment.alert.title}</strong><span>{liveRiskAssessment.alert.message}</span></div>
+            <strong>{Number(liveRiskAssessment.alert.distance_percent).toFixed(3)}%</strong>
+          </div>
+          <div className="stats-grid">
+            <div><small>Live Mark Price</small><strong>{Number(liveRiskAssessment.mark_price).toLocaleString(undefined, { maximumFractionDigits: 8 })}</strong></div>
+            <div><small>Estimated Liquidation</small><strong>{Number(liveRiskAssessment.estimate.liquidation_price_estimate).toLocaleString(undefined, { maximumFractionDigits: 8 })}</strong></div>
+            <div><small>Distance from Mark</small><strong>{liveRiskAssessment.estimate.distance_to_liquidation_from_mark_percent === null ? '—' : Number(liveRiskAssessment.estimate.distance_to_liquidation_from_mark_percent).toFixed(3) + '%'}</strong></div>
+            <div><small>Bankruptcy estimate</small><strong>{Number(liveRiskAssessment.estimate.bankruptcy_price_estimate).toLocaleString(undefined, { maximumFractionDigits: 8 })}</strong></div>
+            <div><small>Exchange risk tier</small><strong>{liveRiskAssessment.estimate.liquidation_tier}</strong></div>
+            <div><small>Mark snapshot age</small><strong>{liveRiskAssessment.freshness_seconds}s</strong></div>
+          </div>
+          <p className="footnote">Provider: {liveRiskAssessment.provider} · Tier source: {liveRiskAssessment.risk_tiers_source} · Mark observed: {new Date(liveRiskAssessment.mark_price_observed_at).toLocaleString()} · Tiers fetched: {new Date(liveRiskAssessment.risk_tiers_observed_at).toLocaleString()}</p>
+          <div className="caveat-list"><strong>Risk model limits</strong><ul>{liveRiskAssessment.estimate.assumptions.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        </>}
+        {!liveRiskAssessment && !liveRiskBusy && !liveRiskError && <div className="empty-state">Enter the position details and assess against the configured exchange's live market snapshot and risk tiers.</div>}
       </section>
 
       <section className="panel">
