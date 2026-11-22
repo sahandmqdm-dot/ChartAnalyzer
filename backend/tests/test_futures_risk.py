@@ -28,7 +28,7 @@ def tiers():
 def request(side="long", **updates):
     values = {
         "symbol": "BTCUSDT", "side": side,
-        "entry_price": Decimal(100), "quantity": Decimal(10),
+        "entry_price": Decimal(100), "quantity": Decimal(9),
         "leverage": Decimal(10), "extra_margin": Decimal(0),
         "estimated_close_fee_rate": Decimal("0.0005"),
         "risk_tiers": tiers(),
@@ -40,7 +40,7 @@ def request(side="long", **updates):
 def test_long_liquidation_estimate_uses_tier_deduction_and_fee():
     result = estimate_isolated_liquidation(request())
     assert result.side == "long"
-    assert result.entry_notional == Decimal(1000)
+    assert result.entry_notional == Decimal(900)
     assert result.liquidation_price_estimate > 0
     assert result.liquidation_price_estimate < Decimal(100)
     assert result.maintenance_margin_rate == Decimal("0.02")
@@ -90,3 +90,23 @@ def test_rejects_non_contiguous_tier_table():
 def test_rejects_non_positive_fee_rate_boundaries():
     with pytest.raises(ValidationError):
         request(estimated_close_fee_rate=Decimal(1))
+
+
+
+def test_bankruptcy_price_is_separate_from_liquidation_price():
+    result = estimate_isolated_liquidation(request())
+    assert result.bankruptcy_price_estimate == Decimal(55)
+    assert result.liquidation_price_estimate > result.bankruptcy_price_estimate
+
+
+def test_short_bankruptcy_price_is_above_entry():
+    result = estimate_isolated_liquidation(request("short"))
+    assert result.bankruptcy_price_estimate == Decimal(145)
+
+
+def test_tier_selection_recalculates_for_liquidation_notional():
+    result = estimate_isolated_liquidation(
+        request(entry_price=Decimal(150), quantity=Decimal(10), leverage=Decimal(10))
+    )
+    assert result.liquidation_tier == 2
+    assert result.maintenance_margin_rate == Decimal("0.05")
