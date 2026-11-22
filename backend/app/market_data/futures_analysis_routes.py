@@ -6,12 +6,12 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from app.auth import current_user
 from app.market_data.futures import FuturesMarketDataError
 from app.market_data.futures_analysis import analyze_futures_context
-from app.market_data.liquidation_repository import list_recent_liquidation_events
 from app.market_data.futures_history import (
     BinanceUsdmFuturesHistoryAdapter,
     BybitLinearFuturesHistoryAdapter,
 )
 from app.market_data.futures_routes import get_futures_provider
+from app.market_data.liquidation_repository import list_recent_liquidation_events
 from app.market_data.mark_price import (
     BinanceUsdmMarkPriceAdapter,
     BybitLinearMarkPriceAdapter,
