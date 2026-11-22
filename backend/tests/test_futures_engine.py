@@ -84,7 +84,7 @@ def test_rejects_naive_funding_timestamp():
     with pytest.raises(ValueError, match="timezone-aware"):
         run_futures_sma_crossover(
             candles, marks, fast_period=2, slow_period=3,
-            funding_payments=[FundingPayment(datetime(2026, 1, 1), D("0.001"))],  # noqa: DTZ001
+            funding_payments=[FundingPayment(datetime(2026, 1, 1), D("0.001"))],
         )
 
 
@@ -160,7 +160,7 @@ def test_rejects_mixed_naive_and_aware_funding_timestamps():
             candles, marks, fast_period=2, slow_period=3,
             funding_payments=[
                 FundingPayment(START + timedelta(hours=4), D("0.001")),
-                FundingPayment(datetime(2026, 1, 1, 5), D("0.001")),  # noqa: DTZ001
+                FundingPayment(datetime(2026, 1, 1, 5), D("0.001")),
             ],
         )
 
