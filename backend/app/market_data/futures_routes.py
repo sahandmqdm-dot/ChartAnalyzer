@@ -2,15 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.auth import current_user
 from app.market_data.cache import AsyncTTLCache
-from app.market_data.futures_risk import (
-    IsolatedRiskEstimateRequest,
-    estimate_isolated_liquidation,
-)
 from app.market_data.futures import (
     BinanceUsdmFuturesAdapter,
     BybitLinearFuturesAdapter,
     FuturesMarketDataError,
     FuturesMarketDataProvider,
+)
+from app.market_data.futures_risk import (
+    IsolatedRiskEstimateRequest,
+    estimate_isolated_liquidation,
 )
 from app.market_data.symbol import Symbol
 from app.settings import settings
@@ -20,14 +20,14 @@ _overview_cache: AsyncTTLCache = AsyncTTLCache(ttl_seconds=10, max_entries=256)
 
 
 def get_futures_provider() -> FuturesMarketDataProvider:
-    """Select the derivatives venue matching the configured spot data venue."""
-    providers: dict[str, type] = {
-        "binance_spot": BinanceUsdmFuturesAdapter,
-        "bybit_spot": BybitLinearFuturesAdapter,
+    """Select the configured linear-perpetual provider independently of Spot."""
+    providers: dict[str, type[FuturesMarketDataProvider]] = {
+        "binance_usdm_futures": BinanceUsdmFuturesAdapter,
+        "bybit_linear_futures": BybitLinearFuturesAdapter,
     }
-    provider_type = providers.get(settings.market_data_provider)
+    provider_type = providers.get(settings.futures_market_data_provider)
     if provider_type is None:
-        raise RuntimeError("No futures provider configured for the selected exchange")
+        raise RuntimeError("No supported futures market-data provider is configured")
     return provider_type()
 
 

@@ -5,7 +5,11 @@ from fastapi.testclient import TestClient
 
 from app.auth import _session_token
 from app.main import app
-from app.market_data.futures import FuturesOverview
+from app.market_data.futures import (
+    BinanceUsdmFuturesAdapter,
+    BybitLinearFuturesAdapter,
+    FuturesOverview,
+)
 from app.market_data.futures_routes import get_futures_provider
 from app.settings import settings
 
@@ -116,9 +120,25 @@ def test_isolated_risk_estimate_returns_bankruptcy_and_liquidation_separately(mo
     body = response.json()
     assert body["symbol"] == "BTCUSDT"
     assert body["status"] == "estimate_only"
-    assert Decimal(body["bankruptcy_price_estimate"]) == Decimal("90")
+    assert Decimal(body["bankruptcy_price_estimate"]) == Decimal(90)
     assert Decimal(body["liquidation_price_estimate"]) > Decimal(
         body["bankruptcy_price_estimate"]
     )
     assert Decimal(body["distance_to_liquidation_from_mark"]) > 0
     assert Decimal(body["distance_to_liquidation_from_mark_percent"]) > 0
+
+
+def test_futures_provider_defaults_to_binance_independently_of_spot(monkeypatch):
+    monkeypatch.setattr(settings, "market_data_provider", "bybit_spot")
+    monkeypatch.setattr(settings, "futures_market_data_provider", "binance_usdm_futures")
+    provider = get_futures_provider()
+    assert isinstance(provider, BinanceUsdmFuturesAdapter)
+    assert provider.name == "binance_usdm_futures"
+
+
+def test_futures_provider_can_select_bybit_while_spot_uses_binance(monkeypatch):
+    monkeypatch.setattr(settings, "market_data_provider", "binance_spot")
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+    provider = get_futures_provider()
+    assert isinstance(provider, BybitLinearFuturesAdapter)
+    assert provider.name == "bybit_linear_futures"

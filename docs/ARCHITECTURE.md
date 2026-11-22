@@ -119,3 +119,11 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - Individual timeframe fetch failures are listed in `unavailable_timeframes`; available timeframes are still returned, and the response caveat marks the result incomplete. If every timeframe fails, the endpoint returns a sanitized 502 response. Results are cached for 30 seconds by provider, symbol, limit, and pivot window.
 - The engine intentionally avoids an opaque numeric confidence score. It does not yet fuse funding/OI changes or liquidation clusters into the directional vote; those datasets have different sampling/retention semantics and remain separate market-context evidence until a validated time-alignment rule is designed. No trading actions are exposed.
 - Unit and route tests cover full alignment, partial alignment, conflict handling, insufficient directional data, authentication, symbol validation, and fetching all four intervals.
+
+
+## Independent Spot and Futures provider selection
+- `MARKET_DATA_PROVIDER` selects only the normalized Spot OHLCV adapter (`binance_spot` or `bybit_spot`).
+- `FUTURES_MARKET_DATA_PROVIDER` independently selects the linear-perpetual adapter (`binance_usdm_futures` or `bybit_linear_futures`); it defaults to Binance USDⓈ-M to preserve the prior default behavior.
+- The derivatives overview, historical funding/OI/account-ratio, Mark Price history, analysis, and market-pressure paths resolve the configured Futures provider. Switching Spot venues does not silently switch the derivatives venue.
+- Binance-specific live-market and Open Interest polling collectors remain explicitly Binance USDⓈ-M integrations; they are not silently redirected to Bybit by the provider selector.
+- Both settings are validated independently. Public market-data access remains read-only and requires no exchange credentials.
