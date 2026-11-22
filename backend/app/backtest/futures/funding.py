@@ -1,6 +1,8 @@
 from decimal import Decimal
+
 from app.backtest.futures.models import FundingEvent
 from app.backtest.futures.position import Position
+
 
 
 def funding_payment(position: Position, event: FundingEvent) -> Decimal:
