@@ -125,7 +125,6 @@ def normalize_bybit_market_event(payload: dict, expected_symbol: str) -> dict | 
                 "indexPrice": "index_price",
                 "bid1Price": "best_bid",
                 "ask1Price": "best_ask",
-                "lastPrice": "last_price",
             }
             size_fields = {
                 "openInterest": "open_interest",
