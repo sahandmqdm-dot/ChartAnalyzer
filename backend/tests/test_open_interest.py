@@ -127,6 +127,7 @@ async def test_bybit_collector_poll_updates_snapshot_and_persists(monkeypatch):
                 "retCode": 0,
                 "time": 1_800_000_000_000,
                 "result": {
+                    "category": "linear",
                     "list": [{"symbol": "BTCUSDT", "openInterest": "200.5"}]
                 },
             }
