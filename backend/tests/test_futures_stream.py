@@ -117,7 +117,7 @@ def test_bybit_public_trade_uses_latest_trade_in_batch():
     assert event is not None
     assert event["last_trade_price"] == Decimal("101")
     assert event["last_trade_quantity"] == Decimal("0.2")
-    assert event["last_trade_time"].timestamp() == 1_800_000_000.09
+    assert event["last_trade_time"].microsecond == 90_000
 
 
 def test_bybit_stream_exposes_provider_and_latest_ticker_snapshot():
@@ -142,3 +142,22 @@ def test_bybit_stream_exposes_provider_and_latest_ticker_snapshot():
     assert snapshot["provider"] == "bybit_linear_futures"
     assert snapshot["open_interest"] == "200.5"
     assert snapshot["mark_price"] == "100"
+
+
+def test_bybit_ticker_rejects_wrong_symbol_and_non_finite_prices():
+    assert normalize_bybit_market_event(
+        {
+            "topic": "tickers.ETHUSDT",
+            "ts": 1_800_000_000_000,
+            "data": [{"symbol": "ETHUSDT", "markPrice": "100"}],
+        },
+        "BTCUSDT",
+    ) is None
+    assert normalize_bybit_market_event(
+        {
+            "topic": "tickers.BTCUSDT",
+            "ts": 1_800_000_000_000,
+            "data": [{"symbol": "BTCUSDT", "markPrice": "NaN"}],
+        },
+        "BTCUSDT",
+    ) is None
