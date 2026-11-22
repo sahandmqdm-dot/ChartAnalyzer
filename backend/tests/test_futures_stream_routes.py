@@ -173,3 +173,12 @@ def test_live_market_start_requires_csrf(monkeypatch):
         "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 403
+
+
+def test_live_market_stop_requires_csrf():
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.delete(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 403
