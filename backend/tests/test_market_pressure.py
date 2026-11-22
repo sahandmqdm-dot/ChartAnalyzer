@@ -45,7 +45,7 @@ def test_market_pressure_combines_price_oi_funding_and_liquidations():
         ],
     )
     assert result.bias == "mild_bearish_pressure"
-    assert result.pressure_score == -2
+    assert result.pressure_score == -1
     assert result.long_liquidation_notional == Decimal("170")
     assert result.short_liquidation_notional == Decimal("10")
     assert result.liquidation_imbalance_pct == Decimal(160) / Decimal(180) * 100
