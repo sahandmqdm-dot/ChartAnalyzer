@@ -126,11 +126,16 @@ def run_futures_sma_crossover(
             raise ValueError("OHLCV and Mark Price timestamps must align")
         if i and candle.timestamp <= candles[i - 1].timestamp:
             raise ValueError("candles must be strictly chronological")
+    for payment in funding_payments:
+        if (
+            not isinstance(payment.timestamp, datetime)
+            or payment.timestamp.tzinfo is None
+            or payment.timestamp.utcoffset() is None
+            or not isinstance(payment.rate, Decimal)
+            or not payment.rate.is_finite()
+        ):
+            raise ValueError("funding events require timezone-aware timestamps and finite Decimal rates")
     ordered_funding = sorted(funding_payments, key=lambda item: item.timestamp)
-    if any(p.timestamp.tzinfo is None or p.timestamp.utcoffset() is None
-           or not isinstance(p.rate, Decimal) or not p.rate.is_finite()
-           for p in ordered_funding):
-        raise ValueError("funding events require timezone-aware timestamps and finite Decimal rates")
     if any(ordered_funding[i].timestamp <= ordered_funding[i-1].timestamp
            for i in range(1, len(ordered_funding))):
         raise ValueError("funding events must have unique timestamps")
