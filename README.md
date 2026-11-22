@@ -103,11 +103,28 @@ Market-data and derivatives endpoints require a valid session. The derivatives o
 
 ## Verification
 
+On Linux/macOS, run the backend checks from the repository root with one command. The script creates/uses `backend/.venv`, installs the declared development extras (including `pytest-asyncio`), and invokes pytest through that same interpreter; this avoids accidentally running the system pytest without the async plugin.
+
+```sh
+bash backend/verify.sh
+```
+
+The equivalent manual backend commands are:
+
 ```sh
 cd backend
-ruff check .
-pytest
-cd ../frontend
+python -m venv .venv
+# Windows PowerShell: .venv\\Scripts\\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
+python -m pip install -e '.[dev]'
+ruff check app tests
+APP_SECRET='test-only-secret-not-for-production' python -m pytest
+```
+
+Frontend production build:
+
+```sh
+cd frontend
 npm install
 npm run build
 ```
