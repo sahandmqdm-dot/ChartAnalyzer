@@ -102,3 +102,16 @@ def test_backtest_endpoint_rejects_invalid_periods(monkeypatch):
         },
     )
     assert response.status_code == 422
+
+
+
+def test_futures_backtest_rejects_unsupported_interval_before_provider_calls(monkeypatch):
+    monkeypatch.setattr(settings, "admin_username", "admin")
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.get(
+        "/api/v1/backtest/futures-sma-crossover",
+        params={"symbol": "BTCUSDT", "interval": "3m"},
+    )
+    assert response.status_code == 422
+    assert "futures backtest interval" in response.json()["detail"]
