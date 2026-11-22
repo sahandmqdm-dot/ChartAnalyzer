@@ -10,6 +10,7 @@ from app.backtest.futures_engine import FundingPayment, run_futures_sma_crossove
 from app.market_data.provider import MarketDataProvider, MarketDataProviderError
 from app.market_data.futures import FuturesMarketDataError
 from app.market_data.futures_history import BinanceUsdmFuturesHistoryAdapter, BybitLinearFuturesHistoryAdapter
+from app.market_data.futures_ohlcv import BinanceUsdmFuturesOHLCVAdapter, BybitLinearFuturesOHLCVAdapter
 from app.market_data.mark_price import BinanceUsdmMarkPriceAdapter, BybitLinearMarkPriceAdapter
 from app.market_data.futures_routes import get_futures_provider
 from app.market_data.registry import get_market_data_provider
@@ -125,7 +126,6 @@ async def futures_sma_crossover(
             )
         if fast_period >= slow_period:
             raise ValueError("periods must satisfy 1 <= fast_period < slow_period")
-        spot_provider = get_market_data_provider()
         futures_provider = get_futures_provider()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -133,17 +133,19 @@ async def futures_sma_crossover(
         raise HTTPException(status_code=503, detail="Market data provider is not configured") from exc
 
     if futures_provider.name == "binance_usdm_futures":
+        contract_adapter = BinanceUsdmFuturesOHLCVAdapter()
         mark_adapter = BinanceUsdmMarkPriceAdapter()
         history_adapter = BinanceUsdmFuturesHistoryAdapter()
     elif futures_provider.name == "bybit_linear_futures":
+        contract_adapter = BybitLinearFuturesOHLCVAdapter()
         mark_adapter = BybitLinearMarkPriceAdapter()
         history_adapter = BybitLinearFuturesHistoryAdapter()
     else:
         raise HTTPException(status_code=503, detail="Unsupported futures market-data provider")
 
     try:
-        spot_candles, mark_history, futures_history = await asyncio.gather(
-            spot_provider.fetch_ohlcv(normalized_symbol, normalized_interval, limit=limit),
+        contract_candles, mark_history, futures_history = await asyncio.gather(
+            contract_adapter.fetch_ohlcv(normalized_symbol, normalized_interval, limit=limit),
             mark_adapter.fetch_mark_price_history(normalized_symbol, normalized_interval, limit),
             history_adapter.fetch_history(normalized_symbol, normalized_interval, limit),
         )
@@ -151,22 +153,22 @@ async def futures_sma_crossover(
         raise HTTPException(status_code=502, detail="Futures backtest market data unavailable or invalid") from exc
 
     marks_by_time = {item.timestamp: item for item in mark_history.candles if item.is_closed}
-    aligned_spot = [item for item in spot_candles if item.is_closed and item.timestamp in marks_by_time]
-    aligned_marks = [marks_by_time[item.timestamp] for item in aligned_spot]
-    if len(aligned_spot) < slow_period + 2:
+    aligned_contracts = [item for item in contract_candles if item.is_closed and item.timestamp in marks_by_time]
+    aligned_marks = [marks_by_time[item.timestamp] for item in aligned_contracts]
+    if len(aligned_contracts) < slow_period + 2:
         raise HTTPException(
             status_code=422,
-            detail="Not enough aligned closed OHLCV and Mark Price candles for the selected periods",
+            detail="Not enough aligned closed futures OHLCV and Mark Price candles for the selected periods",
         )
 
     funding = [
         FundingPayment(timestamp=point.timestamp, rate=point.value)
         for point in futures_history.funding_rate
-        if aligned_spot[0].timestamp < point.timestamp <= (aligned_spot[-1].close_time or aligned_spot[-1].timestamp)
+        if aligned_contracts[0].timestamp < point.timestamp <= (aligned_contracts[-1].close_time or aligned_contracts[-1].timestamp)
     ]
     try:
         result = run_futures_sma_crossover(
-            aligned_spot,
+            aligned_contracts,
             aligned_marks,
             fast_period=fast_period,
             slow_period=slow_period,
@@ -187,7 +189,7 @@ async def futures_sma_crossover(
         "symbol": normalized_symbol,
         "interval": normalized_interval,
         "strategy": "futures_sma_crossover",
-        "candles_used": len(aligned_spot),
+        "candles_used": len(aligned_contracts),
         "funding_events_used": len(funding),
         "parameters": {
             "fast_period": fast_period,
@@ -202,7 +204,7 @@ async def futures_sma_crossover(
         },
         "result": result.to_dict(),
         "model_limitations": [
-            "Spot OHLCV currently drives signals and simulated entry/exit prices; actual futures-contract OHLCV and order-book execution are not fetched, so basis and execution differences are omitted.",
+            "Linear-perpetual contract OHLCV drives signals and simulated entry/exit prices; actual order-book execution and market impact are not modeled.",
             "Funding history is limited by the selected provider's returned history window; event cashflows use the event candle's Mark Price close as an approximation.",
             "Funding cashflows update wallet balance, but the simplified liquidation threshold is not dynamically recalculated from cumulative funding; liquidation timing can therefore differ from an exchange.",
             "Liquidation uses a simplified isolated-margin estimate and candle OHLC approximation; exchange margin tiers, insurance funds, and auto-deleveraging are not modeled.",
