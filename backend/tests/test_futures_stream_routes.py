@@ -12,6 +12,8 @@ def authenticated_client(monkeypatch):
     monkeypatch.setattr(settings, "admin_username", "admin")
     client = TestClient(app)
     client.cookies.set("ca_session", _session_token("admin"))
+    client.cookies.set("ca_csrf", "test-csrf-token")
+    client.headers.update({"X-CSRF-Token": "test-csrf-token"})
     return client
 
 
@@ -34,7 +36,7 @@ def test_live_market_endpoint_starts_stream_and_returns_snapshot(monkeypatch):
 
     stream = FakeStream()
     monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: stream)
-    response = authenticated_client(monkeypatch).get(
+    response = authenticated_client(monkeypatch).post(
         "/api/v1/derivatives/live-market", params={"symbol": "btcusdt"}
     )
     assert response.status_code == 200
@@ -142,3 +144,32 @@ def test_development_cors_allows_live_feed_delete_requests():
     )
     assert response.status_code == 200
     assert "DELETE" in response.headers["access-control-allow-methods"]
+
+
+def test_live_market_get_does_not_start_stream(monkeypatch):
+    class FakeStream:
+        started = False
+
+        def start(self):
+            self.started = True
+
+        def snapshot(self):
+            return {"symbol": "BTCUSDT", "state": "stopped"}
+
+    stream = FakeStream()
+    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: stream)
+    response = authenticated_client(monkeypatch).get(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200
+    assert not stream.started
+    assert response.json()["state"] == "stopped"
+
+
+def test_live_market_start_requires_csrf(monkeypatch):
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.post(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 403
