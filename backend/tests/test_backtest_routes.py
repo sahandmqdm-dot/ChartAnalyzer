@@ -115,3 +115,73 @@ def test_futures_backtest_rejects_unsupported_interval_before_provider_calls(mon
     )
     assert response.status_code == 422
     assert "futures backtest interval" in response.json()["detail"]
+
+
+
+def test_futures_backtest_uses_perpetual_contract_ohlcv(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.backtest import routes as backtest_routes
+    from app.market_data.mark_price import MarkPriceCandle
+
+    monkeypatch.setattr(settings, "admin_username", "admin")
+    monkeypatch.setattr(
+        backtest_routes,
+        "get_futures_provider",
+        lambda: SimpleNamespace(name="binance_usdm_futures"),
+    )
+
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    candles = []
+    marks = []
+    for index in range(40):
+        timestamp = start + timedelta(hours=index)
+        close_time = timestamp + timedelta(hours=1) - timedelta(milliseconds=1)
+        candles.append(Candle(
+            timestamp=timestamp,
+            close_time=close_time,
+            is_closed=True,
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100"),
+            volume=Decimal("10"),
+        ))
+        marks.append(MarkPriceCandle(
+            timestamp=timestamp,
+            close_time=close_time,
+            is_closed=True,
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100"),
+        ))
+
+    class FakeContractAdapter:
+        async def fetch_ohlcv(self, *args, **kwargs):
+            return candles
+
+    class FakeMarkAdapter:
+        async def fetch_mark_price_history(self, *args, **kwargs):
+            return SimpleNamespace(candles=marks)
+
+    class FakeHistoryAdapter:
+        async def fetch_history(self, *args, **kwargs):
+            return SimpleNamespace(funding_rate=[])
+
+    monkeypatch.setattr(backtest_routes, "BinanceUsdmFuturesOHLCVAdapter", FakeContractAdapter)
+    monkeypatch.setattr(backtest_routes, "BinanceUsdmMarkPriceAdapter", FakeMarkAdapter)
+    monkeypatch.setattr(backtest_routes, "BinanceUsdmFuturesHistoryAdapter", FakeHistoryAdapter)
+
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.get(
+        "/api/v1/backtest/futures-sma-crossover",
+        params={"symbol": "BTCUSDT", "interval": "1h", "limit": 40},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["candles_used"] == 40
+    assert body["price_sources"]["signals_and_execution"] == "linear_perpetual_contract_ohlcv"
+    assert body["price_sources"]["liquidation"] == "linear_perpetual_mark_price"
