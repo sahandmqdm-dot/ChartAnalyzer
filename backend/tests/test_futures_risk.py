@@ -110,3 +110,19 @@ def test_tier_selection_recalculates_for_liquidation_notional():
     )
     assert result.liquidation_tier == 2
     assert result.maintenance_margin_rate == Decimal("0.05")
+
+
+def test_rejects_maintenance_deduction_above_margin_at_tier_floor():
+    with pytest.raises(ValidationError, match="deduction"):
+        request(risk_tiers=[
+            RiskTier(
+                tier=1, notional_floor=Decimal(0), notional_cap=Decimal(1000),
+                maintenance_margin_rate=Decimal("0.02"),
+                maintenance_margin_deduction=Decimal("1"),
+            ),
+            RiskTier(
+                tier=2, notional_floor=Decimal(1000), notional_cap=None,
+                maintenance_margin_rate=Decimal("0.05"),
+                maintenance_margin_deduction=Decimal("30"),
+            ),
+        ])
