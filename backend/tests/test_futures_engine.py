@@ -45,6 +45,8 @@ def test_futures_sma_enters_long_and_closes_at_end_of_data():
     assert result.trades[0].exit_reason == "end_of_data"
     assert result.final_equity > result.initial_equity
     assert result.to_dict()["trades"][0]["net_pnl"] == str(result.trades[0].net_pnl)
+    assert result.trades[0].liquidation_trigger_price is None
+    assert result.to_dict()["trades"][0]["bankruptcy_price"] is None
 
 
 def test_funding_is_applied_only_while_position_is_open():
