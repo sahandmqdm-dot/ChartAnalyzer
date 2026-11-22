@@ -153,3 +153,10 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - `GET /live-market` and `GET /open-interest-live` only return the current snapshot; they never start network activity.
 - Liquidation stream start/stop endpoints use the same CSRF requirement. Read-only market, history, health, and snapshot endpoints remain GET requests.
 - The React client sends the CSRF cookie value on lifecycle requests and polls snapshots separately.
+
+
+## Resource limits and bounded authentication state
+- Active Futures market streams, Open Interest pollers, and liquidation streams are capped independently per provider. Each cap defaults to 10 and is configurable through `MAX_ACTIVE_FUTURES_MARKET_STREAMS`, `MAX_ACTIVE_OPEN_INTEREST_COLLECTORS`, and `MAX_ACTIVE_LIQUIDATION_STREAMS` (range 1–100).
+- Starting a new collector beyond its cap returns HTTP 429; an already-running collector for the same symbol can be reused without consuming another slot.
+- Login attempt tracking retains at most 10,000 IP keys and evicts the least-recently-used entry when full. The five-attempts-per-minute limit remains per IP.
+- Revoked session IDs are stored with their expiry and purged through an expiry heap after the session TTL, rather than remaining in process memory indefinitely.
