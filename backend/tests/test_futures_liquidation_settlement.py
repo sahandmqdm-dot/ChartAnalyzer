@@ -39,12 +39,14 @@ def liquidation_event():
 def test_liquidation_settlement_updates_wallet_and_clears_position():
     account, event = liquidation_event()
     assert event.liquidated
+    position = account.position
+    entry_fee = account.entry_fee_paid
     realized = account.settle_liquidation(event)
     expected_position_result = max(
-        -account.position.isolated_margin,
+        -position.isolated_margin,
         event.gross_pnl - event.liquidation_fee,
     )
-    expected_realized = expected_position_result - account.entry_fee_paid
+    expected_realized = expected_position_result - entry_fee
     assert realized == expected_realized
     assert account.position is None
     assert account.entry_fee_paid == D("0")
