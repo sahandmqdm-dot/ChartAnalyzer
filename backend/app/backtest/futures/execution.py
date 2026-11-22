@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-
 from app.backtest.futures.models import FuturesExecution, OrderSide
 
 ZERO = Decimal(0)
