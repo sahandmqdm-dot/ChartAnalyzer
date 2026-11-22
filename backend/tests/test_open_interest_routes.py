@@ -80,3 +80,22 @@ def test_open_interest_history_returns_503_without_database(monkeypatch):
         "/api/v1/derivatives/open-interest-history", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 503
+
+
+def test_open_interest_history_uses_configured_bybit_provider(monkeypatch):
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+
+    async def fake_list(symbol, start_time, limit, provider):
+        assert provider == "bybit_linear_futures"
+        return []
+
+    monkeypatch.setattr(
+        "app.market_data.open_interest_repository.list_open_interest", fake_list
+    )
+    response = client_with_auth(monkeypatch).get(
+        "/api/v1/derivatives/open-interest-history", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["provider"] == "bybit_linear_futures"
+    assert body["history_source"] == "locally_observed_polling"
