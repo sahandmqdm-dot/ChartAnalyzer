@@ -21,6 +21,7 @@ from app.market_data.confluence_routes import router as confluence_router
 from app.market_data.futures_analysis_routes import router as derivatives_analysis_router
 from app.market_data.futures_history_routes import router as derivatives_history_router
 from app.market_data.futures_risk_routes import router as futures_risk_router
+from app.market_data.futures_stream import router as futures_stream_router, stop_all_futures_market_streams
 from app.market_data.futures_routes import router as derivatives_router
 from app.market_data.liquidation_routes import router as liquidation_router
 from app.market_data.liquidation_stream import stop_all_collectors
@@ -34,6 +35,7 @@ from app.settings import settings
 async def lifespan(_app: FastAPI):
     yield
     await stop_all_collectors()
+    await stop_all_futures_market_streams()
     await close_database()
 
 
@@ -48,6 +50,7 @@ app = FastAPI(
 
 app.include_router(market_data_router)
 app.include_router(derivatives_router)
+app.include_router(futures_stream_router)
 app.include_router(futures_risk_router)
 app.include_router(liquidation_router)
 app.include_router(derivatives_history_router)
