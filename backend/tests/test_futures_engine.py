@@ -88,7 +88,7 @@ def test_rejects_naive_funding_timestamp():
 
 
 def test_futures_sma_enters_short_and_closes_at_end_of_data():
-    candles, marks = series(["5", "6", "7", "4", "3", "2"])
+    candles, marks = series(["3", "4", "5", "6", "7", "4", "3", "2"])
     result = run_futures_sma_crossover(
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
