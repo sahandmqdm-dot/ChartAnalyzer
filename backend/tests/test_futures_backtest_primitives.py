@@ -36,8 +36,8 @@ def test_initial_margin_and_unrealized_pnl():
 
 
 def test_execution_slippage_fee_and_direction():
-    buy = simulate_market_execution("long", D("2"), D("100"), D("0.001"), D("0.01"), NOW)
-    sell = simulate_market_execution("short", D("2"), D("100"), D("0.001"), D("0.01"), NOW)
+    buy = simulate_market_execution("buy", D("2"), D("100"), D("0.001"), D("0.01"), NOW)
+    sell = simulate_market_execution("sell", D("2"), D("100"), D("0.001"), D("0.01"), NOW)
     assert buy.price == D("101")
     assert sell.price == D("99")
     assert buy.fee == D("0.202")
