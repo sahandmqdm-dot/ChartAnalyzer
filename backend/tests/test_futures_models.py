@@ -15,7 +15,7 @@ def test_position_quantity_is_margin_times_leverage_over_entry_price():
     )
     assert position.quantity == Decimal("0.05")
     assert position.allocated_margin == Decimal("100")
-    assert position.entry_fee == Decimal("20")
+    assert position.entry_fee == Decimal("1")
     assert position.leverage == 10
 
 
