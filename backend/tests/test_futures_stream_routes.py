@@ -182,3 +182,33 @@ def test_live_market_stop_requires_csrf():
         "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 403
+
+
+def test_live_market_start_enforces_per_provider_capacity(monkeypatch):
+    class FakeStream:
+        provider = "bybit_linear_futures"
+        state = "stopped"
+        started = False
+
+        def start(self):
+            self.started = True
+
+        def snapshot(self):
+            return {"symbol": "BTCUSDT", "state": "connecting"}
+
+    candidate = FakeStream()
+    active = FakeStream()
+    active.state = "connected"
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+    monkeypatch.setattr(settings, "max_active_futures_market_streams", 1)
+    monkeypatch.setattr(
+        futures_stream, "_streams", {("bybit_linear_futures", "ETHUSDT"): active}
+    )
+    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: candidate)
+
+    response = authenticated_client(monkeypatch).post(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+
+    assert response.status_code == 429
+    assert candidate.started is False
