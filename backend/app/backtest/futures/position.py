@@ -4,8 +4,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
+
+
 Side = Literal["long", "short"]
 ZERO = Decimal(0)
+
 
 @dataclass
 class Position:
