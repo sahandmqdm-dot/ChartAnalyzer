@@ -168,3 +168,10 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - The opening Mark Price is checked for a gap liquidation before a strategy order can close or reverse the carried position. A position liquidated at the open cannot immediately re-enter on that same signal.
 - If the carried position survives the open, signal transitions execute at the contract OHLCV open. The resulting position is then checked against the full closed Mark Price candle.
 - Funding events timestamped inside the candle are applied only after the intrabar liquidation check because OHLC cannot establish which event occurred first. This remains a conservative simulation approximation.
+
+
+## Futures funding history retrieval
+- The Futures SMA backtest requests funding-rate records only for the aligned closed-candle time range; it does not block on unrelated Open Interest or long/short-ratio history.
+- Binance USDⓈ-M funding history is paginated forward in ascending time using `startTime`/`endTime` (up to 1,000 rows per page).
+- Bybit V5 funding history is paginated backward using `endTime` (up to 200 rows per page), then normalized into chronological order.
+- Pagination has a safety ceiling; if the full requested range cannot be retrieved within it, the backtest returns a market-data error instead of silently using incomplete funding.
