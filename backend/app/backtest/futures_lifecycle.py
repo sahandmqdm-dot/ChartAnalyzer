@@ -115,8 +115,15 @@ class FuturesAccount:
         gross = linear_position_pnl(
             self.position.side, self.position.quantity, self.position.entry_price, price
         )
-        realized = gross - self.entry_fee_paid - fee + self.funding_total
-        self.wallet_balance += gross - fee
+        # Isolated margin caps catastrophic gap losses at the position's margin.
+        # Funding was already posted to wallet_balance, so remove it from this
+        # settlement delta after including it in the capped net position result.
+        position_result = max(
+            -self.position.isolated_margin,
+            gross - fee + self.funding_total,
+        )
+        realized = position_result - self.entry_fee_paid
+        self.wallet_balance += position_result - self.funding_total
         self.position = None
         self.entry_fee_paid = ZERO
         self.funding_total = ZERO
