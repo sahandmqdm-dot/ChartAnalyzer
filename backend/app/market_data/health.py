@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+
 LIVE_MARKET_STALE_AFTER_SECONDS = 15.0
 OPEN_INTEREST_STALE_MULTIPLIER = 3.0
 OPEN_INTEREST_MIN_STALE_AFTER_SECONDS = 180.0
