@@ -377,18 +377,54 @@ function App() {
         refreshing = false;
       }
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
+    const csrfToken = cookieValue('ca_csrf');
+    let started = false;
+    const startFeeds = async () => {
+      try {
+        const headers = { 'X-CSRF-Token': csrfToken };
+        const [marketResponse, interestResponse] = await Promise.all([
+          fetch(API_BASE + '/api/v1/derivatives/live-market?' + query, {
+            method: 'POST', credentials: 'include', headers,
+          }),
+          fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + query, {
+            method: 'POST', credentials: 'include', headers,
+          }),
+        ]);
+        const [marketBody, interestBody] = await Promise.all([
+          marketResponse.json().catch(() => ({})) as Promise<FuturesLiveMarket & { detail?: string }>,
+          interestResponse.json().catch(() => ({})) as Promise<LiveOpenInterest & { detail?: string }>,
+        ]);
+        if (!marketResponse.ok) throw new Error(marketBody.detail || 'Could not start live futures stream');
+        if (!interestResponse.ok) throw new Error(interestBody.detail || 'Could not start Open Interest polling');
+        if (active) {
+          started = true;
+          setLiveMarket(marketBody);
+          setLiveOpenInterest(interestBody);
+          await refresh();
+        }
+      } catch (cause) {
+        if (active) setLiveFeedError(cause instanceof Error ? cause.message : 'Could not start live futures feeds');
+      }
+    };
+    const startTask = startFeeds();
+    const timer = window.setInterval(() => {
+      if (started) void refresh();
+    }, 2000);
     return () => {
       active = false;
       window.clearInterval(timer);
       const stopQuery = new URLSearchParams({ symbol: activeSymbol });
-      void fetch(API_BASE + '/api/v1/derivatives/live-market?' + stopQuery, {
-        method: 'DELETE', credentials: 'include',
-      }).catch(() => undefined);
-      void fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + stopQuery, {
-        method: 'DELETE', credentials: 'include',
-      }).catch(() => undefined);
+      const headers = { 'X-CSRF-Token': csrfToken };
+      void startTask.finally(() => {
+        void Promise.all([
+          fetch(API_BASE + '/api/v1/derivatives/live-market?' + stopQuery, {
+            method: 'DELETE', credentials: 'include', headers,
+          }),
+          fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + stopQuery, {
+            method: 'DELETE', credentials: 'include', headers,
+          }),
+        ]).catch(() => undefined);
+      });
     };
   }, [authenticated, liveFeedEnabled, symbol]);
 
@@ -684,6 +720,7 @@ function App() {
       const query = new URLSearchParams({ symbol: symbol.trim() });
       const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/start?' + query, {
         method: 'POST', credentials: 'include',
+        headers: { 'X-CSRF-Token': cookieValue('ca_csrf') },
       });
       const body = await response.json().catch(() => ({})) as LiquidationSnapshot & { detail?: string };
       if (!response.ok) throw new Error(body.detail || 'Could not start liquidation stream (' + response.status + ')');
@@ -703,6 +740,7 @@ function App() {
       const query = new URLSearchParams({ symbol: symbol.trim() });
       const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/stop?' + query, {
         method: 'DELETE', credentials: 'include',
+        headers: { 'X-CSRF-Token': cookieValue('ca_csrf') },
       });
       const body = await response.json().catch(() => ({})) as LiquidationSnapshot & { detail?: string };
       if (!response.ok) throw new Error(body.detail || 'Could not stop liquidation stream (' + response.status + ')');
@@ -823,12 +861,34 @@ function App() {
   async function logout() {
     setBusy(true);
     try {
+      const csrfToken = csrf || cookieValue('ca_csrf');
+      const headers = { 'X-CSRF-Token': csrfToken };
+      const query = new URLSearchParams({ symbol: symbol.trim() });
+      const stopRequests: Promise<Response>[] = [];
+      if (liveFeedEnabled) {
+        stopRequests.push(
+          fetch(API_BASE + '/api/v1/derivatives/live-market?' + query, {
+            method: 'DELETE', credentials: 'include', headers,
+          }),
+          fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + query, {
+            method: 'DELETE', credentials: 'include', headers,
+          }),
+        );
+      }
+      if (liquidationLive) {
+        stopRequests.push(fetch(API_BASE + '/api/v1/derivatives/liquidations/stop?' + query, {
+          method: 'DELETE', credentials: 'include', headers,
+        }));
+      }
+      await Promise.all(stopRequests.map((request) => request.catch(() => undefined)));
       const response = await fetch(`${API_BASE}/api/v1/auth/logout`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'X-CSRF-Token': csrf || cookieValue('ca_csrf') },
+        headers,
       });
       if (!response.ok) throw new Error('Logout failed');
+      setLiveFeedEnabled(false);
+      setLiquidationLive(false);
       setAuthenticated(false);
       setCsrf('');
       setData(null);

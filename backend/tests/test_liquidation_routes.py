@@ -44,6 +44,8 @@ def authenticated_client():
     settings.admin_username = "admin"
     client = TestClient(app)
     client.cookies.set("ca_session", _session_token("admin"))
+    client.cookies.set("ca_csrf", "test-csrf-token")
+    client.headers.update({"X-CSRF-Token": "test-csrf-token"})
     return client
 
 
@@ -275,3 +277,21 @@ def test_liquidation_clusters_validates_parameters():
         "/api/v1/derivatives/liquidations/clusters?symbol=BTCUSDT&min_strength_pct=0"
     )
     assert response.status_code == 422
+
+
+def test_liquidation_start_requires_csrf():
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.post(
+        "/api/v1/derivatives/liquidations/start?symbol=BTCUSDT"
+    )
+    assert response.status_code == 403
+
+
+def test_liquidation_stop_requires_csrf():
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.delete(
+        "/api/v1/derivatives/liquidations/stop?symbol=BTCUSDT"
+    )
+    assert response.status_code == 403

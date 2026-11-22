@@ -65,6 +65,8 @@ jobs:
           backend/app/market_data/futures_stream.py
           backend/tests/test_futures_stream.py
           backend/tests/test_futures_stream_routes.py
+          backend/app/market_data/liquidation_routes.py
+          backend/tests/test_liquidation_routes.py
       - run: pytest backend/tests
   frontend:
     runs-on: ubuntu-latest

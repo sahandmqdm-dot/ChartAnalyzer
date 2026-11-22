@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from app.auth import current_user
+from app.auth import csrf_check, current_user
 from app.market_data.futures_routes import get_futures_provider
 from app.market_data.liquidation_repository import (
     aggregate_liquidation_events,
@@ -30,6 +30,7 @@ async def start_liquidation_stream(
 ):
     """Start a public exchange liquidation stream for one linear perpetual symbol."""
     current_user(request)
+    csrf_check(request)
     try:
         normalized = str(Symbol(symbol))
     except ValueError as exc:
@@ -76,6 +77,7 @@ async def stop_liquidation_stream(
 ):
     """Stop the selected public stream and clear its in-memory event buffer."""
     current_user(request)
+    csrf_check(request)
     try:
         normalized = str(Symbol(symbol))
     except ValueError as exc:
