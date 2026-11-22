@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 import json
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -9,6 +10,9 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict
 from websockets.asyncio.client import connect
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from app.auth import current_user
 
 from app.market_data.symbol import Symbol
 
@@ -180,7 +184,11 @@ class BinanceFuturesMarketStream:
                         if isinstance(payload, dict):
                             accepted = self.ingest(payload)
                             event = payload.get("data", payload)
-                            if accepted and isinstance(event, dict) and event.get("e") == "markPriceUpdate":
+                            if (
+                                accepted
+                                and isinstance(event, dict)
+                                and event.get("e") == "markPriceUpdate"
+                            ):
                                 await self._persist_mark_snapshot()
                     self.last_error = "Connection closed by exchange"
             except asyncio.CancelledError:
@@ -209,10 +217,6 @@ async def stop_all_futures_market_streams() -> None:
     await asyncio.gather(*(stream.stop() for stream in streams))
     _streams.clear()
 
-from fastapi import APIRouter, HTTPException, Query, Request
-
-from app.auth import current_user
-
 router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
 
 
@@ -229,3 +233,39 @@ async def live_futures_market(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     stream.start()
     return stream.snapshot()
+
+
+@router.get("/market-history")
+async def futures_market_history(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+    hours: int = Query(default=24, ge=1, le=720),
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    """Return persisted mark-price and funding observations for charting/backtests."""
+    current_user(request)
+    try:
+        normalized = str(Symbol(symbol))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from app.market_data.futures_snapshot_repository import list_futures_mark_snapshots
+
+    try:
+        rows = await list_futures_mark_snapshots(
+            normalized,
+            datetime.now(UTC) - timedelta(hours=hours),
+            limit=limit,
+            provider="binance_usdm_futures",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if rows is None:
+        raise HTTPException(status_code=503, detail="Futures history persistence is not configured")
+    return {
+        "provider": "binance_usdm_futures",
+        "market_type": "linear_perpetual",
+        "symbol": normalized,
+        "hours": hours,
+        "count": len(rows),
+        "snapshots": rows,
+    }
