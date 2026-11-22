@@ -237,15 +237,12 @@ def run_futures_sma_crossover(
             entry_side = ""
             entry_datetime = None
 
-        mark = mark_candles[index].close
+        mark = mark_candle.close
         equity = account.equity_at(mark)
-        equity_peak = max(equity_peak, equity)
-        drawdown = (equity_peak - equity) / equity_peak * HUNDRED if equity_peak > ZERO else ZERO
-        max_drawdown = max(max_drawdown, drawdown)
 
         # OHLC does not encode the order of the intrabar high and low. Measure
-        # adverse excursion against the prior close-based equity peak without
-        # assuming a favorable intrabar peak occurred first.
+        # adverse excursion against the peak known before this candle closes;
+        # do not assume its favorable close occurred before its adverse extreme.
         if account.position is not None:
             adverse_mark = mark_candle.low if account.position.side == "long" else mark_candle.high
             adverse_equity = account.equity_at(adverse_mark)
@@ -254,6 +251,10 @@ def run_futures_sma_crossover(
                 if equity_peak > ZERO else ZERO
             )
             max_drawdown = max(max_drawdown, adverse_drawdown)
+
+        equity_peak = max(equity_peak, equity)
+        drawdown = (equity_peak - equity) / equity_peak * HUNDRED if equity_peak > ZERO else ZERO
+        max_drawdown = max(max_drawdown, drawdown)
 
     wins = [t.net_pnl for t in trades if t.net_pnl > ZERO]
     losses = [t.net_pnl for t in trades if t.net_pnl < ZERO]
