@@ -148,7 +148,6 @@ async def test_binance_funding_history_paginates_forward():
 @pytest.mark.asyncio
 async def test_bybit_funding_history_paginates_backwards_to_start_time():
     start = datetime(2026, 1, 1, tzinfo=UTC)
-    start_ms = int(start.timestamp() * 1000)
     end = start + timedelta(seconds=1000)
     end_ms = int(end.timestamp() * 1000)
     calls = []
