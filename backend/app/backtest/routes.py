@@ -211,7 +211,8 @@ async def futures_sma_crossover(
         "model_limitations": [
             "Linear-perpetual contract OHLCV drives signals and simulated entry/exit prices; actual order-book execution and market impact are not modeled.",
             "Funding history is limited by the selected provider's returned history window; event cashflows use the event candle's Mark Price close as an approximation.",
-            "Funding cashflows update wallet balance, but the simplified liquidation threshold is not dynamically recalculated from cumulative funding; liquidation timing can therefore differ from an exchange.",
+            "Cumulative funding is modeled as an adjustment to isolated position margin and dynamically changes the simplified liquidation threshold; exchanges may allocate funding differently, so this is an explicit simulation assumption.",
+            "Funding timestamps inside a candle cannot be ordered precisely against intrabar liquidation from OHLC data; the engine applies funding before that candle's liquidation check.",
             "Liquidation uses a simplified isolated-margin estimate and candle OHLC approximation; exchange margin tiers, insurance funds, and auto-deleveraging are not modeled.",
             "Execution is modeled at next-candle open with fixed slippage; exchange order-book fills are not modeled.",
             "Maximum drawdown is sampled at candle closes and can understate intrabar equity drawdown.",
