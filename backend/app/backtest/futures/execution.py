@@ -14,6 +14,6 @@ def simulate_market_execution(side: Side, quantity: Decimal, reference_price: De
     order_side = "buy" if side == "long" else "sell"
     fill = reference_price * (Decimal("1") + slippage_rate if order_side == "buy" else Decimal("1") - slippage_rate)
     notional = quantity * fill
-n    fee = notional * fee_rate
+    fee = notional * fee_rate
     slip_cost = quantity * abs(fill - reference_price)
     return FuturesExecution(timestamp=timestamp, side=side, quantity=quantity, price=fill, fee=fee, slippage_cost=slip_cost)
