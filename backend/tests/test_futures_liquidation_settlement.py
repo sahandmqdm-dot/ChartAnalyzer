@@ -88,3 +88,25 @@ def test_isolated_gap_loss_is_capped_at_locked_margin():
     realized = account.settle_liquidation(event)
     assert realized == D("-501")
     assert account.wallet_balance == D("9499")
+
+def test_funding_cashflow_is_preserved_when_gap_loss_hits_isolated_margin_cap():
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    account = FuturesAccount(D("10000"))
+    position = account.open_position(
+        side="long", quantity=D("1"), entry_price=D("1000"),
+        leverage=D("2"), fee_rate=D("0.001"),
+    )
+    funding = account.apply_funding(D("1000"), D("-0.001"))
+    assert funding == D("1")
+    gap_candle = MarkPriceCandle(
+        timestamp=timestamp,
+        close_time=timestamp + timedelta(minutes=1),
+        is_closed=True,
+        open=D("1"), high=D("2"), low=D("1"), close=D("1"),
+    )
+    event = simulate_mark_price_liquidation(
+        position, [gap_candle], D("0.005"), D("0.001")
+    )
+    realized = account.settle_liquidation(event)
+    assert realized == D("-500")
+    assert account.wallet_balance == D("9500")
