@@ -50,13 +50,17 @@ def test_futures_sma_enters_long_and_closes_at_end_of_data():
 def test_funding_is_applied_only_while_position_is_open():
     candles, marks = series(["5", "4", "3", "6", "7"])
     payment = FundingPayment(START + timedelta(hours=4, minutes=30), D("0.001"))
+    baseline = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+    )
     result = run_futures_sma_crossover(
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
         funding_payments=[payment],
     )
     assert result.total_funding < D("0")
-    assert result.final_equity < D("10000") + result.trades[0].net_pnl + abs(result.total_funding)
+    assert result.final_equity < baseline.final_equity
 
 
 def test_rejects_misaligned_mark_price_series():
