@@ -24,7 +24,7 @@ async def save_futures_mark_snapshot(
     factory = get_session_factory()
     if factory is None:
         return None
-    identity = "|".join((provider, symbol, observed_at.isoformat()))
+    identity = f"{provider}|{symbol}|{observed_at.isoformat()}"
     snapshot_id = hashlib.sha256(identity.encode()).hexdigest()
     statement = (
         insert(FuturesMarkSnapshotRecord)

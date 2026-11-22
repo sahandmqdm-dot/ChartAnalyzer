@@ -44,6 +44,10 @@ jobs:
           backend/tests/test_risk_tiers.py
           backend/app/market_data/open_interest.py
           backend/app/market_data/open_interest_repository.py
+          backend/app/backtest/routes.py
+          backend/app/market_data/futures_snapshot_repository.py
+          backend/tests/test_futures_engine.py
+          backend/tests/test_market_data.py
           backend/app/market_data/market_pressure.py
           backend/app/market_data/futures_analysis_routes.py
           backend/tests/test_open_interest.py

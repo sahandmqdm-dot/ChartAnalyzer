@@ -103,11 +103,24 @@ Market-data and derivatives endpoints require a valid session. The derivatives o
 
 ## Verification
 
+Run the backend checks with the platform-specific script. Both scripts create/use `backend/.venv`, install the declared development extras (including `pytest-asyncio`), and invoke pytest through that same interpreter; this avoids accidentally running the system pytest without the async plugin.
+
+Linux/Kali:
 ```sh
-cd backend
-ruff check .
-pytest
-cd ../frontend
+bash backend/verify.sh
+```
+
+Windows PowerShell:
+```powershell
+.\backend\verify.ps1
+```
+
+Use the verification script as the canonical backend check. It applies the same Ruff file scope as CI and runs the complete backend test suite with the project's development dependencies.
+
+Frontend production build:
+
+```sh
+cd frontend
 npm install
 npm run build
 ```
