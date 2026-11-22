@@ -64,3 +64,23 @@ def test_accounting_equity_and_realized_pnl():
     p = position()
     assert equity(D("1000"), p, D("110")) == D("1010")
     assert apply_realized_pnl(D("1000"), D("25"), D("2")) == D("1023")
+
+
+from app.backtest.futures.metrics import calculate_metrics
+
+
+def test_metrics_returns_drawdown_win_rate_profit_factor_and_expectancy():
+    result = calculate_metrics(
+        initial_equity=D("1000"), final_equity=D("1100"),
+        equity_curve=[D("1000"), D("1200"), D("1050"), D("1100")],
+        trade_pnls=[D("100"), D("-50"), D("25")],
+    )
+    assert result.net_pnl == D("100")
+    assert result.net_return_pct == D("10")
+    assert result.max_drawdown_pct == D("12.5")
+    assert result.trade_count == 3
+    assert result.winning_trades == 2
+    assert result.losing_trades == 1
+    assert result.win_rate_pct == D("200") / D("3")
+    assert result.profit_factor == D("2.5")
+    assert result.expectancy == D("25")
