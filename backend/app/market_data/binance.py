@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from app.market_data.candle import Candle
+from app.market_data.provider import MarketDataProviderError
 from app.market_data.quality import validate_candle_series
 from app.market_data.symbol import Symbol
 from app.market_data.timeframe import Timeframe
@@ -16,10 +17,6 @@ from app.market_data.timeframe import Timeframe
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 SUPPORTED_INTERVALS = frozenset(item.value for item in Timeframe)
 RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
-
-
-class MarketDataProviderError(RuntimeError):
-    """Raised when a market data provider request fails or returns invalid data."""
 
 
 class BinanceSpotAdapter:
