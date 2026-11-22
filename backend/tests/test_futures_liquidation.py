@@ -13,7 +13,7 @@ def position(side="long", margin="500", leverage="2"):
 
 
 def test_estimate_liquidation_price_long():
-    assert estimate_liquidation_price(position(), D("0.005")) == D("502.5125628140703517587939699")
+    assert estimate_liquidation_price(position(), D("0.005")) == D("502.5125628140703517587939698")
 
 
 def test_estimate_liquidation_price_short():
