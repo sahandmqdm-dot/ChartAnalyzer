@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.auth import current_user
 from app.market_data.cache import AsyncTTLCache
+from app.market_data.futures_risk import IsolatedRiskEstimateRequest, estimate_isolated_liquidation
 from app.market_data.futures import (
     BinanceUsdmFuturesAdapter,
     BybitLinearFuturesAdapter,
@@ -54,4 +55,19 @@ async def futures_overview(
             ) from exc
 
     result = await _overview_cache.get_or_create(cache_key, load_overview)
+    return result.model_dump(mode="json")
+
+
+
+@router.post("/risk/isolated-liquidation-estimate")
+async def isolated_liquidation_estimate(
+    request: Request,
+    payload: IsolatedRiskEstimateRequest,
+):
+    """Calculate an estimate only; this endpoint cannot place or modify orders."""
+    current_user(request)
+    try:
+        result = estimate_isolated_liquidation(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return result.model_dump(mode="json")
