@@ -32,7 +32,7 @@ def test_candle_rejects_invalid_ohlc():
 
 def test_candle_requires_timezone():
     with pytest.raises(ValidationError):
-        Candle(timestamp=datetime(2026, 1, 1), open=1, high=2, low=0.5, close=1.5, volume=0)
+        Candle(timestamp=datetime(2026, 1, 1), open=1, high=2, low=0.5, close=1.5, volume=0)  # noqa: DTZ001
 
 
 def test_candle_volume_cannot_be_negative():
