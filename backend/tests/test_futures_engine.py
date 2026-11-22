@@ -114,3 +114,30 @@ def test_negative_funding_rate_is_received_by_long_position():
     )
     assert result.total_funding > D("0")
     assert result.final_equity > baseline.final_equity
+
+def test_long_position_is_liquidated_on_mark_price_low():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    marks[3] = marks[3].model_copy(update={"low": D("1")})
+    result = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+    )
+    assert result.liquidation_count == 1
+    assert result.trade_count == 1
+    assert result.trades[0].side == "long"
+    assert result.trades[0].exit_reason == "liquidation"
+    assert result.final_equity < result.initial_equity
+
+
+def test_short_position_is_liquidated_on_mark_price_high():
+    candles, marks = series(["3", "4", "5", "6", "7", "4", "3", "2"])
+    marks[6] = marks[6].model_copy(update={"high": D("10")})
+    result = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+    )
+    assert result.liquidation_count == 1
+    assert result.trade_count == 1
+    assert result.trades[0].side == "short"
+    assert result.trades[0].exit_reason == "liquidation"
+    assert result.final_equity < result.initial_equity
