@@ -88,3 +88,36 @@ class FuturesAccount:
         self.entry_fee_paid = ZERO
         self.funding_total = ZERO
         return realized
+
+    def settle_liquidation(self, event) -> Decimal:
+        """Settle a simulated LiquidationEvent against this account.
+
+        Returns net realized PnL after entry fee, funding, and liquidation fee.
+        The event must come from the Mark Price simulator for the currently open
+        position. Exchange-specific insurance-fund/ADL handling is not modeled.
+        """
+        if self.position is None:
+            raise ValueError("no open position to liquidate")
+        if not getattr(event, "liquidated", False):
+            raise ValueError("event does not represent a liquidation")
+        price = getattr(event, "price", None)
+        fee = getattr(event, "liquidation_fee", None)
+        if (
+            not isinstance(price, Decimal)
+            or not price.is_finite()
+            or price <= ZERO
+            or not isinstance(fee, Decimal)
+            or not fee.is_finite()
+            or fee < ZERO
+        ):
+            raise ValueError("liquidation event contains invalid price or fee")
+
+        gross = linear_position_pnl(
+            self.position.side, self.position.quantity, self.position.entry_price, price
+        )
+        realized = gross - self.entry_fee_paid - fee + self.funding_total
+        self.wallet_balance += gross - fee
+        self.position = None
+        self.entry_fee_paid = ZERO
+        self.funding_total = ZERO
+        return realized
