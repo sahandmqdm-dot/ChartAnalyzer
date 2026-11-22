@@ -188,6 +188,7 @@ async def open_interest_history(
             normalized,
             datetime.now(UTC) - timedelta(hours=hours),
             limit=limit,
+            provider="binance_usdm_futures",
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
