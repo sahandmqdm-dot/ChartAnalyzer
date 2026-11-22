@@ -157,6 +157,7 @@ The process-local market-data cache coalesces concurrent misses for the same key
 
 ## Resource limits and bounded authentication state
 - Active Futures market streams, Open Interest pollers, and liquidation streams are capped independently per provider. Each cap defaults to 10 and is configurable through `MAX_ACTIVE_FUTURES_MARKET_STREAMS`, `MAX_ACTIVE_OPEN_INTEREST_COLLECTORS`, and `MAX_ACTIVE_LIQUIDATION_STREAMS` (range 1–100).
-- Starting a new collector beyond its cap returns HTTP 429; an already-running collector for the same symbol can be reused without consuming another slot.
+- Starting a new collector beyond its cap returns HTTP 429; an already-running collector for the same symbol can be reused without consuming another slot. Registries retain at most 500 entries per collector type and evict stopped entries when needed.
+- Snapshot GET and stop DELETE routes do not create missing collector entries; only CSRF-protected start POST requests allocate a collector.
 - Login attempt tracking retains at most 10,000 IP keys and evicts the least-recently-used entry when full. The five-attempts-per-minute limit remains per IP.
 - Revoked session IDs are stored with their expiry and purged through an expiry heap after the session TTL, rather than remaining in process memory indefinitely.
