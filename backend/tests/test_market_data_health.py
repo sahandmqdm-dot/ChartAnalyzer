@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 
 from app.auth import _session_token
 from app.main import app
-from app.market_data.health import build_market_data_health
 from app.market_data import health_routes
+from app.market_data.health import build_market_data_health
 from app.settings import settings
 
 
