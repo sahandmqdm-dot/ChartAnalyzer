@@ -63,7 +63,9 @@ def simulate_mark_price_liquidation(
         raise ValueError("liquidation_fee_rate must be in [0, 1)")
     if not isinstance(margin_adjustment, Decimal) or not margin_adjustment.is_finite():
         raise ValueError("margin_adjustment must be a finite Decimal")
-    threshold = estimate_liquidation_price(position, maintenance_margin_rate, margin_adjustment)
+    threshold = estimate_liquidation_price(
+        position, maintenance_margin_rate, margin_adjustment, liquidation_fee_rate
+    )
     previous_timestamp: datetime | None = None
     processed = 0
 
