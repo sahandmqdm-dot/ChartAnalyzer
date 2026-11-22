@@ -27,9 +27,11 @@ def test_live_open_interest_requires_auth():
 def test_live_open_interest_starts_collector(monkeypatch):
     class FakeCollector:
         started = False
+        state = "stopped"
 
         def start(self):
             self.started = True
+            self.state = "connected"
 
         def snapshot(self):
             return {"symbol": "BTCUSDT", "state": "connecting"}
