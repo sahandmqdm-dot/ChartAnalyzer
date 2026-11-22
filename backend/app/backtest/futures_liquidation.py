@@ -42,4 +42,19 @@ def estimate_liquidation_price(
         price = (q * entry + margin) / denominator
     # A non-positive estimate means the isolated margin is large enough that this
     # simplified model has no positive liquidation threshold.
+
     return max(ZERO, price)
+
+
+def estimate_bankruptcy_price(
+    position: IsolatedPosition,
+    margin_adjustment: Decimal = ZERO,
+) -> Decimal:
+    """Estimate zero-equity price, excluding maintenance and liquidation-fee reserves."""
+    if not isinstance(margin_adjustment, Decimal) or not margin_adjustment.is_finite():
+        raise ValueError("margin_adjustment must be a finite Decimal")
+    effective_margin = max(ZERO, position.isolated_margin + margin_adjustment)
+    margin_per_unit = effective_margin / position.quantity
+    if position.side == "long":
+        return max(ZERO, position.entry_price - margin_per_unit)
+    return position.entry_price + margin_per_unit
