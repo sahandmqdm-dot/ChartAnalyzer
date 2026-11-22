@@ -175,7 +175,6 @@ def run_futures_sma_crossover(
             execution = candle.open * (ONE + slippage_rate if desired_side == "long" else ONE - slippage_rate)
             budget = account.wallet_balance * margin_fraction
             quantity = budget * leverage / execution
-            entry_wallet_before = account.wallet_balance
             try:
                 account.open_position(side=desired_side, quantity=quantity, entry_price=execution,
                                       leverage=leverage, fee_rate=fee_rate)
