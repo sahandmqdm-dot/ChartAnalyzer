@@ -27,7 +27,7 @@ class IsolatedRiskEstimateRequest(BaseModel):
     entry_price: Decimal = Field(gt=0)
     mark_price: Decimal | None = Field(default=None, gt=0)
     quantity: Decimal = Field(gt=0)
-    leverage: Decimal = Field(gt=0)
+    leverage: Decimal = Field(ge=1)
     extra_margin: Decimal = Field(default=Decimal(0), ge=0)
     estimated_close_fee_rate: Decimal = Field(default=Decimal("0.0005"), ge=0, lt=1)
     risk_tiers: list[RiskTier] = Field(min_length=1, max_length=100)
