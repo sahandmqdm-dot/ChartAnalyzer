@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.market_data import open_interest
 from app.market_data.open_interest import (
     BinanceOpenInterestCollector,
     BybitOpenInterestCollector,
@@ -164,3 +165,21 @@ def test_open_interest_collector_factory_uses_futures_provider(monkeypatch):
     collector = get_open_interest_collector("BTCUSDT")
     assert isinstance(collector, BybitOpenInterestCollector)
     assert collector.provider == "bybit_linear_futures"
+
+
+def test_open_interest_registry_prunes_stopped_entries(monkeypatch):
+    class StoppedCollector:
+        state = "stopped"
+
+    registry = {
+        ("binance_usdm_futures", f"BTC{index}USDT"): StoppedCollector()
+        for index in range(500)
+    }
+    monkeypatch.setattr(open_interest, "_collectors", registry)
+    monkeypatch.setattr(open_interest.settings, "futures_market_data_provider", "bybit_linear_futures")
+
+    collector = open_interest.get_open_interest_collector("BTCUSDT")
+
+    assert collector.provider == "bybit_linear_futures"
+    assert len(registry) == 500
+    assert ("binance_usdm_futures", "BTC0USDT") not in registry

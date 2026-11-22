@@ -26,10 +26,13 @@ def test_live_market_endpoint_requires_authentication():
 
 def test_live_market_endpoint_starts_stream_and_returns_snapshot(monkeypatch):
     class FakeStream:
+        provider = settings.futures_market_data_provider
         started = False
+        state = "stopped"
 
         def start(self):
             self.started = True
+            self.state = "connected"
 
         def snapshot(self):
             return {"symbol": "BTCUSDT", "state": "connecting"}
@@ -125,7 +128,11 @@ def test_live_market_stop_endpoint_stops_selected_stream(monkeypatch):
             return {"symbol": "BTCUSDT", "state": "stopped"}
 
     stream = FakeStream()
-    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: stream)
+    monkeypatch.setattr(
+        futures_stream,
+        "_streams",
+        {(settings.futures_market_data_provider, "BTCUSDT"): stream},
+    )
     response = authenticated_client(monkeypatch).delete(
         "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
     )
@@ -157,7 +164,11 @@ def test_live_market_get_does_not_start_stream(monkeypatch):
             return {"symbol": "BTCUSDT", "state": "stopped"}
 
     stream = FakeStream()
-    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: stream)
+    monkeypatch.setattr(
+        futures_stream,
+        "_streams",
+        {(settings.futures_market_data_provider, "BTCUSDT"): stream},
+    )
     response = authenticated_client(monkeypatch).get(
         "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
     )
@@ -182,3 +193,43 @@ def test_live_market_stop_requires_csrf():
         "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 403
+
+
+def test_live_market_start_enforces_per_provider_capacity(monkeypatch):
+    class FakeStream:
+        provider = "bybit_linear_futures"
+        state = "stopped"
+        started = False
+
+        def start(self):
+            self.started = True
+
+        def snapshot(self):
+            return {"symbol": "BTCUSDT", "state": "connecting"}
+
+    candidate = FakeStream()
+    active = FakeStream()
+    active.state = "connected"
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+    monkeypatch.setattr(settings, "max_active_futures_market_streams", 1)
+    monkeypatch.setattr(
+        futures_stream, "_streams", {("bybit_linear_futures", "ETHUSDT"): active}
+    )
+    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: candidate)
+
+    response = authenticated_client(monkeypatch).post(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+
+    assert response.status_code == 429
+    assert candidate.started is False
+
+
+def test_live_market_get_missing_symbol_does_not_register_stream(monkeypatch):
+    monkeypatch.setattr(futures_stream, "_streams", {})
+    response = authenticated_client(monkeypatch).get(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200
+    assert response.json()["state"] == "stopped"
+    assert futures_stream._streams == {}

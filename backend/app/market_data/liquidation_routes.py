@@ -11,8 +11,14 @@ from app.market_data.liquidation_repository import (
     aggregate_liquidation_price_bands,
     list_recent_liquidation_events,
 )
-from app.market_data.liquidation_stream import get_collector
+from app.market_data.liquidation_stream import (
+    LiquidationCollector,
+    _collectors,
+    find_collector,
+    get_collector,
+)
 from app.market_data.symbol import Symbol
+from app.settings import settings
 
 router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
 
@@ -36,6 +42,15 @@ async def start_liquidation_stream(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     collector = _collector_for(normalized)
+    active_count = sum(
+        item.provider == collector.provider and item.state != "stopped"
+        for item in _collectors.values()
+    )
+    if collector.state == "stopped" and active_count >= settings.max_active_liquidation_streams:
+        raise HTTPException(
+            status_code=429,
+            detail="Maximum active liquidation streams reached for this provider",
+        )
     collector.start()
     return collector.snapshot()
 
@@ -52,7 +67,12 @@ async def liquidation_snapshot(
         normalized = str(Symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    collector = _collector_for(normalized)
+    provider = get_futures_provider()
+    if provider.name not in {"binance_usdm_futures", "bybit_linear_futures"}:
+        raise HTTPException(status_code=503, detail="Liquidation stream is not configured")
+    collector = find_collector(provider.name, normalized)
+    if collector is None:
+        collector = LiquidationCollector(provider.name, normalized)
     snapshot = collector.snapshot(limit)
     try:
         durable_events = await list_recent_liquidation_events(collector.provider, normalized, limit)
@@ -82,7 +102,12 @@ async def stop_liquidation_stream(
         normalized = str(Symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    collector = _collector_for(normalized)
+    provider = get_futures_provider()
+    if provider.name not in {"binance_usdm_futures", "bybit_linear_futures"}:
+        raise HTTPException(status_code=503, detail="Liquidation stream is not configured")
+    collector = find_collector(provider.name, normalized)
+    if collector is None:
+        return LiquidationCollector(provider.name, normalized).snapshot()
     await collector.stop()
     collector.clear()
     return collector.snapshot()

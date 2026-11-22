@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from app.market_data import futures_stream
 from app.market_data.futures_stream import (
     BinanceFuturesMarketStream,
     BybitLinearFuturesMarketStream,
@@ -161,3 +162,21 @@ def test_bybit_ticker_rejects_wrong_symbol_and_non_finite_prices():
         },
         "BTCUSDT",
     ) is None
+
+
+def test_futures_stream_registry_prunes_stopped_entries(monkeypatch):
+    class StoppedStream:
+        state = "stopped"
+
+    registry = {
+        ("binance_usdm_futures", f"BTC{index}USDT"): StoppedStream()
+        for index in range(500)
+    }
+    monkeypatch.setattr(futures_stream, "_streams", registry)
+    monkeypatch.setattr(futures_stream.settings, "futures_market_data_provider", "bybit_linear_futures")
+
+    stream = futures_stream.get_futures_market_stream("BTCUSDT")
+
+    assert stream.provider == "bybit_linear_futures"
+    assert len(registry) == 500
+    assert ("binance_usdm_futures", "BTC0USDT") not in registry

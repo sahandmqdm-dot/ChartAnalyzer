@@ -15,6 +15,10 @@ class FakeCollector:
         self.events = []
         self._seen = set()
 
+    @property
+    def state(self):
+        return "stopped" if self.stopped or not self.started else "connected"
+
     def start(self):
         self.started = True
 
@@ -66,6 +70,7 @@ def test_start_and_snapshot_liquidation_collector(monkeypatch):
     assert started.json()["status"]["state"] == "connected"
     assert collector.started is True
 
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: collector)
     snapshot = client.get("/api/v1/derivatives/liquidations?symbol=BTCUSDT&limit=10")
     assert snapshot.status_code == 200
     assert snapshot.json()["retention"] == "in_memory_since_collector_start"
@@ -74,7 +79,7 @@ def test_start_and_snapshot_liquidation_collector(monkeypatch):
 def test_stop_liquidation_collector(monkeypatch):
     collector = FakeCollector()
     collector.start()
-    monkeypatch.setattr(liquidation_routes, "_collector_for", lambda symbol: collector)
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: collector)
     response = authenticated_client().delete(
         "/api/v1/derivatives/liquidations/stop?symbol=BTCUSDT"
     )
@@ -91,7 +96,7 @@ def test_snapshot_prefers_durable_database_events(monkeypatch):
     from app.market_data.liquidation_stream import LiquidationEvent
 
     collector = FakeCollector()
-    monkeypatch.setattr(liquidation_routes, "_collector_for", lambda symbol: collector)
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: collector)
 
     async def durable_events(provider, symbol, limit):
         assert provider == "bybit_linear_futures"
@@ -295,3 +300,34 @@ def test_liquidation_stop_requires_csrf():
         "/api/v1/derivatives/liquidations/stop?symbol=BTCUSDT"
     )
     assert response.status_code == 403
+
+
+def test_liquidation_start_enforces_per_provider_capacity(monkeypatch):
+    active = FakeCollector()
+    active.start()
+    candidate = FakeCollector()
+    monkeypatch.setattr(settings, "max_active_liquidation_streams", 1)
+    monkeypatch.setattr(
+        liquidation_routes,
+        "_collectors",
+        {("bybit_linear_futures", "ETHUSDT"): active},
+    )
+    monkeypatch.setattr(liquidation_routes, "_collector_for", lambda _symbol: candidate)
+
+    response = authenticated_client().post(
+        "/api/v1/derivatives/liquidations/start?symbol=BTCUSDT"
+    )
+
+    assert response.status_code == 429
+    assert candidate.started is False
+
+
+def test_liquidation_snapshot_get_does_not_register_collector(monkeypatch):
+    monkeypatch.setattr(liquidation_routes, "_collectors", {})
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: None)
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations?symbol=BTCUSDT"
+    )
+    assert response.status_code == 200
+    assert response.json()["status"]["state"] == "stopped"
+    assert liquidation_routes._collectors == {}

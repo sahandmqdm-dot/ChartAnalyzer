@@ -89,3 +89,28 @@ def test_provider_setting_rejects_unknown_values():
             app_secret="test-secret-with-more-than-32-characters",
             market_data_provider="not-an-exchange",
         )
+
+
+def test_active_collector_limits_default_to_ten():
+    value = Settings(_env_file=None, app_secret="test-secret-with-more-than-32-characters")
+    assert value.max_active_futures_market_streams == 10
+    assert value.max_active_open_interest_collectors == 10
+    assert value.max_active_liquidation_streams == 10
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "max_active_futures_market_streams",
+        "max_active_open_interest_collectors",
+        "max_active_liquidation_streams",
+    ],
+)
+@pytest.mark.parametrize("limit", [0, 101])
+def test_active_collector_limits_are_bounded(field, limit):
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_secret="test-secret-with-more-than-32-characters",
+            **{field: limit},
+        )

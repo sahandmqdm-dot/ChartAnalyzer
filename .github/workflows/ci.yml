@@ -54,6 +54,8 @@ jobs:
           backend/tests/test_open_interest_repository.py
           backend/tests/test_open_interest_routes.py
           backend/tests/test_market_pressure.py
+          backend/app/auth.py
+          backend/tests/test_auth.py
           backend/app/settings.py
           backend/app/market_data/futures_routes.py
           backend/tests/test_settings.py
@@ -66,6 +68,8 @@ jobs:
           backend/tests/test_futures_stream.py
           backend/tests/test_futures_stream_routes.py
           backend/app/market_data/liquidation_routes.py
+          backend/app/market_data/liquidation_stream.py
+          backend/tests/test_liquidation_stream.py
           backend/tests/test_liquidation_routes.py
       - run: pytest backend/tests
   frontend:
