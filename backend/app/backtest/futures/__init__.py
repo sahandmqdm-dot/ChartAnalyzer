@@ -1,5 +1,5 @@
 """Isolated linear-futures backtesting primitives."""
 
-from app.backtest.futures.models import FuturesBacktestConfig, FundingEvent, Side
+from app.backtest.futures.models import FundingEvent, FuturesBacktestConfig, Side
 
-__all__ = ["FuturesBacktestConfig", "FundingEvent", "Side"]
+__all__ = ["FundingEvent", "FuturesBacktestConfig", "Side"]
