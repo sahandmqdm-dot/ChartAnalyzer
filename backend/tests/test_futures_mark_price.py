@@ -133,7 +133,7 @@ def test_long_gap_reports_bankruptcy_price_and_uncovered_gap_loss():
         D("0.005"),
     )
     assert event.liquidated
-    assert event.liquidation_threshold < event.bankruptcy_price
+    assert event.liquidation_threshold > event.bankruptcy_price
     assert event.bankruptcy_price == D("500")
     assert event.price == D("490")
     assert event.uncovered_gap_loss == D("10")
