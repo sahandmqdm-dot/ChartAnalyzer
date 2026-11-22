@@ -119,7 +119,8 @@ class FuturesAccount:
         # Isolated margin caps trading loss (gross PnL less liquidation fee).
         # Funding has already been posted to wallet_balance and must remain there;
         # include it in reported realized PnL without applying it a second time.
-        position_result = max(-self.position.isolated_margin, gross - fee)
+        effective_isolated_margin = max(ZERO, self.position.isolated_margin + self.funding_total)
+        position_result = max(-effective_isolated_margin, gross - fee)
         realized = position_result - self.entry_fee_paid + self.funding_total
         self.wallet_balance += position_result
         self.position = None
