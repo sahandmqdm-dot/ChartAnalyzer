@@ -141,20 +141,20 @@ def test_futures_backtest_uses_perpetual_contract_ohlcv(monkeypatch):
             timestamp=timestamp,
             close_time=close_time,
             is_closed=True,
-            open=Decimal("100"),
-            high=Decimal("101"),
-            low=Decimal("99"),
-            close=Decimal("100"),
-            volume=Decimal("10"),
+            open=Decimal(100),
+            high=Decimal(101),
+            low=Decimal(99),
+            close=Decimal(100),
+            volume=Decimal(10),
         ))
         marks.append(MarkPriceCandle(
             timestamp=timestamp,
             close_time=close_time,
             is_closed=True,
-            open=Decimal("100"),
-            high=Decimal("101"),
-            low=Decimal("99"),
-            close=Decimal("100"),
+            open=Decimal(100),
+            high=Decimal(101),
+            low=Decimal(99),
+            close=Decimal(100),
         ))
 
     class FakeContractAdapter:
@@ -213,20 +213,20 @@ def test_bybit_futures_backtest_uses_paginated_funding_adapter(monkeypatch):
             timestamp=timestamp,
             close_time=close_time,
             is_closed=True,
-            open=Decimal("100"),
-            high=Decimal("101"),
-            low=Decimal("99"),
-            close=Decimal("100"),
-            volume=Decimal("10"),
+            open=Decimal(100),
+            high=Decimal(101),
+            low=Decimal(99),
+            close=Decimal(100),
+            volume=Decimal(10),
         ))
         marks.append(MarkPriceCandle(
             timestamp=timestamp,
             close_time=close_time,
             is_closed=True,
-            open=Decimal("100"),
-            high=Decimal("101"),
-            low=Decimal("99"),
-            close=Decimal("100"),
+            open=Decimal(100),
+            high=Decimal(101),
+            low=Decimal(99),
+            close=Decimal(100),
         ))
 
     class FakeContractAdapter:
