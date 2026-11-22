@@ -51,11 +51,11 @@ def test_funding_long_pays_positive_rate_short_receives():
 
 def test_isolated_liquidation_side_and_touch_logic():
     long_pos = position()
-    long_liq = liquidationPrice(long_pos, D("0.005"))
+    long_liq = liquidation_price(long_pos, D("0.005"))
     result = check_candle_liquidation(long_pos, low=long_liq, high=D("105"), maintenance_rate=D("0.005"))
     assert result.liquidated
     short_pos = position("short")
-    short_liq = liquidationPrice(short_pos, D("0.005"))
+    short_liq = liquidation_price(short_pos, D("0.005"))
     result = check_candle_liquidation(short_pos, low=D("95"), high=short_liq, maintenance_rate=D("0.005"))
     assert result.liquidated
 
