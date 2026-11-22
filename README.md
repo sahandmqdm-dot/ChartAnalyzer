@@ -115,17 +115,7 @@ Windows PowerShell:
 .\backend\verify.ps1
 ```
 
-The equivalent manual backend commands are:
-
-```sh
-cd backend
-python -m venv .venv
-# Windows PowerShell: .venv\\Scripts\\Activate.ps1
-# Linux/macOS: source .venv/bin/activate
-python -m pip install -e '.[dev]'
-ruff check app tests
-APP_SECRET='test-only-secret-not-for-production' python -m pytest
-```
+Use the verification script as the canonical backend check. It applies the same Ruff file scope as CI and runs the complete backend test suite with the project's development dependencies.
 
 Frontend production build:
 
