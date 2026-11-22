@@ -324,6 +324,7 @@ def test_liquidation_start_enforces_per_provider_capacity(monkeypatch):
 
 def test_liquidation_snapshot_get_does_not_register_collector(monkeypatch):
     monkeypatch.setattr(liquidation_routes, "_collectors", {})
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: None)
     response = authenticated_client().get(
         "/api/v1/derivatives/liquidations?symbol=BTCUSDT"
     )
