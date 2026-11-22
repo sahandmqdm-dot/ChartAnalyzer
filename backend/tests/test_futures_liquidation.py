@@ -29,3 +29,26 @@ def test_liquidation_estimate_rejects_invalid_mmr():
 def test_liquidation_price_never_negative():
     p = position(margin="2000")
     assert estimate_liquidation_price(p, D("0.01")) == D("0")
+
+
+def test_funding_adjustment_moves_long_liquidation_threshold():
+    p = position()
+    baseline = estimate_liquidation_price(p, D("0.005"))
+    received_funding = estimate_liquidation_price(p, D("0.005"), D("10"))
+    paid_funding = estimate_liquidation_price(p, D("0.005"), D("-10"))
+    assert received_funding < baseline
+    assert paid_funding > baseline
+
+
+def test_funding_adjustment_moves_short_liquidation_threshold():
+    p = position("short")
+    baseline = estimate_liquidation_price(p, D("0.005"))
+    received_funding = estimate_liquidation_price(p, D("0.005"), D("10"))
+    paid_funding = estimate_liquidation_price(p, D("0.005"), D("-10"))
+    assert received_funding > baseline
+    assert paid_funding < baseline
+
+
+def test_funding_adjustment_must_be_finite_decimal():
+    with pytest.raises(ValueError, match="margin_adjustment"):
+        estimate_liquidation_price(position(), D("0.005"), D("NaN"))
