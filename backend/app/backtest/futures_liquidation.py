@@ -12,7 +12,11 @@ ZERO = Decimal("0")
 ONE = Decimal("1")
 
 
-def estimate_liquidation_price(\n    position: IsolatedPosition,\n    maintenance_margin_rate: Decimal,\n    margin_adjustment: Decimal = ZERO,\n) -> Decimal:
+def estimate_liquidation_price(
+    position: IsolatedPosition,
+    maintenance_margin_rate: Decimal,
+    margin_adjustment: Decimal = ZERO,
+) -> Decimal:
     if not isinstance(maintenance_margin_rate, Decimal) or not maintenance_margin_rate.is_finite():
         raise ValueError("maintenance_margin_rate must be a finite Decimal")
     if not ZERO <= maintenance_margin_rate < ONE:
