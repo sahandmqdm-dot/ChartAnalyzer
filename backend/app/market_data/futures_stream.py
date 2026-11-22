@@ -13,6 +13,7 @@ from websockets.asyncio.client import connect
 
 from app.auth import current_user
 from app.market_data.symbol import Symbol
+from app.settings import settings
 
 
 class FuturesStreamSnapshot(BaseModel):
@@ -26,6 +27,8 @@ class FuturesStreamSnapshot(BaseModel):
     index_price: Decimal | None = None
     funding_rate: Decimal | None = None
     next_funding_time: datetime | None = None
+    open_interest: Decimal | None = None
+    open_interest_value: Decimal | None = None
     best_bid: Decimal | None = None
     best_bid_quantity: Decimal | None = None
     best_ask: Decimal | None = None
@@ -93,8 +96,85 @@ def normalize_binance_market_event(payload: dict, expected_symbol: str) -> dict 
         return None
 
 
+def _nonnegative_decimal(value: object) -> Decimal:
+    result = Decimal(str(value))
+    if not result.is_finite() or result < 0:
+        raise ValueError("market size values must be finite and non-negative")
+    return result
+
+
+def normalize_bybit_market_event(payload: dict, expected_symbol: str) -> dict | None:
+    """Normalize Bybit V5 linear ticker and public-trade messages."""
+    topic = payload.get("topic")
+    try:
+        if topic == f"tickers.{expected_symbol}":
+            rows = payload.get("data")
+            if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+                return None
+            row = rows[0]
+            symbol = str(Symbol(str(row.get("symbol", expected_symbol))))
+            if symbol != expected_symbol:
+                return None
+            normalized = {
+                "kind": "ticker",
+                "symbol": symbol,
+                "observed_at": _event_time(payload["ts"]),
+            }
+            positive_fields = {
+                "markPrice": "mark_price",
+                "indexPrice": "index_price",
+                "bid1Price": "best_bid",
+                "ask1Price": "best_ask",
+                "lastPrice": "last_price",
+            }
+            size_fields = {
+                "openInterest": "open_interest",
+                "openInterestValue": "open_interest_value",
+                "bid1Size": "best_bid_quantity",
+                "ask1Size": "best_ask_quantity",
+            }
+            for source, target in positive_fields.items():
+                if source in row and row[source] not in (None, ""):
+                    normalized[target] = _positive_decimal(row[source])
+            for source, target in size_fields.items():
+                if source in row and row[source] not in (None, ""):
+                    normalized[target] = _nonnegative_decimal(row[source])
+            if "fundingRate" in row and row["fundingRate"] not in (None, ""):
+                rate = Decimal(str(row["fundingRate"]))
+                if not rate.is_finite():
+                    return None
+                normalized["funding_rate"] = rate
+            if "nextFundingTime" in row and row["nextFundingTime"] not in (None, ""):
+                normalized["next_funding_time"] = _event_time(row["nextFundingTime"])
+            return normalized if len(normalized) > 3 else None
+
+        if topic == f"publicTrade.{expected_symbol}":
+            rows = payload.get("data")
+            if not isinstance(rows, list) or not rows:
+                return None
+            row = rows[-1]
+            if not isinstance(row, dict):
+                return None
+            symbol = str(Symbol(str(row["s"])))
+            if symbol != expected_symbol:
+                return None
+            return {
+                "kind": "trade",
+                "symbol": symbol,
+                "last_trade_price": _positive_decimal(row["p"]),
+                "last_trade_quantity": _positive_decimal(row["v"]),
+                "last_trade_time": _event_time(row["T"]),
+                "observed_at": _event_time(payload["ts"]),
+            }
+    except (KeyError, ValueError, TypeError, InvalidOperation, ArithmeticError, OverflowError):
+        return None
+    return None
+
+
 class BinanceFuturesMarketStream:
     """Read-only public market stream with bounded state and automatic reconnect."""
+
+    provider = "binance_usdm_futures"
 
     def __init__(self, symbol: str, *, reconnect_delay: float = 1.0, max_reconnect_delay: float = 30.0):
         self.symbol = str(Symbol(symbol))
@@ -133,6 +213,7 @@ class BinanceFuturesMarketStream:
 
     def snapshot(self) -> dict:
         return FuturesStreamSnapshot(
+            provider=self.provider,
             symbol=self.symbol,
             state=self.state,
             last_error=self.last_error,
@@ -147,7 +228,7 @@ class BinanceFuturesMarketStream:
             from app.market_data.futures_snapshot_repository import save_futures_mark_snapshot
 
             await save_futures_mark_snapshot(
-                provider="binance_usdm_futures",
+                provider=self.provider,
                 symbol=self.symbol,
                 observed_at=self._values["observed_at"],
                 mark_price=self._values["mark_price"],
@@ -198,15 +279,106 @@ class BinanceFuturesMarketStream:
             delay = min(delay * 2, self.max_reconnect_delay)
 
 
-_streams: dict[str, BinanceFuturesMarketStream] = {}
+class BybitLinearFuturesMarketStream(BinanceFuturesMarketStream):
+    """Read-only Bybit V5 linear ticker/trade stream with reconnect and persistence."""
+
+    provider = "bybit_linear_futures"
+
+    def __init__(self, symbol: str, *, reconnect_delay: float = 1.0, max_reconnect_delay: float = 30.0):
+        super().__init__(
+            symbol,
+            reconnect_delay=reconnect_delay,
+            max_reconnect_delay=max_reconnect_delay,
+        )
+        self._last_persisted_at: datetime | None = None
+
+    def ingest(self, payload: dict) -> bool:
+        normalized = normalize_bybit_market_event(payload, self.symbol)
+        if normalized is None:
+            return False
+        kind = normalized.pop("kind")
+        normalized.pop("symbol", None)
+        self._values.update(normalized)
+        return kind in {"ticker", "trade"}
+
+    async def _heartbeat(self, socket) -> None:
+        while True:
+            await asyncio.sleep(20)
+            await socket.send(json.dumps({"op": "ping"}))
+
+    async def _run(self) -> None:
+        url = "wss://stream.bybit.com/v5/public/linear"
+        topics = [f"tickers.{self.symbol}", f"publicTrade.{self.symbol}"]
+        delay = self.reconnect_delay
+        while True:
+            try:
+                async with connect(
+                    url,
+                    ping_interval=None,
+                    open_timeout=10,
+                ) as socket:
+                    await socket.send(json.dumps({"op": "subscribe", "args": topics}))
+                    self.state = "connected"
+                    self.last_error = None
+                    delay = self.reconnect_delay
+                    heartbeat = asyncio.create_task(self._heartbeat(socket))
+                    try:
+                        async for raw in socket:
+                            payload = json.loads(raw)
+                            if isinstance(payload, dict):
+                                accepted = self.ingest(payload)
+                                if (
+                                    accepted
+                                    and payload.get("topic") == f"tickers.{self.symbol}"
+                                    and all(
+                                        key in self._values
+                                        for key in (
+                                            "mark_price",
+                                            "index_price",
+                                            "funding_rate",
+                                            "next_funding_time",
+                                            "observed_at",
+                                        )
+                                    )
+                                ):
+                                    observed_at = self._values["observed_at"]
+                                    if (
+                                        self._last_persisted_at is None
+                                        or (observed_at - self._last_persisted_at).total_seconds() >= 1
+                                    ):
+                                        await self._persist_mark_snapshot()
+                                        self._last_persisted_at = observed_at
+                    finally:
+                        heartbeat.cancel()
+                        await asyncio.gather(heartbeat, return_exceptions=True)
+                    self.last_error = "Connection closed by exchange"
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - keep the read-only feed resilient
+                self.last_error = type(exc).__name__
+            self.state = "reconnecting"
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, self.max_reconnect_delay)
+
+
+_streams: dict[tuple[str, str], BinanceFuturesMarketStream] = {}
 
 
 def get_futures_market_stream(symbol: str) -> BinanceFuturesMarketStream:
     normalized = str(Symbol(symbol))
-    stream = _streams.get(normalized)
+    provider = settings.futures_market_data_provider
+    key = (provider, normalized)
+    stream = _streams.get(key)
     if stream is None:
-        stream = BinanceFuturesMarketStream(normalized)
-        _streams[normalized] = stream
+        providers = {
+            "binance_usdm_futures": BinanceFuturesMarketStream,
+            "bybit_linear_futures": BybitLinearFuturesMarketStream,
+        }
+        stream_type = providers.get(provider)
+        if stream_type is None:
+            raise RuntimeError("No supported futures market stream is configured")
+        stream = stream_type(normalized)
+        _streams[key] = stream
     return stream
 
 
@@ -223,7 +395,7 @@ async def live_futures_market(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
 ):
-    """Start (if needed) and return a read-only Binance USD-M live market snapshot."""
+    """Start and return the configured read-only linear-perpetual market stream."""
     current_user(request)
     try:
         stream = get_futures_market_stream(symbol)
@@ -253,14 +425,14 @@ async def futures_market_history(
             normalized,
             datetime.now(UTC) - timedelta(hours=hours),
             limit=limit,
-            provider="binance_usdm_futures",
+            provider=settings.futures_market_data_provider,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if rows is None:
         raise HTTPException(status_code=503, detail="Futures history persistence is not configured")
     return {
-        "provider": "binance_usdm_futures",
+        "provider": settings.futures_market_data_provider,
         "market_type": "linear_perpetual",
         "symbol": normalized,
         "hours": hours,
