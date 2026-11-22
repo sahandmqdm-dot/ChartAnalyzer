@@ -151,10 +151,9 @@ async def futures_sma_crossover(
         raise HTTPException(status_code=503, detail="Unsupported futures market-data provider")
 
     try:
-        contract_candles, mark_history, futures_history = await asyncio.gather(
+        contract_candles, mark_history = await asyncio.gather(
             contract_adapter.fetch_ohlcv(normalized_symbol, normalized_interval, limit=limit),
             mark_adapter.fetch_mark_price_history(normalized_symbol, normalized_interval, limit),
-            history_adapter.fetch_history(normalized_symbol, normalized_interval, limit),
         )
     except (MarketDataProviderError, FuturesMarketDataError, ValueError) as exc:
         raise HTTPException(status_code=502, detail="Futures backtest market data unavailable or invalid") from exc
@@ -168,9 +167,20 @@ async def futures_sma_crossover(
             detail="Not enough aligned closed futures OHLCV and Mark Price candles for the selected periods",
         )
 
+    try:
+        funding_points = await history_adapter.fetch_funding_rates(
+            normalized_symbol,
+            aligned_contracts[0].timestamp,
+            aligned_contracts[-1].close_time or aligned_contracts[-1].timestamp,
+        )
+    except (FuturesMarketDataError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502, detail="Futures funding history unavailable or invalid"
+        ) from exc
+
     funding = [
         FundingPayment(timestamp=point.timestamp, rate=point.value)
-        for point in futures_history.funding_rate
+        for point in funding_points
         if aligned_contracts[0].timestamp < point.timestamp <= (aligned_contracts[-1].close_time or aligned_contracts[-1].timestamp)
     ]
     try:
