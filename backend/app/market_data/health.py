@@ -34,8 +34,10 @@ def _feed_health(
     state = str(snapshot.get("state", "unknown"))
     observed_at = _parse_timestamp(snapshot.get("observed_at"))
     age_seconds = None
+    timestamp_delta = None
     if observed_at is not None:
-        age_seconds = (now - observed_at).total_seconds()
+        timestamp_delta = (now - observed_at).total_seconds()
+        age_seconds = max(0.0, timestamp_delta)
 
     if state == "stopped":
         status = "stopped"
@@ -43,7 +45,7 @@ def _feed_health(
         status = "reconnecting"
     elif observed_at is None:
         status = "waiting_for_data"
-    elif age_seconds is not None and age_seconds < -FUTURE_TIMESTAMP_TOLERANCE_SECONDS:
+    elif timestamp_delta is not None and timestamp_delta < -FUTURE_TIMESTAMP_TOLERANCE_SECONDS:
         status = "clock_skew"
     elif age_seconds is not None and age_seconds > stale_after_seconds:
         status = "stale"
