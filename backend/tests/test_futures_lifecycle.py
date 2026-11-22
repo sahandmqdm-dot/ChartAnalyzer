@@ -59,3 +59,10 @@ def test_insufficient_balance_rejected():
     a = account("10")
     with pytest.raises(ValueError, match="insufficient"):
         a.open_position(side="long", quantity=D("1"), entry_price=D("1000"), leverage=D("2"), fee_rate=D("0.01"))
+
+def test_realized_pnl_includes_entry_and_exit_fees():
+    a = account()
+    a.open_position(side="long", quantity=D("1"), entry_price=D("1000"), leverage=D("2"), fee_rate=D("0.001"))
+    realized = a.close_position(D("1100"), D("0.001"))
+    assert realized == D("98.9")
+    assert a.wallet_balance == D("10098.9")
