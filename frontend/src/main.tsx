@@ -861,12 +861,34 @@ function App() {
   async function logout() {
     setBusy(true);
     try {
+      const csrfToken = csrf || cookieValue('ca_csrf');
+      const headers = { 'X-CSRF-Token': csrfToken };
+      const query = new URLSearchParams({ symbol: symbol.trim() });
+      const stopRequests: Promise<Response>[] = [];
+      if (liveFeedEnabled) {
+        stopRequests.push(
+          fetch(API_BASE + '/api/v1/derivatives/live-market?' + query, {
+            method: 'DELETE', credentials: 'include', headers,
+          }),
+          fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + query, {
+            method: 'DELETE', credentials: 'include', headers,
+          }),
+        );
+      }
+      if (liquidationLive) {
+        stopRequests.push(fetch(API_BASE + '/api/v1/derivatives/liquidations/stop?' + query, {
+          method: 'DELETE', credentials: 'include', headers,
+        }));
+      }
+      await Promise.all(stopRequests.map((request) => request.catch(() => undefined)));
       const response = await fetch(`${API_BASE}/api/v1/auth/logout`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'X-CSRF-Token': csrf || cookieValue('ca_csrf') },
+        headers,
       });
       if (!response.ok) throw new Error('Logout failed');
+      setLiveFeedEnabled(false);
+      setLiquidationLive(false);
       setAuthenticated(false);
       setCsrf('');
       setData(null);
