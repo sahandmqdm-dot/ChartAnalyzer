@@ -36,6 +36,10 @@ class FuturesTrade:
     quantity: Decimal
     net_pnl: Decimal
     exit_reason: str
+    liquidation_trigger_price: Decimal | None = None
+    bankruptcy_price: Decimal | None = None
+    liquidation_fill_price: Decimal | None = None
+    uncovered_gap_loss: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +80,10 @@ class FuturesBacktestResult:
                     "quantity": str(trade.quantity),
                     "net_pnl": str(trade.net_pnl),
                     "exit_reason": trade.exit_reason,
+                    "liquidation_trigger_price": str(trade.liquidation_trigger_price) if trade.liquidation_trigger_price is not None else None,
+                    "bankruptcy_price": str(trade.bankruptcy_price) if trade.bankruptcy_price is not None else None,
+                    "liquidation_fill_price": str(trade.liquidation_fill_price) if trade.liquidation_fill_price is not None else None,
+                    "uncovered_gap_loss": str(trade.uncovered_gap_loss) if trade.uncovered_gap_loss is not None else None,
                 }
                 for trade in self.trades
             ],
@@ -215,8 +223,14 @@ def run_futures_sma_crossover(
             )
             if event.liquidated:
                 net_pnl = account.settle_liquidation(event)
-                trades.append(FuturesTrade(entry_side, entry_time, event.timestamp.isoformat(),
-                                           entry_price, event.price, entry_quantity, net_pnl, "liquidation"))
+                trades.append(FuturesTrade(
+                    entry_side, entry_time, event.timestamp.isoformat(),
+                    entry_price, event.price, entry_quantity, net_pnl, "liquidation",
+                    liquidation_trigger_price=event.liquidation_threshold,
+                    bankruptcy_price=event.bankruptcy_price,
+                    liquidation_fill_price=event.price,
+                    uncovered_gap_loss=event.uncovered_gap_loss,
+                ))
                 liquidation_count += 1
                 entry_side = ""
                 entry_datetime = None
