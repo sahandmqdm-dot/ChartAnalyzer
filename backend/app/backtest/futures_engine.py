@@ -5,10 +5,10 @@ aligned OHLCV and Mark Price candles, applies funding events at supplied timesta
 executes signal changes at the next candle open, and uses closed Mark Price OHLC for
 liquidation detection. It is not a substitute for exchange-specific simulation.
 """
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from collections.abc import Sequence
 
 from app.backtest.futures_lifecycle import FuturesAccount
 from app.backtest.futures_mark_price import simulate_mark_price_liquidation
