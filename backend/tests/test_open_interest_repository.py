@@ -71,7 +71,7 @@ async def test_list_open_interest_serializes_decimal_as_string(monkeypatch):
 async def test_open_interest_repository_reports_disabled_database(monkeypatch):
     monkeypatch.setattr(repository, "get_session_factory", lambda: None)
     assert await repository.save_open_interest(
-        "binance_usdm_futures", "BTCUSDT", datetime.now(UTC), Decimal("10")
+        "binance_usdm_futures", "BTCUSDT", datetime.now(UTC), Decimal(10)
     ) is None
     assert await repository.list_open_interest(
         "BTCUSDT", datetime(2026, 1, 1, tzinfo=UTC)
