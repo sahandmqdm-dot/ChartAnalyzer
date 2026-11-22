@@ -177,3 +177,24 @@ async def stop_all_futures_market_streams() -> None:
     streams = list(_streams.values())
     await asyncio.gather(*(stream.stop() for stream in streams))
     _streams.clear()
+
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from app.auth import current_user
+
+router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
+
+
+@router.get("/live-market")
+async def live_futures_market(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+):
+    """Start (if needed) and return a read-only Binance USD-M live market snapshot."""
+    current_user(request)
+    try:
+        stream = get_futures_market_stream(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    stream.start()
+    return stream.snapshot()
