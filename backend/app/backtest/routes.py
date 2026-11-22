@@ -8,12 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.auth import current_user
 from app.backtest.engine import run_sma_crossover
 from app.backtest.futures_engine import FundingPayment, run_futures_sma_crossover
-from app.market_data.provider import MarketDataProvider, MarketDataProviderError
 from app.market_data.futures import FuturesMarketDataError
-from app.market_data.futures_history import BinanceUsdmFuturesHistoryAdapter, BybitLinearFuturesHistoryAdapter
-from app.market_data.futures_ohlcv import BinanceUsdmFuturesOHLCVAdapter, BybitLinearFuturesOHLCVAdapter
-from app.market_data.mark_price import BinanceUsdmMarkPriceAdapter, BybitLinearMarkPriceAdapter
+from app.market_data.futures_history import (
+    BinanceUsdmFuturesHistoryAdapter,
+    BybitLinearFuturesHistoryAdapter,
+)
+from app.market_data.futures_ohlcv import (
+    BinanceUsdmFuturesOHLCVAdapter,
+    BybitLinearFuturesOHLCVAdapter,
+)
 from app.market_data.futures_routes import get_futures_provider
+from app.market_data.mark_price import BinanceUsdmMarkPriceAdapter, BybitLinearMarkPriceAdapter
+from app.market_data.provider import MarketDataProvider, MarketDataProviderError
 from app.market_data.registry import get_market_data_provider
 from app.market_data.symbol import Symbol
 from app.market_data.timeframe import Timeframe
