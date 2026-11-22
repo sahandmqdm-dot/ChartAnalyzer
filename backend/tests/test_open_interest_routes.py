@@ -26,6 +26,7 @@ def test_live_open_interest_requires_auth():
 
 def test_live_open_interest_starts_collector(monkeypatch):
     class FakeCollector:
+        provider = settings.futures_market_data_provider
         started = False
         state = "stopped"
 
