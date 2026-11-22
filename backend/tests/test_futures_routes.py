@@ -5,8 +5,11 @@ from fastapi.testclient import TestClient
 
 from app.auth import _session_token
 from app.main import app
-from app.market_data.futures import FuturesOverview
-from app.market_data.futures import BinanceUsdmFuturesAdapter, BybitLinearFuturesAdapter
+from app.market_data.futures import (
+    BinanceUsdmFuturesAdapter,
+    BybitLinearFuturesAdapter,
+    FuturesOverview,
+)
 from app.market_data.futures_routes import get_futures_provider
 from app.settings import settings
 
