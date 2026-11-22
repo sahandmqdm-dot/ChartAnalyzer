@@ -110,3 +110,23 @@ def test_market_history_uses_independent_bybit_provider(monkeypatch):
     )
     assert response.status_code == 200, response.text
     assert response.json()["provider"] == "bybit_linear_futures"
+
+
+def test_live_market_stop_endpoint_stops_selected_stream(monkeypatch):
+    class FakeStream:
+        stopped = False
+
+        async def stop(self):
+            self.stopped = True
+
+        def snapshot(self):
+            return {"symbol": "BTCUSDT", "state": "stopped"}
+
+    stream = FakeStream()
+    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: stream)
+    response = authenticated_client(monkeypatch).delete(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200
+    assert stream.stopped
+    assert response.json()["state"] == "stopped"
