@@ -1,9 +1,11 @@
 import json
 import time
+from collections import OrderedDict
 
 from fastapi.testclient import TestClient
 
-from app.auth import _b64, _session_token, _sign, _verify
+from app import auth
+from app.auth import _allow_login, _b64, _session_token, _sign, _verify, revoke_session
 from app.main import app
 from app.settings import settings
 
@@ -76,3 +78,45 @@ def test_session_rejects_missing_session_id():
 
 def test_session_rejects_oversized_token():
     assert _verify("x" * 5000) is None
+
+
+def test_login_attempts_are_limited_per_ip_and_expire(monkeypatch):
+    monkeypatch.setattr(auth, "_attempts", OrderedDict())
+    monkeypatch.setattr(auth.time, "time", lambda: 100.0)
+    assert all(_allow_login("192.0.2.10") for _ in range(5))
+    assert _allow_login("192.0.2.10") is False
+
+    monkeypatch.setattr(auth.time, "time", lambda: 161.0)
+    assert _allow_login("192.0.2.10") is True
+
+
+def test_login_attempt_tracking_has_a_bounded_ip_table(monkeypatch):
+    monkeypatch.setattr(auth, "_attempts", OrderedDict())
+    monkeypatch.setattr(auth, "_MAX_LOGIN_IPS", 2)
+    monkeypatch.setattr(auth.time, "time", lambda: 100.0)
+
+    assert _allow_login("192.0.2.1")
+    assert _allow_login("192.0.2.2")
+    assert _allow_login("192.0.2.3")
+    assert len(auth._attempts) == 2
+    assert "192.0.2.1" not in auth._attempts
+
+
+def test_revoked_session_entries_are_removed_after_expiry(monkeypatch):
+    monkeypatch.setattr(auth, "_revoked_sessions", {})
+    monkeypatch.setattr(auth, "_revoked_expirations", [])
+    token = _session_token("admin")
+    session = _verify(token)
+    assert session is not None
+    session_id = session["sid"]
+
+    revoke_session(token)
+    assert session_id in auth._revoked_sessions
+    monkeypatch.setattr(
+        auth.time,
+        "time",
+        lambda: session["iat"] + settings.session_ttl_seconds + 1,
+    )
+
+    assert _verify(token) is None
+    assert session_id not in auth._revoked_sessions
