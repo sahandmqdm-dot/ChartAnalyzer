@@ -223,6 +223,13 @@ def get_open_interest_collector(symbol: str) -> _OpenInterestCollector:
     return collector
 
 
+def active_open_interest_collector_count(provider: str) -> int:
+    return sum(
+        collector.provider == provider and collector.state != "stopped"
+        for collector in _collectors.values()
+    )
+
+
 async def stop_all_open_interest_collectors() -> None:
     collectors = list(_collectors.values())
     await asyncio.gather(*(collector.stop() for collector in collectors))
@@ -257,6 +264,15 @@ async def start_live_open_interest(
         collector = get_open_interest_collector(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if (
+        collector.state == "stopped"
+        and active_open_interest_collector_count(collector.provider)
+        >= settings.max_active_open_interest_collectors
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Maximum active Open Interest collectors reached for this provider",
+        )
     collector.start()
     return collector.snapshot()
 
