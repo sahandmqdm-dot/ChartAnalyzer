@@ -27,3 +27,20 @@ class LiquidationEventRecord(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
     notional: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
     price_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+
+
+class FuturesMarkSnapshotRecord(Base):
+    __tablename__ = "futures_mark_snapshots"
+    __table_args__ = (
+        Index("ix_futures_mark_snapshots_symbol_observed", "symbol", "observed_at"),
+        Index("ix_futures_mark_snapshots_provider_symbol_time", "provider", "symbol", "observed_at"),
+    )
+
+    snapshot_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    mark_price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    index_price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    funding_rate: Mapped[Decimal] = mapped_column(Numeric(30, 18), nullable=False)
+    next_funding_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
