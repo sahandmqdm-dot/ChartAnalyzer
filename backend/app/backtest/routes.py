@@ -18,6 +18,8 @@ from app.market_data.timeframe import Timeframe
 
 router = APIRouter(prefix="/api/v1/backtest", tags=["backtest"])
 
+SUPPORTED_FUTURES_BACKTEST_INTERVALS = {"5m", "15m", "30m", "1h", "4h", "1d"}
+
 
 @router.get("/sma-crossover")
 async def sma_crossover(
@@ -116,6 +118,11 @@ async def futures_sma_crossover(
     try:
         normalized_symbol = str(Symbol(symbol))
         normalized_interval = Timeframe(interval).value
+        if normalized_interval not in SUPPORTED_FUTURES_BACKTEST_INTERVALS:
+            raise ValueError(
+                "futures backtest interval must be one of: "
+                + ", ".join(sorted(SUPPORTED_FUTURES_BACKTEST_INTERVALS))
+            )
         if fast_period >= slow_period:
             raise ValueError("periods must satisfy 1 <= fast_period < slow_period")
         spot_provider = get_market_data_provider()
