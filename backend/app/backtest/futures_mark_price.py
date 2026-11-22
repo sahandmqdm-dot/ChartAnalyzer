@@ -49,6 +49,7 @@ def simulate_mark_price_liquidation(
     candles: list[MarkPriceCandle] | tuple[MarkPriceCandle, ...],
     maintenance_margin_rate: Decimal,
     liquidation_fee_rate: Decimal = ZERO,
+    margin_adjustment: Decimal = ZERO,
 ) -> LiquidationEvent:
     """Return the first liquidation event in chronological, closed Mark Price candles.
 
@@ -60,7 +61,9 @@ def simulate_mark_price_liquidation(
         raise ValueError("liquidation_fee_rate must be a finite Decimal")
     if not ZERO <= liquidation_fee_rate < Decimal("1"):
         raise ValueError("liquidation_fee_rate must be in [0, 1)")
-    threshold = estimate_liquidation_price(position, maintenance_margin_rate)
+    if not isinstance(margin_adjustment, Decimal) or not margin_adjustment.is_finite():
+        raise ValueError("margin_adjustment must be a finite Decimal")
+    threshold = estimate_liquidation_price(position, maintenance_margin_rate, margin_adjustment)
     previous_timestamp: datetime | None = None
     processed = 0
 
@@ -94,7 +97,7 @@ def simulate_mark_price_liquidation(
             position.side, position.quantity, position.entry_price, fill_price
         )
         fee = trading_fee(position.quantity * fill_price, liquidation_fee_rate) if liquidation_fee_rate else ZERO
-        remaining = max(ZERO, position.isolated_margin + gross - fee)
+        remaining = max(ZERO, position.isolated_margin + margin_adjustment + gross - fee)
         return LiquidationEvent(
             liquidated=True,
             timestamp=candle.timestamp,
@@ -113,6 +116,6 @@ def simulate_mark_price_liquidation(
         liquidation_threshold=threshold,
         gross_pnl=ZERO,
         liquidation_fee=ZERO,
-        remaining_isolated_equity=position.isolated_margin,
+        remaining_isolated_equity=max(ZERO, position.isolated_margin + margin_adjustment),
         processed_candles=processed,
     )
