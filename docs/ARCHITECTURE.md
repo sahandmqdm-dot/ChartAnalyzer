@@ -127,3 +127,13 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - The derivatives overview, historical funding/OI/account-ratio, Mark Price history, analysis, and market-pressure paths resolve the configured Futures provider. Switching Spot venues does not silently switch the derivatives venue.
 - Binance-specific live-market and Open Interest polling collectors remain explicitly Binance USDⓈ-M integrations; they are not silently redirected to Bybit by the provider selector.
 - Both settings are validated independently. Public market-data access remains read-only and requires no exchange credentials.
+
+
+## Bybit live Futures stream and current Open Interest
+- The configured `FUTURES_MARKET_DATA_PROVIDER` selects the live stream and Open Interest collector, independently of Spot.
+- Binance USDⓈ-M keeps its combined mark-price, book-ticker, and aggregate-trade stream.
+- Bybit uses the public V5 linear WebSocket endpoint with `tickers.{symbol}` and `publicTrade.{symbol}`. Ticker snapshots/deltas are merged into a bounded latest-value snapshot; the stream includes mark/index price, funding, open interest, and best bid/ask where supplied. Trade batches use the latest trade in the exchange-provided chronological batch.
+- Bybit public WebSocket application pings are sent every 20 seconds; reconnect delay is bounded. Mark/funding observations are persisted at most once per second to avoid writing every 100ms ticker delta.
+- Current Open Interest is polled every 60 seconds from Binance USDⓈ-M `/fapi/v1/openInterest` or Bybit V5 `/v5/market/tickers?category=linear`. Both are public read-only endpoints and need no exchange credentials.
+- `open-interest-history` is a provider-filtered local observation history. It begins only after the selected collector runs; it is not exchange historical OI backfill. Binance and Bybit records are never mixed.
+- Both live stream and Open Interest polling have explicit authenticated stop endpoints and are also stopped during API shutdown.
