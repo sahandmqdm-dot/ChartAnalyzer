@@ -11,12 +11,13 @@ from pydantic import BaseModel, ConfigDict
 
 from app.auth import current_user
 from app.market_data.symbol import Symbol
+from app.settings import settings
 
 
 class OpenInterestSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    provider: str = "binance_usdm_futures"
+    provider: str
     symbol: str
     state: Literal["connecting", "connected", "reconnecting", "stopped"]
     open_interest: Decimal | None = None
@@ -26,11 +27,16 @@ class OpenInterestSnapshot(BaseModel):
     persistence_error: str | None = None
 
 
-def normalize_open_interest(payload: dict, expected_symbol: str) -> dict | None:
+def _normalize_open_interest_value(
+    symbol_value: object,
+    interest_value: object,
+    timestamp_value: object,
+    expected_symbol: str,
+) -> dict | None:
     try:
-        symbol = str(Symbol(str(payload["symbol"])))
-        value = Decimal(str(payload["openInterest"]))
-        timestamp = datetime.fromtimestamp(int(payload["time"]) / 1000, tz=UTC)
+        symbol = str(Symbol(str(symbol_value)))
+        value = Decimal(str(interest_value))
+        timestamp = datetime.fromtimestamp(int(timestamp_value) / 1000, tz=UTC)
         if symbol != expected_symbol or not value.is_finite() or value <= 0:
             return None
         return {
@@ -38,14 +44,43 @@ def normalize_open_interest(payload: dict, expected_symbol: str) -> dict | None:
             "open_interest": value,
             "observed_at": timestamp,
         }
-    except (KeyError, ValueError, TypeError, InvalidOperation, ArithmeticError, OverflowError):
+    except (ValueError, TypeError, InvalidOperation, ArithmeticError, OverflowError):
         return None
 
 
-class BinanceOpenInterestCollector:
-    """Poll the public USD-M current open-interest endpoint without trading credentials."""
+def normalize_open_interest(payload: dict, expected_symbol: str) -> dict | None:
+    """Normalize Binance USD-M current open-interest REST response."""
+    return _normalize_open_interest_value(
+        payload.get("symbol"),
+        payload.get("openInterest"),
+        payload.get("time"),
+        expected_symbol,
+    )
 
-    endpoint = "https://fapi.binance.com/fapi/v1/openInterest"
+
+def normalize_bybit_open_interest(payload: dict, expected_symbol: str) -> dict | None:
+    """Normalize Bybit V5 linear ticker response without inventing history."""
+    if not isinstance(payload, dict) or payload.get("retCode") != 0:
+        return None
+    result = payload.get("result")
+    rows = result.get("list") if isinstance(result, dict) else None
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        return None
+    row = rows[0]
+    return _normalize_open_interest_value(
+        row.get("symbol"),
+        row.get("openInterest"),
+        payload.get("time"),
+        expected_symbol,
+    )
+
+
+class _OpenInterestCollector:
+    """Poll one public linear-perpetual endpoint and persist local observations."""
+
+    provider = "futures"
+    endpoint = ""
+    error_label = "Futures provider"
 
     def __init__(self, symbol: str, *, interval_seconds: float = 60.0):
         if interval_seconds < 10:
@@ -60,11 +95,17 @@ class BinanceOpenInterestCollector:
         self.persistence_error: str | None = None
         self._task: asyncio.Task | None = None
 
+    def request_params(self) -> dict[str, str]:
+        return {"symbol": self.symbol}
+
+    def normalize(self, payload: dict) -> dict | None:
+        raise NotImplementedError
+
     def start(self) -> None:
         if self._task is None or self._task.done():
             self.state = "connecting"
             self._task = asyncio.create_task(
-                self._run(), name=f"futures-open-interest-{self.symbol}"
+                self._run(), name=f"futures-open-interest-{self.provider}-{self.symbol}"
             )
 
     async def stop(self) -> None:
@@ -79,6 +120,7 @@ class BinanceOpenInterestCollector:
 
     def snapshot(self) -> dict:
         return OpenInterestSnapshot(
+            provider=self.provider,
             symbol=self.symbol,
             state=self.state,
             open_interest=self.open_interest,
@@ -89,18 +131,18 @@ class BinanceOpenInterestCollector:
         ).model_dump(mode="json")
 
     async def _poll_once(self, client: httpx.AsyncClient) -> None:
-        response = await client.get(self.endpoint, params={"symbol": self.symbol})
+        response = await client.get(self.endpoint, params=self.request_params())
         response.raise_for_status()
-        normalized = normalize_open_interest(response.json(), self.symbol)
+        normalized = self.normalize(response.json())
         if normalized is None:
-            raise ValueError("Binance returned an invalid open-interest payload")
+            raise ValueError(f"{self.error_label} returned invalid open-interest data")
         self.open_interest = normalized["open_interest"]
         self.observed_at = normalized["observed_at"]
         from app.market_data.open_interest_repository import save_open_interest
 
         try:
             await save_open_interest(
-                "binance_usdm_futures",
+                self.provider,
                 self.symbol,
                 self.observed_at,
                 self.open_interest,
@@ -133,15 +175,49 @@ class BinanceOpenInterestCollector:
                     delay = min(max(delay * 2, self.interval_seconds), 300.0)
 
 
-_collectors: dict[str, BinanceOpenInterestCollector] = {}
+class BinanceOpenInterestCollector(_OpenInterestCollector):
+    """Poll Binance USD-M current open interest without trading credentials."""
+
+    provider = "binance_usdm_futures"
+    endpoint = "https://fapi.binance.com/fapi/v1/openInterest"
+    error_label = "Binance"
+
+    def normalize(self, payload: dict) -> dict | None:
+        return normalize_open_interest(payload, self.symbol)
 
 
-def get_open_interest_collector(symbol: str) -> BinanceOpenInterestCollector:
+class BybitOpenInterestCollector(_OpenInterestCollector):
+    """Poll Bybit V5 linear ticker open interest without trading credentials."""
+
+    provider = "bybit_linear_futures"
+    endpoint = "https://api.bybit.com/v5/market/tickers"
+    error_label = "Bybit"
+
+    def request_params(self) -> dict[str, str]:
+        return {"category": "linear", "symbol": self.symbol}
+
+    def normalize(self, payload: dict) -> dict | None:
+        return normalize_bybit_open_interest(payload, self.symbol)
+
+
+_collectors: dict[tuple[str, str], _OpenInterestCollector] = {}
+
+
+def get_open_interest_collector(symbol: str) -> _OpenInterestCollector:
     normalized = str(Symbol(symbol))
-    collector = _collectors.get(normalized)
+    provider = settings.futures_market_data_provider
+    collector_types = {
+        "binance_usdm_futures": BinanceOpenInterestCollector,
+        "bybit_linear_futures": BybitOpenInterestCollector,
+    }
+    collector_type = collector_types.get(provider)
+    if collector_type is None:
+        raise RuntimeError("No supported Futures Open Interest collector is configured")
+    key = (provider, normalized)
+    collector = _collectors.get(key)
     if collector is None:
-        collector = BinanceOpenInterestCollector(normalized)
-        _collectors[normalized] = collector
+        collector = collector_type(normalized)
+        _collectors[key] = collector
     return collector
 
 
@@ -182,22 +258,24 @@ async def open_interest_history(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     from app.market_data.open_interest_repository import list_open_interest
 
+    provider = settings.futures_market_data_provider
     try:
         rows = await list_open_interest(
             normalized,
             datetime.now(UTC) - timedelta(hours=hours),
             limit=limit,
-            provider="binance_usdm_futures",
+            provider=provider,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if rows is None:
         raise HTTPException(status_code=503, detail="Open-interest persistence is not configured")
     return {
-        "provider": "binance_usdm_futures",
+        "provider": provider,
         "market_type": "linear_perpetual",
         "symbol": normalized,
         "hours": hours,
         "count": len(rows),
+        "history_source": "locally_observed_polling",
         "observations": rows,
     }
