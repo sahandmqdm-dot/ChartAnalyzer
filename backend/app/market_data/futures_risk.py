@@ -41,6 +41,8 @@ class IsolatedRiskEstimateRequest(BaseModel):
                 raise ValueError("risk tiers must be ordered and contiguous")
             if tier.notional_cap is not None and tier.notional_cap <= tier.notional_floor:
                 raise ValueError("risk tier cap must exceed its floor")
+            if tier.maintenance_margin_deduction > tier.notional_floor * tier.maintenance_margin_rate:
+                raise ValueError("maintenance deduction cannot exceed maintenance margin at tier floor")
             if index < len(tiers) - 1 and tier.notional_cap is None:
                 raise ValueError("only the final risk tier may have no upper cap")
         return self
