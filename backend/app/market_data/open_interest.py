@@ -63,7 +63,9 @@ def normalize_bybit_open_interest(payload: dict, expected_symbol: str) -> dict |
     if not isinstance(payload, dict) or payload.get("retCode") != 0:
         return None
     result = payload.get("result")
-    rows = result.get("list") if isinstance(result, dict) else None
+    if not isinstance(result, dict) or result.get("category") != "linear":
+        return None
+    rows = result.get("list")
     if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
         return None
     row = rows[0]
