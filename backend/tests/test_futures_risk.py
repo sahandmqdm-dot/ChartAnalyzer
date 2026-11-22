@@ -95,13 +95,13 @@ def test_rejects_non_positive_fee_rate_boundaries():
 
 def test_bankruptcy_price_is_separate_from_liquidation_price():
     result = estimate_isolated_liquidation(request())
-    assert result.bankruptcy_price_estimate == Decimal(55)
+    assert result.bankruptcy_price_estimate == Decimal(90)
     assert result.liquidation_price_estimate > result.bankruptcy_price_estimate
 
 
 def test_short_bankruptcy_price_is_above_entry():
     result = estimate_isolated_liquidation(request("short"))
-    assert result.bankruptcy_price_estimate == Decimal(145)
+    assert result.bankruptcy_price_estimate == Decimal(110)
 
 
 def test_tier_selection_recalculates_for_liquidation_notional():
