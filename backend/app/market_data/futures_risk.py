@@ -183,6 +183,7 @@ def estimate_isolated_liquidation(
             "Uses the supplied exchange risk tiers and their cumulative maintenance deductions.",
             "Close fee is a user-supplied estimate; funding payments and other account costs are excluded.",
             "Bankruptcy price is the theoretical zero-equity level and excludes maintenance-margin and close-fee reserves.",
+            "Mark-price liquidation distance is signed: positive is before the trigger and negative means the mark is beyond the estimated trigger.",
             "The result is an estimate, not the exchange liquidation engine's guaranteed trigger price.",
         ],
     )
