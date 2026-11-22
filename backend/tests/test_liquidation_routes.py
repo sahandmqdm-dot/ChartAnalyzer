@@ -15,6 +15,10 @@ class FakeCollector:
         self.events = []
         self._seen = set()
 
+    @property
+    def state(self):
+        return "stopped" if self.stopped or not self.started else "connected"
+
     def start(self):
         self.started = True
 
