@@ -720,6 +720,7 @@ function App() {
       const query = new URLSearchParams({ symbol: symbol.trim() });
       const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/start?' + query, {
         method: 'POST', credentials: 'include',
+        headers: { 'X-CSRF-Token': cookieValue('ca_csrf') },
       });
       const body = await response.json().catch(() => ({})) as LiquidationSnapshot & { detail?: string };
       if (!response.ok) throw new Error(body.detail || 'Could not start liquidation stream (' + response.status + ')');
@@ -739,6 +740,7 @@ function App() {
       const query = new URLSearchParams({ symbol: symbol.trim() });
       const response = await fetch(API_BASE + '/api/v1/derivatives/liquidations/stop?' + query, {
         method: 'DELETE', credentials: 'include',
+        headers: { 'X-CSRF-Token': cookieValue('ca_csrf') },
       });
       const body = await response.json().catch(() => ({})) as LiquidationSnapshot & { detail?: string };
       if (!response.ok) throw new Error(body.detail || 'Could not stop liquidation stream (' + response.status + ')');
