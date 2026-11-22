@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.market_data.futures import FuturesMarketDataError, _HttpFuturesAdapter
 from app.market_data.futures_risk import RiskTier
@@ -16,6 +17,7 @@ class RiskTierSet(BaseModel):
     category: str
     symbol: str
     tiers: list[RiskTier]
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class BybitLinearRiskTierAdapter(_HttpFuturesAdapter):
@@ -45,7 +47,7 @@ class BybitLinearRiskTierAdapter(_HttpFuturesAdapter):
             selected.sort(key=lambda row: int(row["id"]))
             tiers: list[RiskTier] = []
             floor = Decimal(0)
-            for row in selected:
+            for index, row in enumerate(selected):
                 cap = Decimal(str(row["riskLimitValue"]))
                 tiers.append(
                     RiskTier(
@@ -63,6 +65,7 @@ class BybitLinearRiskTierAdapter(_HttpFuturesAdapter):
                 category="linear",
                 symbol=normalized,
                 tiers=tiers,
+                observed_at=datetime.now(UTC),
             )
         except (KeyError, ValueError, TypeError, InvalidOperation, ArithmeticError) as exc:
             raise FuturesMarketDataError("Bybit returned invalid risk-tier data") from exc
