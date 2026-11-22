@@ -161,3 +161,10 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - Snapshot GET and stop DELETE routes do not create missing collector entries; only CSRF-protected start POST requests allocate a collector.
 - Login attempt tracking retains at most 10,000 IP keys and evicts the least-recently-used entry when full. The five-attempts-per-minute limit remains per IP.
 - Revoked session IDs are stored with their expiry and purged through an expiry heap after the session TTL, rather than remaining in process memory indefinitely.
+
+
+## Futures backtest event ordering
+- Funding events timestamped at or before a candle open are applied to a position carried into that candle before any signal-driven exit at the open.
+- The opening Mark Price is checked for a gap liquidation before a strategy order can close or reverse the carried position. A position liquidated at the open cannot immediately re-enter on that same signal.
+- If the carried position survives the open, signal transitions execute at the contract OHLCV open. The resulting position is then checked against the full closed Mark Price candle.
+- Funding events timestamped inside the candle are applied only after the intrabar liquidation check because OHLC cannot establish which event occurred first. This remains a conservative simulation approximation.
