@@ -21,8 +21,8 @@ from app.market_data.confluence_routes import router as confluence_router
 from app.market_data.futures_analysis_routes import router as derivatives_analysis_router
 from app.market_data.futures_history_routes import router as derivatives_history_router
 from app.market_data.futures_risk_routes import router as futures_risk_router
-from app.market_data.futures_stream import router as futures_stream_router, stop_all_futures_market_streams
 from app.market_data.futures_routes import router as derivatives_router
+from app.market_data.futures_stream import router as futures_stream_router, stop_all_futures_market_streams
 from app.market_data.liquidation_routes import router as liquidation_router
 from app.market_data.liquidation_stream import stop_all_collectors
 from app.market_data.mark_price_routes import router as mark_price_router
@@ -68,7 +68,7 @@ if settings.environment == "development":
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type", "X-CSRF-Token"],
     )
 
