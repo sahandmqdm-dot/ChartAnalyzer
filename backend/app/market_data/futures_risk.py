@@ -59,6 +59,7 @@ class IsolatedRiskEstimate(BaseModel):
     initial_margin_estimate: Decimal
     extra_margin: Decimal
     liquidation_price_estimate: Decimal
+    bankruptcy_price_estimate: Decimal
     liquidation_tier: int
     maintenance_margin_rate: Decimal
     maintenance_margin_estimate: Decimal
@@ -124,6 +125,10 @@ def estimate_isolated_liquidation(
         raise ValueError("could not resolve a positive liquidation price within supplied tiers")
 
     liquidation_price, liquidation_tier = candidate
+    if request.side == "long":
+        bankruptcy_price = max(Decimal(0), request.entry_price - initial_margin / request.quantity)
+    else:
+        bankruptcy_price = request.entry_price + initial_margin / request.quantity
     liquidation_notional = liquidation_price * request.quantity
     maintenance_margin = (
         liquidation_notional * liquidation_tier.maintenance_margin_rate
@@ -148,6 +153,7 @@ def estimate_isolated_liquidation(
         initial_margin_estimate=initial_margin,
         extra_margin=request.extra_margin,
         liquidation_price_estimate=liquidation_price,
+        bankruptcy_price_estimate=bankruptcy_price,
         liquidation_tier=liquidation_tier.tier,
         maintenance_margin_rate=liquidation_tier.maintenance_margin_rate,
         maintenance_margin_estimate=maintenance_margin,
