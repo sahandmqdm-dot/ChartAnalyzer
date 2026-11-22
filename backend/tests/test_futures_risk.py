@@ -144,3 +144,8 @@ def test_mark_price_distance_can_be_negative_after_trigger():
         request(mark_price=Decimal("90"))
     )
     assert result.distance_to_liquidation_from_mark < 0
+
+
+def test_rejects_leverage_below_one():
+    with pytest.raises(ValidationError):
+        request(leverage=Decimal("0.5"))
