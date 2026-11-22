@@ -42,6 +42,14 @@ jobs:
           backend/tests/test_futures_risk_alerts.py
           backend/tests/test_futures_risk_assessment_route.py
           backend/tests/test_risk_tiers.py
+          backend/app/market_data/open_interest.py
+          backend/app/market_data/open_interest_repository.py
+          backend/app/market_data/market_pressure.py
+          backend/app/market_data/futures_analysis_routes.py
+          backend/tests/test_open_interest.py
+          backend/tests/test_open_interest_repository.py
+          backend/tests/test_open_interest_routes.py
+          backend/tests/test_market_pressure.py
       - run: pytest backend/tests
   frontend:
     runs-on: ubuntu-latest
