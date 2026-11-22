@@ -24,10 +24,10 @@ def estimate_at_distance(distance: str):
         IsolatedRiskEstimateRequest(
             symbol="BTCUSDT",
             side="long",
-            entry_price=Decimal("100"),
-            mark_price=Decimal("95"),
-            quantity=Decimal("1"),
-            leverage=Decimal("10"),
+            entry_price=Decimal(100),
+            mark_price=Decimal(95),
+            quantity=Decimal(1),
+            leverage=Decimal(10),
             risk_tiers=tiers,
         )
     )
@@ -53,7 +53,7 @@ def test_risk_alert_levels_follow_signed_mark_distance(distance, expected):
     now = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
     result = assess_futures_risk(
         provider="bybit_linear_futures",
-        mark_price=Decimal("95"),
+        mark_price=Decimal(95),
         mark_price_observed_at=now,
         risk_tiers_observed_at=now,
         estimate=estimate_at_distance(distance),
@@ -71,7 +71,7 @@ def test_risk_alert_rejects_naive_timestamps():
     with pytest.raises(ValueError, match="timezone-aware"):
         assess_futures_risk(
             provider="bybit_linear_futures",
-            mark_price=Decimal("95"),
+            mark_price=Decimal(95),
             mark_price_observed_at=datetime(2026, 11, 22, 12, 0),
             risk_tiers_observed_at=datetime(2026, 11, 22, 12, 0, tzinfo=UTC),
             estimate=estimate_at_distance("5"),
