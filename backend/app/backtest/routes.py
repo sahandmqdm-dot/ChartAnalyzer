@@ -189,6 +189,11 @@ async def futures_sma_crossover(
         "symbol": normalized_symbol,
         "interval": normalized_interval,
         "strategy": "futures_sma_crossover",
+        "price_sources": {
+            "signals_and_execution": "linear_perpetual_contract_ohlcv",
+            "liquidation": "linear_perpetual_mark_price",
+            "funding": "linear_perpetual_funding_history",
+        },
         "candles_used": len(aligned_contracts),
         "funding_events_used": len(funding),
         "parameters": {
