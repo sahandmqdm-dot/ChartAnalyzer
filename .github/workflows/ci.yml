@@ -58,6 +58,7 @@ jobs:
           backend/app/market_data/futures_routes.py
           backend/tests/test_settings.py
           backend/tests/test_futures_routes.py
+          backend/app/main.py
           backend/app/market_data/futures_stream.py
           backend/tests/test_futures_stream.py
           backend/tests/test_futures_stream_routes.py
