@@ -3,6 +3,7 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 
 from app.auth import _session_token
+from app.market_data.cache import AsyncTTLCache
 from app.main import app
 from app.market_data import futures_risk_routes
 from app.settings import settings
@@ -96,6 +97,9 @@ def test_risk_estimate_rejects_invalid_tier_payload():
 
 
 def test_public_risk_tier_endpoint_returns_bybit_tiers(monkeypatch):
+    monkeypatch.setattr(
+        futures_risk_routes, "_tier_cache", AsyncTTLCache(ttl_seconds=300, max_entries=16)
+    )
     monkeypatch.setattr(futures_risk_routes, "get_futures_provider", FakeBybitProvider)
     monkeypatch.setattr(
         futures_risk_routes, "BybitLinearRiskTierAdapter", FakeRiskTierAdapter
