@@ -61,3 +61,18 @@ Do not label the branch production-ready until:
 ## Audit limitations
 
 Only source files inspected through GitHub were reviewed. No local checkout, full static analysis, live exchange tests, penetration test, or comprehensive test suite was run during this audit. Findings are risk hypotheses grounded in inspected code and should be validated with targeted tests.
+
+
+## CI failure triage (run 45034397263)
+
+Latest inspected GitHub Actions run: frontend build passed; backend pytest failed with **7 failures and 274 passing tests** (Ruff passed).
+
+The failures are not yet resolved. Initial source/test comparison suggests several test expectations or fixtures are inconsistent with the current accounting/signal model; these must be validated rather than changed merely to obtain a green build:
+
+- `test_futures_sma_enters_long_and_closes_at_end_of_data`: the crossover is detected at the final candle in its five-candle fixture, so entry and end-of-data close occur at the same flat price. The fixture does not provide a post-entry price move to justify the expected profit.
+- `test_long_position_is_liquidated_on_mark_price_low`, `test_intrabar_adverse_mark_price_is_included_in_max_drawdown`, and `test_intrabar_funding_credit_cannot_rescue_prior_liquidation`: the short fixture length/strategy timing appears to leave the signal at the final candle, so no position exists during the candle whose Mark Price is modified. Confirm signal timing and revise fixtures to include an execution candle followed by the stressed candle, preserving a no-lookahead rule.
+- `test_realized_pnl_includes_entry_and_exit_fees`: with entry fee 1.00, gross PnL 100.00, and exit fee 1.10, realized PnL is 97.90 (100 - 1 - 1.10); the test's 98.90 expectation is arithmetically inconsistent. Wallet balance should be 10,097.90 under the current wallet accounting.
+- `test_liquidation_settlement_updates_wallet_and_clears_position`: settlement caps isolated-position loss at isolated margin (500), including liquidation fee, so wallet 9,499 is consistent with the current model. The test's direct subtraction of gross loss and fee from wallet (9,498.50) conflicts with this cap. Review whether that is the intended model before adjusting either test or implementation.
+- `test_bankruptcy_price_moves_with_funding_but_not_liquidation_fee_reserve`: a +10 margin adjustment for a long increases isolated equity and should lower (not raise) estimated bankruptcy price from 500 to 490 under the current formula. The test expects 510, which appears to have the funding sign reversed.
+
+This triage is source-level and derived from the CI logs; it is **not a substitute for running tests locally**. The account settlement model, event validity, and strategy candle alignment need targeted tests before any expectation is changed. CI run link: https://github.com/sahandmqdm-dot/ChartAnalyzer/actions/runs/45034397263
