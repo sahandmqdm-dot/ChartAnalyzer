@@ -18,6 +18,15 @@ class Settings(BaseSettings):
         validation_alias="FUTURES_MARKET_DATA_PROVIDER",
     )
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
+    max_active_futures_market_streams: int = Field(
+        default=10, ge=1, le=100, validation_alias="MAX_ACTIVE_FUTURES_MARKET_STREAMS"
+    )
+    max_active_open_interest_collectors: int = Field(
+        default=10, ge=1, le=100, validation_alias="MAX_ACTIVE_OPEN_INTEREST_COLLECTORS"
+    )
+    max_active_liquidation_streams: int = Field(
+        default=10, ge=1, le=100, validation_alias="MAX_ACTIVE_LIQUIDATION_STREAMS"
+    )
     liquidation_retention_days: int = Field(default=90, ge=1, le=3650, validation_alias="LIQUIDATION_RETENTION_DAYS")
 
     @model_validator(mode="after")
