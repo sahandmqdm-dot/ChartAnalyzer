@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from app.market_data import liquidation_stream
 from app.market_data.liquidation_stream import (
     LiquidationCollector,
     parse_binance_liquidation,
@@ -76,3 +77,26 @@ def test_collector_deduplicates_and_bounds_recent_events():
     assert len(collector.events) == 1
     assert collector.events[0].event_id == second.event_id
     assert collector.snapshot()["status"]["event_count"] == 1
+
+
+def test_liquidation_collector_registry_prunes_stopped_entries(monkeypatch):
+    class StoppedCollector:
+        state = "stopped"
+
+    registry = {
+        ("binance_usdm_futures", f"BTC{index}USDT"): StoppedCollector()
+        for index in range(500)
+    }
+    monkeypatch.setattr(liquidation_stream, "_collectors", registry)
+
+    collector = liquidation_stream.get_collector("bybit_linear_futures", "BTCUSDT")
+
+    assert collector.provider == "bybit_linear_futures"
+    assert len(registry) == 500
+    assert ("binance_usdm_futures", "BTC0USDT") not in registry
+
+
+def test_find_liquidation_collector_does_not_create_registry_entries(monkeypatch):
+    monkeypatch.setattr(liquidation_stream, "_collectors", {})
+    assert liquidation_stream.find_collector("bybit_linear_futures", "BTCUSDT") is None
+    assert liquidation_stream._collectors == {}
