@@ -404,6 +404,21 @@ async def live_futures_market(
     return stream.snapshot()
 
 
+@router.delete("/live-market")
+async def stop_live_futures_market(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+):
+    """Stop the selected public market stream while retaining its last snapshot."""
+    current_user(request)
+    try:
+        stream = get_futures_market_stream(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await stream.stop()
+    return stream.snapshot()
+
+
 @router.get("/market-history")
 async def futures_market_history(
     request: Request,
