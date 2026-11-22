@@ -27,9 +27,11 @@ def test_live_market_endpoint_requires_authentication():
 def test_live_market_endpoint_starts_stream_and_returns_snapshot(monkeypatch):
     class FakeStream:
         started = False
+        state = "stopped"
 
         def start(self):
             self.started = True
+            self.state = "connected"
 
         def snapshot(self):
             return {"symbol": "BTCUSDT", "state": "connecting"}
