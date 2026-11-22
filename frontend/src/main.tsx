@@ -29,6 +29,18 @@ type FuturesOverview = {
   next_funding_time: string | null;
   observed_at: string;
 };
+type FuturesLiveMarket = {
+  provider: string; market_type: string; symbol: string; state: string;
+  mark_price: string | null; index_price: string | null; funding_rate: string | null;
+  next_funding_time: string | null; open_interest: string | null; open_interest_value: string | null;
+  best_bid: string | null; best_bid_quantity: string | null; best_ask: string | null; best_ask_quantity: string | null;
+  last_trade_price: string | null; last_trade_quantity: string | null; last_trade_time: string | null;
+  observed_at: string | null; last_error: string | null; persistence_state: string;
+};
+type LiveOpenInterest = {
+  provider: string; symbol: string; state: string; open_interest: string | null;
+  observed_at: string | null; last_error: string | null; persistence_state: string;
+};
 type FuturesSeriesPoint = { timestamp: string; value: string; secondary_value: string | null };
 type FuturesHistory = {
   provider: string; market_type: string; symbol: string; period: string; observed_at: string;
@@ -246,6 +258,10 @@ function App() {
   const [futuresData, setFuturesData] = useState<FuturesOverview | null>(null);
   const [futuresBusy, setFuturesBusy] = useState(false);
   const [futuresError, setFuturesError] = useState('');
+  const [liveFeedEnabled, setLiveFeedEnabled] = useState(false);
+  const [liveFeedError, setLiveFeedError] = useState('');
+  const [liveMarket, setLiveMarket] = useState<FuturesLiveMarket | null>(null);
+  const [liveOpenInterest, setLiveOpenInterest] = useState<LiveOpenInterest | null>(null);
   const [futuresHistory, setFuturesHistory] = useState<FuturesHistory | null>(null);
   const [historyPeriod, setHistoryPeriod] = useState('1h');
   const [historyLimit, setHistoryLimit] = useState('100');
@@ -314,6 +330,52 @@ function App() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!authenticated || !liveFeedEnabled) return undefined;
+    const activeSymbol = symbol.trim();
+    let active = true;
+    let refreshing = false;
+    const query = new URLSearchParams({ symbol: activeSymbol });
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const [marketResponse, interestResponse] = await Promise.all([
+          fetch(API_BASE + '/api/v1/derivatives/live-market?' + query, { credentials: 'include' }),
+          fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + query, { credentials: 'include' }),
+        ]);
+        const [marketBody, interestBody] = await Promise.all([
+          marketResponse.json().catch(() => ({})) as Promise<FuturesLiveMarket & { detail?: string }>,
+          interestResponse.json().catch(() => ({})) as Promise<LiveOpenInterest & { detail?: string }>,
+        ]);
+        if (!marketResponse.ok) throw new Error(marketBody.detail || 'Live futures stream request failed');
+        if (!interestResponse.ok) throw new Error(interestBody.detail || 'Open Interest polling request failed');
+        if (active) {
+          setLiveMarket(marketBody);
+          setLiveOpenInterest(interestBody);
+          setLiveFeedError('');
+        }
+      } catch (cause) {
+        if (active) setLiveFeedError(cause instanceof Error ? cause.message : 'Live futures refresh failed');
+      } finally {
+        refreshing = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      const stopQuery = new URLSearchParams({ symbol: activeSymbol });
+      void fetch(API_BASE + '/api/v1/derivatives/live-market?' + stopQuery, {
+        method: 'DELETE', credentials: 'include',
+      }).catch(() => undefined);
+      void fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + stopQuery, {
+        method: 'DELETE', credentials: 'include',
+      }).catch(() => undefined);
+    };
+  }, [authenticated, liveFeedEnabled, symbol]);
 
   useEffect(() => {
     if (!authenticated || !liveRiskMonitoring) return undefined;
@@ -435,6 +497,15 @@ function App() {
     } finally {
       setFuturesBusy(false);
     }
+  }
+
+  function startLiveFuturesFeed() {
+    setLiveFeedError('');
+    setLiveFeedEnabled(true);
+  }
+
+  function stopLiveFuturesFeed() {
+    setLiveFeedEnabled(false);
   }
 
   async function loadFuturesAnalysis() {
@@ -958,6 +1029,35 @@ function App() {
             <div><small>Next funding</small><strong>{futuresData.next_funding_time ? new Date(futuresData.next_funding_time).toLocaleString() : '—'}</strong></div>
           </div>
           <p className="footnote">Provider: {futuresData.provider} · {futuresData.market_type} · Snapshot: {new Date(futuresData.observed_at).toLocaleString()}</p>
+        </>}
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">LIVE FUTURES FEED</p><h2>Mark Price · Order book · Open Interest</h2></div>
+          <span className="pill">Public stream · Read-only</span>
+        </div>
+        <div className="futures-actions">
+          <p className="footnote">Starts the selected venue's live market stream and a 60-second Open Interest poller. Open Interest history is locally observed only; it is not backfilled.</p>
+          {!liveFeedEnabled
+            ? <button onClick={startLiveFuturesFeed} disabled={busy}>Start live futures feed</button>
+            : <button className="quiet-button" onClick={stopLiveFuturesFeed}>Stop live futures feed</button>}
+        </div>
+        {liveFeedError && <p className="error" role="alert">{liveFeedError}</p>}
+        {liveFeedEnabled && <>
+          <div className="stats-grid">
+            <div><small>Stream state</small><strong>{liveMarket?.state ?? 'connecting'}</strong></div>
+            <div><small>Open Interest poller</small><strong>{liveOpenInterest?.state ?? 'connecting'}</strong></div>
+            <div><small>Live Mark Price</small><strong>{liveMarket?.mark_price ? Number(liveMarket.mark_price).toLocaleString() : '—'}</strong></div>
+            <div><small>Live Index Price</small><strong>{liveMarket?.index_price ? Number(liveMarket.index_price).toLocaleString() : '—'}</strong></div>
+            <div><small>Funding rate</small><strong>{liveMarket?.funding_rate ? (Number(liveMarket.funding_rate) * 100).toFixed(4) + '%' : '—'}</strong></div>
+            <div><small>Open Interest</small><strong>{liveOpenInterest?.open_interest ? Number(liveOpenInterest.open_interest).toLocaleString() : liveMarket?.open_interest ? Number(liveMarket.open_interest).toLocaleString() : '—'}</strong></div>
+            <div><small>Best bid</small><strong>{liveMarket?.best_bid ? Number(liveMarket.best_bid).toLocaleString() : '—'}</strong></div>
+            <div><small>Best ask</small><strong>{liveMarket?.best_ask ? Number(liveMarket.best_ask).toLocaleString() : '—'}</strong></div>
+            <div><small>Last trade</small><strong>{liveMarket?.last_trade_price ? Number(liveMarket.last_trade_price).toLocaleString() : '—'}</strong></div>
+            <div><small>Last trade size</small><strong>{liveMarket?.last_trade_quantity ?? '—'}</strong></div>
+          </div>
+          <p className="footnote">Provider: {liveMarket?.provider ?? liveOpenInterest?.provider ?? '—'} · Stream updated: {liveMarket?.observed_at ? new Date(liveMarket.observed_at).toLocaleString() : 'waiting for first update'} · OI observed: {liveOpenInterest?.observed_at ? new Date(liveOpenInterest.observed_at).toLocaleString() : 'waiting for first poll'} · Persistence: {liveMarket?.persistence_state ?? '—'} / {liveOpenInterest?.persistence_state ?? '—'}</p>
+          {(liveMarket?.last_error || liveOpenInterest?.last_error) && <p className="footnote">Feed warnings: {liveMarket?.last_error ?? 'none'} · OI: {liveOpenInterest?.last_error ?? 'none'}</p>}
         </>}
       </section>
       <section className="panel">
