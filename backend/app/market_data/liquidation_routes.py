@@ -17,8 +17,8 @@ from app.market_data.liquidation_stream import (
     get_collector,
     LiquidationCollector,
 )
-from app.settings import settings
 from app.market_data.symbol import Symbol
+from app.settings import settings
 
 router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
 
