@@ -192,17 +192,24 @@ def run_futures_sma_crossover(
                 )
                 entry_datetime = candle.timestamp
 
-        # Apply funding events after entry and through this candle's close.
-        while funding_index < len(ordered_funding) and ordered_funding[funding_index].timestamp <= (candle.close_time or candle.timestamp):
+        mark_candle = mark_candles[index]
+        # Payments timestamped at/before candle open are known to precede its
+        # intrabar price path. Use the opening Mark Price as the best available
+        # OHLC proxy for the funding notional.
+        while funding_index < len(ordered_funding) and ordered_funding[funding_index].timestamp <= candle.timestamp:
             payment = ordered_funding[funding_index]
             if account.position is not None and entry_datetime is not None and entry_datetime < payment.timestamp:
-                cashflow = account.apply_funding(mark_candles[index].close, payment.rate)
+                cashflow = account.apply_funding(mark_candle.open, payment.rate)
                 funding_total += cashflow
             funding_index += 1
 
+        # Liquidation is evaluated before funding events timestamped inside this
+        # candle. OHLC cannot reveal which occurred first; this conservative
+        # policy prevents a later funding credit from rescuing an earlier
+        # intrabar liquidation.
         if account.position is not None:
             event = simulate_mark_price_liquidation(
-                account.position, [mark_candles[index]], maintenance_margin_rate,
+                account.position, [mark_candle], maintenance_margin_rate,
                 liquidation_fee_rate,
                 margin_adjustment=account.funding_total,
             )
@@ -213,6 +220,14 @@ def run_futures_sma_crossover(
                 liquidation_count += 1
                 entry_side = ""
                 entry_datetime = None
+
+        candle_close_time = candle.close_time or candle.timestamp
+        while funding_index < len(ordered_funding) and ordered_funding[funding_index].timestamp <= candle_close_time:
+            payment = ordered_funding[funding_index]
+            if account.position is not None and entry_datetime is not None and entry_datetime < payment.timestamp:
+                cashflow = account.apply_funding(mark_candle.close, payment.rate)
+                funding_total += cashflow
+            funding_index += 1
 
         if account.position is not None and index == len(candles) - 1:
             final_price = candle.close * (ONE - slippage_rate if account.position.side == "long" else ONE + slippage_rate)
@@ -227,6 +242,18 @@ def run_futures_sma_crossover(
         equity_peak = max(equity_peak, equity)
         drawdown = (equity_peak - equity) / equity_peak * HUNDRED if equity_peak > ZERO else ZERO
         max_drawdown = max(max_drawdown, drawdown)
+
+        # OHLC does not encode the order of the intrabar high and low. Measure
+        # adverse excursion against the prior close-based equity peak without
+        # assuming a favorable intrabar peak occurred first.
+        if account.position is not None:
+            adverse_mark = mark_candle.low if account.position.side == "long" else mark_candle.high
+            adverse_equity = account.equity_at(adverse_mark)
+            adverse_drawdown = (
+                (equity_peak - adverse_equity) / equity_peak * HUNDRED
+                if equity_peak > ZERO else ZERO
+            )
+            max_drawdown = max(max_drawdown, adverse_drawdown)
 
     wins = [t.net_pnl for t in trades if t.net_pnl > ZERO]
     losses = [t.net_pnl for t in trades if t.net_pnl < ZERO]
