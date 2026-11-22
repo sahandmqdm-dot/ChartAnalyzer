@@ -92,7 +92,7 @@ class BinanceUsdmFuturesHistoryAdapter(_HistoryAdapter):
         start_ms, end_ms = _range_milliseconds(start_time, end_time)
         cursor_start = start_ms
         points: dict[datetime, FuturesSeriesPoint] = {}
-        for page in range(10):
+        for _ in range(10):
             rows = await self._rows(
                 "https://fapi.binance.com/fapi/v1/fundingRate",
                 {
@@ -183,7 +183,7 @@ class BybitLinearFuturesHistoryAdapter(_HistoryAdapter):
         start_ms, end_ms = _range_milliseconds(start_time, end_time)
         cursor_end = end_ms
         points: dict[datetime, FuturesSeriesPoint] = {}
-        for page in range(25):
+        for _ in range(25):
             rows = await self._rows(
                 "https://api.bybit.com/v5/market/funding/history",
                 {
