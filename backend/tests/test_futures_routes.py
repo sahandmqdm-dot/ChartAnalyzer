@@ -69,3 +69,53 @@ def test_futures_overview_rejects_invalid_symbol(monkeypatch):
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 422
+
+
+def risk_payload():
+    return {
+        "symbol": "btcusdt",
+        "side": "long",
+        "entry_price": "100",
+        "quantity": "9",
+        "leverage": "10",
+        "estimated_close_fee_rate": "0.0005",
+        "risk_tiers": [
+            {
+                "tier": 1, "notional_floor": "0", "notional_cap": "1000",
+                "maintenance_margin_rate": "0.02",
+                "maintenance_margin_deduction": "0", "max_leverage": "50",
+            },
+            {
+                "tier": 2, "notional_floor": "1000", "notional_cap": None,
+                "maintenance_margin_rate": "0.05",
+                "maintenance_margin_deduction": "30", "max_leverage": "20",
+            },
+        ],
+    }
+
+
+def test_isolated_risk_estimate_requires_authentication():
+    response = TestClient(app).post(
+        "/api/v1/derivatives/risk/isolated-liquidation-estimate",
+        json=risk_payload(),
+    )
+    assert response.status_code == 401
+
+
+def test_isolated_risk_estimate_returns_bankruptcy_and_liquidation_separately(monkeypatch):
+    monkeypatch.setattr(settings, "admin_username", "admin")
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.post(
+        "/api/v1/derivatives/risk/isolated-liquidation-estimate",
+        json=risk_payload(),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["symbol"] == "BTCUSDT"
+    assert body["status"] == "estimate_only"
+    assert Decimal(body["bankruptcy_price_estimate"]) == Decimal("90")
+    assert Decimal(body["liquidation_price_estimate"]) > Decimal(
+        body["bankruptcy_price_estimate"]
+    )
