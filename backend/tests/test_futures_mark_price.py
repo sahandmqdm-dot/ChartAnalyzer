@@ -89,3 +89,37 @@ def test_out_of_order_candles_are_rejected():
 def test_invalid_fee_rate_is_rejected():
     with pytest.raises(ValueError, match="liquidation_fee_rate"):
         simulate_mark_price_liquidation(position(), [], D("0.005"), D("1"))
+
+
+def test_received_funding_lowers_long_liquidation_threshold():
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    position = IsolatedPosition("long", D("1"), D("1000"), D("2"), D("500"))
+    candle = MarkPriceCandle(
+        timestamp=timestamp,
+        close_time=timestamp + timedelta(minutes=5),
+        is_closed=True,
+        open=D("1000"), high=D("1001"), low=D("498"), close=D("500"),
+    )
+    baseline = simulate_mark_price_liquidation(position, [candle], D("0.005"))
+    funded = simulate_mark_price_liquidation(
+        position, [candle], D("0.005"), margin_adjustment=D("10")
+    )
+    assert baseline.liquidated
+    assert not funded.liquidated
+
+
+def test_paid_funding_raises_long_liquidation_threshold():
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    position = IsolatedPosition("long", D("1"), D("1000"), D("2"), D("500"))
+    candle = MarkPriceCandle(
+        timestamp=timestamp,
+        close_time=timestamp + timedelta(minutes=5),
+        is_closed=True,
+        open=D("1000"), high=D("1001"), low=D("510"), close=D("515"),
+    )
+    baseline = simulate_mark_price_liquidation(position, [candle], D("0.005"))
+    funded = simulate_mark_price_liquidation(
+        position, [candle], D("0.005"), margin_adjustment=D("-10")
+    )
+    assert not baseline.liquidated
+    assert funded.liquidated
