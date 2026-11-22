@@ -5,12 +5,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
 import httpx
+
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from app.auth import current_user
-
 from app.market_data.symbol import Symbol
 
 
