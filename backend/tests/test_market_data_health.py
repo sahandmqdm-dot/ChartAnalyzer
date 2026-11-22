@@ -147,8 +147,8 @@ def test_market_data_health_route_reports_selected_provider(monkeypatch):
         _snapshot("live_market", now),
     )
     monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
-    monkeypatch.setattr(health_routes, "_streams", {"bybit:BTCUSDT": stream})
-    monkeypatch.setattr(health_routes, "_collectors", {})
+    monkeypatch.setattr(health_routes.futures_stream, "_streams", {"bybit:BTCUSDT": stream})
+    monkeypatch.setattr(health_routes.open_interest, "_collectors", {})
 
     response = _authenticated_client(monkeypatch).get("/api/v1/health/market-data")
 
