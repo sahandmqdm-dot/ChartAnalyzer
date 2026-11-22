@@ -95,11 +95,7 @@ def assess_market_pressure(
     else:
         bias = "balanced_or_insufficient"
 
-    if price is None or oi is None:
-        confidence = "low"
-    elif funding is None or imbalance is None:
-        confidence = "low"
-    elif len(liquidation_events) < 3:
+    if price is None or oi is None or funding is None or imbalance is None or len(liquidation_events) < 3:
         confidence = "low"
     else:
         confidence = "medium"
