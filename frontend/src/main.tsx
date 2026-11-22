@@ -276,6 +276,7 @@ function App() {
   const [liveRiskAssessment, setLiveRiskAssessment] = useState<LiveRiskAssessment | null>(null);
   const [liveRiskBusy, setLiveRiskBusy] = useState(false);
   const [liveRiskError, setLiveRiskError] = useState('');
+  const [liveRiskMonitoring, setLiveRiskMonitoring] = useState(false);
   const [liquidationLive, setLiquidationLive] = useState(false);
   const [liquidationBusy, setLiquidationBusy] = useState(false);
   const [liquidationError, setLiquidationError] = useState('');
@@ -313,6 +314,44 @@ function App() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!authenticated || !liveRiskMonitoring) return undefined;
+    let active = true;
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const response = await fetch(API_BASE + '/api/v1/derivatives/risk-assessment/live', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: symbol.trim(), side: riskSide, entry_price: riskEntry,
+            quantity: riskQuantity, leverage: riskLeverage,
+            extra_margin: riskExtraMargin, estimated_close_fee_rate: riskFee,
+          }),
+        });
+        const body = await response.json().catch(() => ({})) as LiveRiskAssessment & { detail?: string };
+        if (!response.ok) throw new Error(body.detail || 'Risk monitor request failed (' + response.status + ')');
+        if (active) {
+          setLiveRiskAssessment(body);
+          setLiveRiskError('');
+        }
+      } catch (cause) {
+        if (active) setLiveRiskError(cause instanceof Error ? cause.message : 'Risk monitor refresh failed');
+      } finally {
+        refreshing = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [authenticated, liveRiskMonitoring, symbol, riskSide, riskEntry, riskQuantity, riskLeverage, riskExtraMargin, riskFee]);
 
   const loadCandles = useCallback(async () => {
     setBusy(true);
@@ -1076,6 +1115,7 @@ function App() {
           <label>Extra isolated margin<input type="number" min="0" step="any" value={riskExtraMargin} onChange={(event) => setRiskExtraMargin(event.target.value)} /></label>
           <label>Estimated close-fee rate<input type="number" min="0" step="any" value={riskFee} onChange={(event) => setRiskFee(event.target.value)} /></label>
           <button disabled={liveRiskBusy || busy}>{liveRiskBusy ? 'Assessing…' : 'Assess live risk'}</button>
+          <button type="button" className={liveRiskMonitoring ? 'monitor-active' : 'quiet-button'} onClick={() => setLiveRiskMonitoring((value) => !value)} disabled={busy}>{liveRiskMonitoring ? 'Stop 5s monitoring' : 'Start 5s monitoring'}</button>
         </form>
         {liveRiskError && <p className="error" role="alert">{liveRiskError}</p>}
         {liveRiskAssessment && <>
