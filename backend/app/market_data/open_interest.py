@@ -244,6 +244,20 @@ async def live_open_interest(
     return collector.snapshot()
 
 
+@router.delete("/open-interest-live")
+async def stop_live_open_interest(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+):
+    current_user(request)
+    try:
+        collector = get_open_interest_collector(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await collector.stop()
+    return collector.snapshot()
+
+
 @router.get("/open-interest-history")
 async def open_interest_history(
     request: Request,
