@@ -123,3 +123,43 @@ def test_paid_funding_raises_long_liquidation_threshold():
     )
     assert not baseline.liquidated
     assert funded.liquidated
+
+
+
+def test_long_gap_reports_bankruptcy_price_and_uncovered_gap_loss():
+    event = simulate_mark_price_liquidation(
+        position(),
+        [candle(0, opening="490", high="500", low="480", close="495")],
+        D("0.005"),
+    )
+    assert event.liquidated
+    assert event.liquidation_threshold < event.bankruptcy_price
+    assert event.bankruptcy_price == D("500")
+    assert event.price == D("490")
+    assert event.uncovered_gap_loss == D("10")
+
+
+def test_short_gap_reports_uncovered_loss_beyond_bankruptcy():
+    event = simulate_mark_price_liquidation(
+        position("short"),
+        [candle(0, opening="1510", high="1520", low="1505", close="1515")],
+        D("0.005"),
+    )
+    assert event.liquidated
+    assert event.bankruptcy_price == D("1500")
+    assert event.price == D("1510")
+    assert event.uncovered_gap_loss == D("10")
+
+
+def test_bankruptcy_price_moves_with_funding_but_not_liquidation_fee_reserve():
+    baseline = simulate_mark_price_liquidation(position(), [], D("0.005"))
+    funded = simulate_mark_price_liquidation(
+        position(), [], D("0.005"), margin_adjustment=D("10")
+    )
+    fee_reserved = simulate_mark_price_liquidation(
+        position(), [], D("0.005"), liquidation_fee_rate=D("0.02")
+    )
+    assert baseline.bankruptcy_price == D("500")
+    assert funded.bankruptcy_price == D("510")
+    assert fee_reserved.bankruptcy_price == baseline.bankruptcy_price
+    assert fee_reserved.liquidation_threshold > baseline.liquidation_threshold
