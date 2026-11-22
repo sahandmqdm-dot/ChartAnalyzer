@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -106,13 +107,13 @@ async def futures_sma_crossover(
     limit: int = Query(default=200, ge=32, le=200),
     fast_period: int = Query(default=10, ge=1, le=100),
     slow_period: int = Query(default=30, ge=2, le=150),
-    initial_equity: Decimal = Query(default=Decimal("10000"), gt=0),
-    leverage: Decimal = Query(default=Decimal("3"), ge=1, le=125),
-    margin_fraction: Decimal = Query(default=Decimal("0.25"), gt=0, le=1),
-    fee_rate: Decimal = Query(default=Decimal("0.0004"), ge=0, lt=1),
-    slippage_rate: Decimal = Query(default=Decimal("0.0002"), ge=0, lt=1),
-    maintenance_margin_rate: Decimal = Query(default=Decimal("0.005"), ge=0, lt=1),
-    liquidation_fee_rate: Decimal = Query(default=Decimal("0.01"), ge=0, lt=1),
+    initial_equity: Annotated[Decimal, Query(gt=0)] = Decimal(10000),
+    leverage: Annotated[Decimal, Query(ge=1, le=125)] = Decimal(3),
+    margin_fraction: Annotated[Decimal, Query(gt=0, le=1)] = Decimal("0.25"),
+    fee_rate: Annotated[Decimal, Query(ge=0, lt=1)] = Decimal("0.0004"),
+    slippage_rate: Annotated[Decimal, Query(ge=0, lt=1)] = Decimal("0.0002"),
+    maintenance_margin_rate: Annotated[Decimal, Query(ge=0, lt=1)] = Decimal("0.005"),
+    liquidation_fee_rate: Annotated[Decimal, Query(ge=0, lt=1)] = Decimal("0.01"),
 ):
     """Run an authenticated read-only linear-perpetual SMA backtest."""
     current_user(request)
