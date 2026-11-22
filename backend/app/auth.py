@@ -22,7 +22,7 @@ _revoked_expirations: list[tuple[int, str]] = []
 
 
 def _purge_revoked_sessions(now: int) -> None:
-    while _revoked_expirations and _revoked_expirations[0][0] <= now:
+    while _revoked_expirations and _revoked_expirations[0][0] < now:
         expires_at, session_id = heapq.heappop(_revoked_expirations)
         if _revoked_sessions.get(session_id) == expires_at:
             del _revoked_sessions[session_id]
