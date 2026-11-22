@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import _session_token
 from app.main import app
+from app.market_data import open_interest
 from app.settings import settings
 
 
@@ -165,3 +166,35 @@ def test_open_interest_stop_requires_csrf():
         "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 403
+
+
+def test_open_interest_start_enforces_per_provider_capacity(monkeypatch):
+    class FakeCollector:
+        provider = "bybit_linear_futures"
+        state = "stopped"
+        started = False
+
+        def start(self):
+            self.started = True
+
+        def snapshot(self):
+            return {"symbol": "BTCUSDT", "state": "connecting"}
+
+    candidate = FakeCollector()
+    active = FakeCollector()
+    active.state = "connected"
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+    monkeypatch.setattr(settings, "max_active_open_interest_collectors", 1)
+    monkeypatch.setattr(
+        open_interest,
+        "_collectors",
+        {("bybit_linear_futures", "ETHUSDT"): active},
+    )
+    monkeypatch.setattr(open_interest, "get_open_interest_collector", lambda _symbol: candidate)
+
+    response = client_with_auth(monkeypatch).post(
+        "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
+    )
+
+    assert response.status_code == 429
+    assert candidate.started is False
