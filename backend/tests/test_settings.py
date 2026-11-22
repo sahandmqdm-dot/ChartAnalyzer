@@ -34,6 +34,34 @@ def test_market_data_provider_can_be_configured():
     assert value.market_data_provider == "bybit_spot"
 
 
+def test_futures_market_data_provider_defaults_to_binance_usdm():
+    value = Settings(
+        _env_file=None,
+        app_secret="test-secret-with-more-than-32-characters",
+    )
+    assert value.futures_market_data_provider == "binance_usdm_futures"
+
+
+def test_futures_market_data_provider_can_be_configured_independently():
+    value = Settings(
+        _env_file=None,
+        app_secret="test-secret-with-more-than-32-characters",
+        market_data_provider="binance_spot",
+        futures_market_data_provider="bybit_linear_futures",
+    )
+    assert value.market_data_provider == "binance_spot"
+    assert value.futures_market_data_provider == "bybit_linear_futures"
+
+
+def test_futures_market_data_provider_rejects_unknown_values():
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            app_secret="test-secret-with-more-than-32-characters",
+            futures_market_data_provider="not-a-futures-provider",
+        )
+
+
 def test_production_requires_strong_admin_password():
     with pytest.raises(ValidationError, match="at least 16"):
         Settings(
