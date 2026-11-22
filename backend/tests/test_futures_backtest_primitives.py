@@ -8,6 +8,7 @@ from app.backtest.futures.execution import simulate_market_execution
 from app.backtest.futures.funding import funding_payment
 from app.backtest.futures.liquidation import check_candle_liquidation
 from app.backtest.futures.margin import initial_margin, liquidation_price
+from app.backtest.futures.metrics import calculate_metrics
 from app.backtest.futures.models import FundingEvent, FuturesBacktestConfig
 from app.backtest.futures.position import Position
 
@@ -65,8 +66,6 @@ def test_accounting_equity_and_realized_pnl():
     assert equity(D("1000"), p, D("110")) == D("1010")
     assert apply_realized_pnl(D("1000"), D("25"), D("2")) == D("1023")
 
-
-from app.backtest.futures.metrics import calculate_metrics
 
 
 def test_metrics_returns_drawdown_win_rate_profit_factor_and_expectancy():
