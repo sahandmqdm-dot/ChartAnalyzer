@@ -1,0 +1,82 @@
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+import pytest
+
+from app.backtest.futures_engine import FundingPayment, run_futures_sma_crossover
+from app.market_data.candle import Candle
+from app.market_data.mark_price import MarkPriceCandle
+
+D = Decimal
+START = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def series(closes):
+    candles = []
+    marks = []
+    for index, value in enumerate(closes):
+        timestamp = START + timedelta(hours=index)
+        price = D(str(value))
+        candles.append(Candle(
+            timestamp=timestamp,
+            close_time=timestamp + timedelta(hours=1),
+            is_closed=True,
+            open=price, high=price + D("0.1"), low=price - D("0.1"),
+            close=price, volume=D("100"),
+        ))
+        marks.append(MarkPriceCandle(
+            timestamp=timestamp,
+            close_time=timestamp + timedelta(hours=1),
+            is_closed=True,
+            open=price, high=price + D("0.2"), low=price - D("0.2"),
+            close=price,
+        ))
+    return candles, marks
+
+
+def test_futures_sma_enters_long_and_closes_at_end_of_data():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    result = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+    )
+    assert result.trade_count == 1
+    assert result.trades[0].side == "long"
+    assert result.trades[0].exit_reason == "end_of_data"
+    assert result.final_equity > result.initial_equity
+    assert result.to_dict()["trades"][0]["net_pnl"] == str(result.trades[0].net_pnl)
+
+
+def test_funding_is_applied_only_while_position_is_open():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    payment = FundingPayment(START + timedelta(hours=4, minutes=30), D("0.001"))
+    result = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+        funding_payments=[payment],
+    )
+    assert result.total_funding < D("0")
+    assert result.final_equity < D("10000") + result.trades[0].net_pnl + abs(result.total_funding)
+
+
+def test_rejects_misaligned_mark_price_series():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    marks[0] = marks[0].model_copy(update={"timestamp": marks[0].timestamp + timedelta(minutes=1)})
+    with pytest.raises(ValueError, match="timestamps must align"):
+        run_futures_sma_crossover(candles, marks, fast_period=2, slow_period=3)
+
+
+def test_rejects_unclosed_market_data():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    candles[0] = candles[0].model_copy(update={"is_closed": False})
+    with pytest.raises(ValueError, match="closed candles"):
+        run_futures_sma_crossover(candles, marks, fast_period=2, slow_period=3)
+
+
+def test_rejects_naive_funding_timestamp():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    with pytest.raises(ValueError, match="timezone-aware"):
+        run_futures_sma_crossover(
+            candles, marks, fast_period=2, slow_period=3,
+            funding_payments=[FundingPayment(datetime(2026, 1, 1), D("0.001"))],
+        )
