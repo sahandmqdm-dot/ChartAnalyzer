@@ -9,7 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.backtest.futures_accounting import linear_position_pnl, trading_fee
-from app.backtest.futures_liquidation import estimate_liquidation_price
+from app.backtest.futures_liquidation import estimate_bankruptcy_price, estimate_liquidation_price
 from app.backtest.futures_position import IsolatedPosition
 from app.market_data.mark_price import MarkPriceCandle
 
@@ -22,6 +22,8 @@ class LiquidationEvent:
     timestamp: datetime | None
     price: Decimal | None
     liquidation_threshold: Decimal
+    bankruptcy_price: Decimal
+    uncovered_gap_loss: Decimal
     gross_pnl: Decimal
     liquidation_fee: Decimal
     remaining_isolated_equity: Decimal
@@ -66,6 +68,7 @@ def simulate_mark_price_liquidation(
     threshold = estimate_liquidation_price(
         position, maintenance_margin_rate, margin_adjustment, liquidation_fee_rate
     )
+    bankruptcy = estimate_bankruptcy_price(position, margin_adjustment)
     previous_timestamp: datetime | None = None
     processed = 0
 
@@ -98,6 +101,10 @@ def simulate_mark_price_liquidation(
         gross = linear_position_pnl(
             position.side, position.quantity, position.entry_price, fill_price
         )
+        if position.side == "long":
+            uncovered_gap_loss = max(ZERO, bankruptcy - fill_price) * position.quantity
+        else:
+            uncovered_gap_loss = max(ZERO, fill_price - bankruptcy) * position.quantity
         fee = trading_fee(position.quantity * fill_price, liquidation_fee_rate) if liquidation_fee_rate else ZERO
         remaining = max(ZERO, position.isolated_margin + margin_adjustment + gross - fee)
         return LiquidationEvent(
@@ -105,6 +112,8 @@ def simulate_mark_price_liquidation(
             timestamp=candle.timestamp,
             price=fill_price,
             liquidation_threshold=threshold,
+            bankruptcy_price=bankruptcy,
+            uncovered_gap_loss=uncovered_gap_loss,
             gross_pnl=gross,
             liquidation_fee=fee,
             remaining_isolated_equity=remaining,
@@ -116,6 +125,8 @@ def simulate_mark_price_liquidation(
         timestamp=None,
         price=None,
         liquidation_threshold=threshold,
+        bankruptcy_price=bankruptcy,
+        uncovered_gap_loss=ZERO,
         gross_pnl=ZERO,
         liquidation_fee=ZERO,
         remaining_isolated_equity=max(ZERO, position.isolated_margin + margin_adjustment),
