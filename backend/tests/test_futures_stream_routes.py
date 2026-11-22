@@ -125,7 +125,11 @@ def test_live_market_stop_endpoint_stops_selected_stream(monkeypatch):
             return {"symbol": "BTCUSDT", "state": "stopped"}
 
     stream = FakeStream()
-    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: stream)
+    monkeypatch.setattr(
+        futures_stream,
+        "_streams",
+        {(settings.futures_market_data_provider, "BTCUSDT"): stream},
+    )
     response = authenticated_client(monkeypatch).delete(
         "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
     )
@@ -157,7 +161,11 @@ def test_live_market_get_does_not_start_stream(monkeypatch):
             return {"symbol": "BTCUSDT", "state": "stopped"}
 
     stream = FakeStream()
-    monkeypatch.setattr(futures_stream, "get_futures_market_stream", lambda _symbol: stream)
+    monkeypatch.setattr(
+        futures_stream,
+        "_streams",
+        {(settings.futures_market_data_provider, "BTCUSDT"): stream},
+    )
     response = authenticated_client(monkeypatch).get(
         "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
     )
