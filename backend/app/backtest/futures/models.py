@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
-
-
 Side = Literal["long", "short"]
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 def require_positive(name: str, value: Decimal) -> None:
@@ -23,9 +22,9 @@ def require_non_negative(name: str, value: Decimal) -> None:
 @dataclass(frozen=True)
 class FuturesBacktestConfig:
     initial_balance: Decimal
-    leverage: Decimal = Decimal("1")
+    leverage: Decimal = Decimal(1)
     fee_rate: Decimal = Decimal("0.0005")
-    slippage_rate: Decimal = Decimal("0")
+    slippage_rate: Decimal = Decimal(0)
     maintenance_margin_rate: Decimal = Decimal("0.005")
     funding_enabled: bool = True
     liquidation_enabled: bool = True
