@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -120,10 +121,13 @@ async def futures_market_pressure(
         raise HTTPException(
             status_code=503, detail="Liquidation history storage is unavailable"
         ) from exc
-    assessment = assess_market_pressure(analysis, events or [])
+    period_minutes = {"5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}[period]
+    cutoff = datetime.now(UTC) - timedelta(minutes=period_minutes)
+    window_events = [event for event in (events or []) if event.event_time >= cutoff]
+    assessment = assess_market_pressure(analysis, window_events)
     result = assessment.model_dump(mode="json")
     result["liquidation_data_state"] = (
-        "available" if events is not None and events else
+        "available" if events is not None and window_events else
         "no_observed_events" if events is not None else "persistence_not_configured"
     )
     result["provider"] = configured.name
