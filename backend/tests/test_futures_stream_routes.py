@@ -26,6 +26,7 @@ def test_live_market_endpoint_requires_authentication():
 
 def test_live_market_endpoint_starts_stream_and_returns_snapshot(monkeypatch):
     class FakeStream:
+        provider = settings.futures_market_data_provider
         started = False
         state = "stopped"
 
