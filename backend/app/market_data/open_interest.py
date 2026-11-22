@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 import httpx
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
+
+from app.auth import current_user
 
 from app.market_data.symbol import Symbol
 
@@ -147,3 +150,54 @@ async def stop_all_open_interest_collectors() -> None:
     collectors = list(_collectors.values())
     await asyncio.gather(*(collector.stop() for collector in collectors))
     _collectors.clear()
+
+
+router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
+
+
+@router.get("/open-interest-live")
+async def live_open_interest(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+):
+    current_user(request)
+    try:
+        collector = get_open_interest_collector(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    collector.start()
+    return collector.snapshot()
+
+
+@router.get("/open-interest-history")
+async def open_interest_history(
+    request: Request,
+    symbol: str = Query(min_length=2, max_length=30),
+    hours: int = Query(default=24, ge=1, le=720),
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    current_user(request)
+    try:
+        normalized = str(Symbol(symbol))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from app.market_data.open_interest_repository import list_open_interest
+
+    try:
+        rows = await list_open_interest(
+            normalized,
+            datetime.now(UTC) - timedelta(hours=hours),
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if rows is None:
+        raise HTTPException(status_code=503, detail="Open-interest persistence is not configured")
+    return {
+        "provider": "binance_usdm_futures",
+        "market_type": "linear_perpetual",
+        "symbol": normalized,
+        "hours": hours,
+        "count": len(rows),
+        "observations": rows,
+    }
