@@ -120,7 +120,7 @@ def test_isolated_risk_estimate_returns_bankruptcy_and_liquidation_separately(mo
     body = response.json()
     assert body["symbol"] == "BTCUSDT"
     assert body["status"] == "estimate_only"
-    assert Decimal(body["bankruptcy_price_estimate"]) == Decimal("90")
+    assert Decimal(body["bankruptcy_price_estimate"]) == Decimal(90)
     assert Decimal(body["liquidation_price_estimate"]) > Decimal(
         body["bankruptcy_price_estimate"]
     )
