@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 from urllib.parse import quote
 
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 from websockets.asyncio.client import connect
-from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.auth import current_user
-
 from app.market_data.symbol import Symbol
 
 
