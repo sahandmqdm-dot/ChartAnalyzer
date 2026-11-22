@@ -130,3 +130,15 @@ def test_live_market_stop_endpoint_stops_selected_stream(monkeypatch):
     assert response.status_code == 200
     assert stream.stopped
     assert response.json()["state"] == "stopped"
+
+
+def test_development_cors_allows_live_feed_delete_requests():
+    response = TestClient(app).options(
+        "/api/v1/derivatives/live-market",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "DELETE",
+        },
+    )
+    assert response.status_code == 200
+    assert "DELETE" in response.headers["access-control-allow-methods"]
