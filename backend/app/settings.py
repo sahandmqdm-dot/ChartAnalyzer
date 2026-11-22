@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     admin_password: str = Field(default="", validation_alias="ADMIN_PASSWORD")
     session_ttl_seconds: int = Field(default=1800, ge=300, le=86400, validation_alias="SESSION_TTL_SECONDS")
     market_data_provider: Literal["binance_spot", "bybit_spot"] = Field(default="binance_spot", validation_alias="MARKET_DATA_PROVIDER")
+    futures_market_data_provider: Literal[
+        "binance_usdm_futures", "bybit_linear_futures"
+    ] = Field(
+        default="binance_usdm_futures",
+        validation_alias="FUTURES_MARKET_DATA_PROVIDER",
+    )
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     liquidation_retention_days: int = Field(default=90, ge=1, le=3650, validation_alias="LIQUIDATION_RETENTION_DAYS")
 
