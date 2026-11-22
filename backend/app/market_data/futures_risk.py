@@ -164,6 +164,7 @@ def estimate_isolated_liquidation(
             "Linear quote-settled contract with quantity expressed in base-asset units.",
             "Uses the supplied exchange risk tiers and their cumulative maintenance deductions.",
             "Close fee is a user-supplied estimate; funding payments and other account costs are excluded.",
+            "Bankruptcy price is the theoretical zero-equity level and excludes maintenance-margin and close-fee reserves.",
             "The result is an estimate, not the exchange liquidation engine's guaranteed trigger price.",
         ],
     )
