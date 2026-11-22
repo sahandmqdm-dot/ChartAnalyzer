@@ -320,3 +320,13 @@ def test_liquidation_start_enforces_per_provider_capacity(monkeypatch):
 
     assert response.status_code == 429
     assert candidate.started is False
+
+
+def test_liquidation_snapshot_get_does_not_register_collector(monkeypatch):
+    monkeypatch.setattr(liquidation_routes, "_collectors", {})
+    response = authenticated_client().get(
+        "/api/v1/derivatives/liquidations?symbol=BTCUSDT"
+    )
+    assert response.status_code == 200
+    assert response.json()["status"]["state"] == "stopped"
+    assert liquidation_routes._collectors == {}
