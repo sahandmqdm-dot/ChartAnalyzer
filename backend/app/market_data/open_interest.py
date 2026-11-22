@@ -202,7 +202,19 @@ class BybitOpenInterestCollector(_OpenInterestCollector):
         return normalize_bybit_open_interest(payload, self.symbol)
 
 
+_MAX_REGISTERED_OPEN_INTEREST_COLLECTORS = 500
 _collectors: dict[tuple[str, str], _OpenInterestCollector] = {}
+
+
+def _prune_stopped_open_interest_collectors() -> None:
+    if len(_collectors) < _MAX_REGISTERED_OPEN_INTEREST_COLLECTORS:
+        return
+    for key, collector in list(_collectors.items()):
+        if collector.state == "stopped":
+            del _collectors[key]
+            if len(_collectors) < _MAX_REGISTERED_OPEN_INTEREST_COLLECTORS:
+                return
+    raise RuntimeError("Open Interest collector registry is at capacity")
 
 
 def get_open_interest_collector(symbol: str) -> _OpenInterestCollector:
@@ -218,6 +230,7 @@ def get_open_interest_collector(symbol: str) -> _OpenInterestCollector:
     key = (provider, normalized)
     collector = _collectors.get(key)
     if collector is None:
+        _prune_stopped_open_interest_collectors()
         collector = collector_type(normalized)
         _collectors[key] = collector
     return collector
@@ -244,12 +257,20 @@ async def live_open_interest(
     request: Request,
     symbol: str = Query(min_length=2, max_length=30),
 ):
-    """Return the latest Open Interest snapshot without starting a poller."""
+    """Return the latest snapshot without creating or starting a poller."""
     current_user(request)
     try:
-        collector = get_open_interest_collector(symbol)
+        normalized = str(Symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    provider = settings.futures_market_data_provider
+    collector = _collectors.get((provider, normalized))
+    if collector is None:
+        return OpenInterestSnapshot(
+            provider=provider,
+            symbol=normalized,
+            state="stopped",
+        ).model_dump(mode="json")
     return collector.snapshot()
 
 
@@ -264,6 +285,8 @@ async def start_live_open_interest(
         collector = get_open_interest_collector(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     if (
         collector.state == "stopped"
         and active_open_interest_collector_count(collector.provider)
@@ -285,9 +308,17 @@ async def stop_live_open_interest(
     current_user(request)
     csrf_check(request)
     try:
-        collector = get_open_interest_collector(symbol)
+        normalized = str(Symbol(symbol))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    provider = settings.futures_market_data_provider
+    collector = _collectors.get((provider, normalized))
+    if collector is None:
+        return OpenInterestSnapshot(
+            provider=provider,
+            symbol=normalized,
+            state="stopped",
+        ).model_dump(mode="json")
     await collector.stop()
     return collector.snapshot()
 
