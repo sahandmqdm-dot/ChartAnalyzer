@@ -2,7 +2,9 @@ from decimal import Decimal
 
 from app.market_data.futures_stream import (
     BinanceFuturesMarketStream,
+    BybitLinearFuturesMarketStream,
     normalize_binance_market_event,
+    normalize_bybit_market_event,
 )
 
 
@@ -66,3 +68,77 @@ def test_stream_keeps_latest_snapshot_and_starts_stopped():
     assert snapshot["mark_price"] == "100"
     assert snapshot["funding_rate"] == "0.001"
     assert snapshot["state"] == "stopped"
+
+
+def test_bybit_ticker_normalizes_mark_funding_open_interest_and_top_of_book():
+    event = normalize_bybit_market_event(
+        {
+            "topic": "tickers.BTCUSDT",
+            "type": "snapshot",
+            "ts": 1_800_000_000_000,
+            "data": [{
+                "symbol": "BTCUSDT",
+                "markPrice": "101.25",
+                "indexPrice": "101.00",
+                "fundingRate": "-0.0001",
+                "nextFundingTime": "1800003600000",
+                "openInterest": "123.4",
+                "openInterestValue": "12499.05",
+                "bid1Price": "101.20",
+                "bid1Size": "2.5",
+                "ask1Price": "101.30",
+                "ask1Size": "3.5",
+            }],
+        },
+        "BTCUSDT",
+    )
+    assert event is not None
+    assert event["mark_price"] == Decimal("101.25")
+    assert event["index_price"] == Decimal("101.00")
+    assert event["funding_rate"] == Decimal("-0.0001")
+    assert event["open_interest"] == Decimal("123.4")
+    assert event["open_interest_value"] == Decimal("12499.05")
+    assert event["best_bid"] == Decimal("101.20")
+    assert event["best_ask_quantity"] == Decimal("3.5")
+
+
+def test_bybit_public_trade_uses_latest_trade_in_batch():
+    event = normalize_bybit_market_event(
+        {
+            "topic": "publicTrade.BTCUSDT",
+            "ts": 1_800_000_000_100,
+            "data": [
+                {"T": 1_800_000_000_010, "s": "BTCUSDT", "p": "100", "v": "0.1"},
+                {"T": 1_800_000_000_090, "s": "BTCUSDT", "p": "101", "v": "0.2"},
+            ],
+        },
+        "BTCUSDT",
+    )
+    assert event is not None
+    assert event["last_trade_price"] == Decimal("101")
+    assert event["last_trade_quantity"] == Decimal("0.2")
+    assert event["last_trade_time"].timestamp() == 1_800_000_000.09
+
+
+def test_bybit_stream_exposes_provider_and_latest_ticker_snapshot():
+    stream = BybitLinearFuturesMarketStream("btcusdt")
+    assert stream.snapshot()["provider"] == "bybit_linear_futures"
+    assert stream.ingest(
+        {
+            "topic": "tickers.BTCUSDT",
+            "ts": 1_800_000_000_000,
+            "data": [{
+                "symbol": "BTCUSDT",
+                "markPrice": "100",
+                "indexPrice": "99.9",
+                "fundingRate": "0.001",
+                "nextFundingTime": "1800003600000",
+                "openInterest": "200.5",
+                "openInterestValue": "20050",
+            }],
+        }
+    )
+    snapshot = stream.snapshot()
+    assert snapshot["provider"] == "bybit_linear_futures"
+    assert snapshot["open_interest"] == "200.5"
+    assert snapshot["mark_price"] == "100"
