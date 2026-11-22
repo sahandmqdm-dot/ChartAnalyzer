@@ -68,3 +68,23 @@ async def test_futures_ohlcv_rejects_invalid_exchange_payload_and_interval():
 
     with pytest.raises(ValueError, match="interval"):
         await BybitLinearFuturesOHLCVAdapter().fetch_ohlcv("BTCUSDT", "2h")
+
+
+@pytest.mark.asyncio
+async def test_bybit_futures_adapter_rejects_exchange_error():
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, json={"retCode": 10001, "retMsg": "invalid symbol"}
+    ))
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(FuturesMarketDataError, match="unsuccessful"):
+            await BybitLinearFuturesOHLCVAdapter(client).fetch_ohlcv("BTCUSDT", "1h")
+
+
+@pytest.mark.asyncio
+async def test_futures_ohlcv_rejects_inconsistent_ohlc():
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, json=[[1_800_000_000_000, "100", "99", "98", "101", "1"]]
+    ))
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(FuturesMarketDataError, match="invalid futures OHLCV"):
+            await BinanceUsdmFuturesOHLCVAdapter(client).fetch_ohlcv("BTCUSDT", "1h")
