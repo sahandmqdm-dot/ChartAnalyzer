@@ -35,7 +35,7 @@ def series(closes):
 
 
 def test_futures_sma_enters_long_and_closes_at_end_of_data():
-    candles, marks = series(["5", "4", "3", "6", "7"])
+    candles, marks = series(["5", "4", "3", "6", "7", "8"])
     result = run_futures_sma_crossover(
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
@@ -90,7 +90,7 @@ def test_rejects_naive_funding_timestamp():
 
 
 def test_futures_sma_enters_short_and_closes_at_end_of_data():
-    candles, marks = series(["3", "4", "5", "6", "7", "4", "3", "2"])
+    candles, marks = series(["3", "4", "5", "6", "7", "4", "3", "2", "1"])
     result = run_futures_sma_crossover(
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
@@ -119,7 +119,7 @@ def test_negative_funding_rate_is_received_by_long_position():
 
 def test_long_position_is_liquidated_on_mark_price_low():
     candles, marks = series(["5", "4", "3", "6", "7"])
-    marks[3] = marks[3].model_copy(update={"low": D("1")})
+    marks[5] = marks[5].model_copy(update={"low": D("1")})
     result = run_futures_sma_crossover(
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
@@ -142,7 +142,7 @@ def test_long_position_is_liquidated_on_mark_price_low():
 
 def test_short_position_is_liquidated_on_mark_price_high():
     candles, marks = series(["3", "4", "5", "6", "7", "4", "3", "2"])
-    marks[6] = marks[6].model_copy(update={"high": D("10")})
+    marks[8] = marks[8].model_copy(update={"high": D("10")})
     result = run_futures_sma_crossover(
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
@@ -172,7 +172,7 @@ def test_intrabar_adverse_mark_price_is_included_in_max_drawdown():
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
     )
-    marks[4] = marks[4].model_copy(update={"low": D("5")})
+    marks[5] = marks[5].model_copy(update={"low": D("5")})
     stressed = run_futures_sma_crossover(
         candles, marks, fast_period=2, slow_period=3,
         fee_rate=D("0"), slippage_rate=D("0"),
