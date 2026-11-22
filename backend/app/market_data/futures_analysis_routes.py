@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from app.auth import current_user
 from app.market_data.futures import FuturesMarketDataError
 from app.market_data.futures_analysis import analyze_futures_context
-from app.market_data.market_pressure import assess_market_pressure
 from app.market_data.liquidation_repository import list_recent_liquidation_events
 from app.market_data.futures_history import (
     BinanceUsdmFuturesHistoryAdapter,
@@ -16,6 +15,7 @@ from app.market_data.mark_price import (
     BinanceUsdmMarkPriceAdapter,
     BybitLinearMarkPriceAdapter,
 )
+from app.market_data.market_pressure import assess_market_pressure
 from app.market_data.symbol import Symbol
 
 router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
@@ -116,7 +116,7 @@ async def futures_market_pressure(
         events = await list_recent_liquidation_events(
             configured.name, normalized, liquidation_limit
         )
-    except Exception as exc:  # noqa: BLE001 - missing event storage lowers confidence
+    except Exception as exc:
         raise HTTPException(
             status_code=503, detail="Liquidation history storage is unavailable"
         ) from exc
