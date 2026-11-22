@@ -25,7 +25,7 @@ class FakeBybitProvider:
             index_price=Decimal("94.9"),
             funding_rate=Decimal("0.0001"),
             open_interest=Decimal(100),
-            open_interest_value=Decimal("9500"),
+            open_interest_value=Decimal(9500),
             next_funding_time=None,
             observed_at=datetime.now(UTC),
         )
