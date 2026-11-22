@@ -76,6 +76,7 @@ def risk_payload():
         "symbol": "btcusdt",
         "side": "long",
         "entry_price": "100",
+        "mark_price": "95",
         "quantity": "9",
         "leverage": "10",
         "estimated_close_fee_rate": "0.0005",
@@ -119,3 +120,5 @@ def test_isolated_risk_estimate_returns_bankruptcy_and_liquidation_separately(mo
     assert Decimal(body["liquidation_price_estimate"]) > Decimal(
         body["bankruptcy_price_estimate"]
     )
+    assert Decimal(body["distance_to_liquidation_from_mark"]) > 0
+    assert Decimal(body["distance_to_liquidation_from_mark_percent"]) > 0
