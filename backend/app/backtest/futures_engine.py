@@ -146,7 +146,7 @@ def run_futures_sma_crossover(
     entry_price = ZERO
     entry_side = ""
     entry_quantity = ZERO
-    entry_wallet_before = ZERO
+    entry_datetime: datetime | None = None
     closes = [c.close for c in candles]
 
     for index, candle in enumerate(candles):
@@ -169,6 +169,7 @@ def run_futures_sma_crossover(
             trades.append(FuturesTrade(entry_side, entry_time, candle.timestamp.isoformat(),
                                        entry_price, exit_price, entry_quantity, net_pnl, "signal"))
             entry_side = ""
+            entry_datetime = None
 
         if account.position is None and desired_side is not None:
             execution = candle.open * (ONE + slippage_rate if desired_side == "long" else ONE - slippage_rate)
@@ -185,13 +186,12 @@ def run_futures_sma_crossover(
                 entry_side, entry_time, entry_price, entry_quantity = (
                     desired_side, candle.timestamp.isoformat(), execution, quantity
                 )
+                entry_datetime = candle.timestamp
 
         # Apply funding events after entry and through this candle's close.
         while funding_index < len(ordered_funding) and ordered_funding[funding_index].timestamp <= (candle.close_time or candle.timestamp):
             payment = ordered_funding[funding_index]
-            if account.position is not None and payment.timestamp > account.position_entry_time if False else False:
-                pass
-            if account.position is not None and payment.timestamp > candle.timestamp:
+            if account.position is not None and entry_datetime is not None and entry_datetime < payment.timestamp:
                 cashflow = account.apply_funding(mark_candles[index].close, payment.rate)
                 funding_total += cashflow
             funding_index += 1
@@ -207,6 +207,7 @@ def run_futures_sma_crossover(
                                            entry_price, event.price, entry_quantity, net_pnl, "liquidation"))
                 liquidation_count += 1
                 entry_side = ""
+                entry_datetime = None
 
         if account.position is not None and index == len(candles) - 1:
             final_price = candle.close * (ONE - slippage_rate if account.position.side == "long" else ONE + slippage_rate)
@@ -214,6 +215,7 @@ def run_futures_sma_crossover(
             trades.append(FuturesTrade(entry_side, entry_time, candle.close_time.isoformat() if candle.close_time else candle.timestamp.isoformat(),
                                        entry_price, final_price, entry_quantity, net_pnl, "end_of_data"))
             entry_side = ""
+            entry_datetime = None
 
         mark = mark_candles[index].close
         equity = account.equity_at(mark)
