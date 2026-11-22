@@ -25,6 +25,7 @@ class IsolatedRiskEstimateRequest(BaseModel):
     symbol: str = Field(min_length=2, max_length=30)
     side: Literal["long", "short"]
     entry_price: Decimal = Field(gt=0)
+    mark_price: Decimal | None = Field(default=None, gt=0)
     quantity: Decimal = Field(gt=0)
     leverage: Decimal = Field(gt=0)
     extra_margin: Decimal = Field(default=Decimal(0), ge=0)
@@ -67,6 +68,9 @@ class IsolatedRiskEstimate(BaseModel):
     maintenance_margin_estimate: Decimal
     estimated_close_fee: Decimal
     distance_to_liquidation_percent: Decimal
+    mark_price: Decimal | None
+    distance_to_liquidation_from_mark: Decimal | None
+    distance_to_liquidation_from_mark_percent: Decimal | None
     status: Literal["estimate_only"] = "estimate_only"
     assumptions: list[str]
 
@@ -142,6 +146,15 @@ def estimate_isolated_liquidation(
         if request.side == "long"
         else (liquidation_price - request.entry_price) / request.entry_price * 100
     )
+    mark_distance = None
+    mark_distance_pct = None
+    if request.mark_price is not None:
+        mark_distance = (
+            request.mark_price - liquidation_price
+            if request.side == "long"
+            else liquidation_price - request.mark_price
+        )
+        mark_distance_pct = mark_distance / request.mark_price * 100
     if distance <= 0:
         raise ValueError("the supplied margin inputs produce a liquidation price on the wrong side")
 
@@ -161,6 +174,9 @@ def estimate_isolated_liquidation(
         maintenance_margin_estimate=maintenance_margin,
         estimated_close_fee=close_fee,
         distance_to_liquidation_percent=distance,
+        mark_price=request.mark_price,
+        distance_to_liquidation_from_mark=mark_distance,
+        distance_to_liquidation_from_mark_percent=mark_distance_pct,
         assumptions=[
             "Isolated margin only; cross and portfolio margin are not modeled.",
             "Linear quote-settled contract with quantity expressed in base-asset units.",
