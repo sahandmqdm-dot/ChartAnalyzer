@@ -70,6 +70,7 @@ def test_start_and_snapshot_liquidation_collector(monkeypatch):
     assert started.json()["status"]["state"] == "connected"
     assert collector.started is True
 
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: collector)
     snapshot = client.get("/api/v1/derivatives/liquidations?symbol=BTCUSDT&limit=10")
     assert snapshot.status_code == 200
     assert snapshot.json()["retention"] == "in_memory_since_collector_start"
@@ -78,7 +79,7 @@ def test_start_and_snapshot_liquidation_collector(monkeypatch):
 def test_stop_liquidation_collector(monkeypatch):
     collector = FakeCollector()
     collector.start()
-    monkeypatch.setattr(liquidation_routes, "_collector_for", lambda symbol: collector)
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: collector)
     response = authenticated_client().delete(
         "/api/v1/derivatives/liquidations/stop?symbol=BTCUSDT"
     )
@@ -95,7 +96,7 @@ def test_snapshot_prefers_durable_database_events(monkeypatch):
     from app.market_data.liquidation_stream import LiquidationEvent
 
     collector = FakeCollector()
-    monkeypatch.setattr(liquidation_routes, "_collector_for", lambda symbol: collector)
+    monkeypatch.setattr(liquidation_routes, "find_collector", lambda provider, symbol: collector)
 
     async def durable_events(provider, symbol, limit):
         assert provider == "bybit_linear_futures"
