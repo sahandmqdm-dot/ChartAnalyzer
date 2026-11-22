@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
-
-
 LIVE_MARKET_STALE_AFTER_SECONDS = 15.0
 OPEN_INTEREST_STALE_MULTIPLIER = 3.0
 OPEN_INTEREST_MIN_STALE_AFTER_SECONDS = 180.0
 FUTURE_TIMESTAMP_TOLERANCE_SECONDS = 30.0
 
 
-def _parse_timestamp(value: Any) -> datetime | None:
+def _parse_timestamp(value: object) -> datetime | None:
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, str):
