@@ -53,9 +53,9 @@ def assess_futures_risk(
         raise ValueError("mark price is required for a live risk assessment")
 
     thresholds = {
-        "warning_percent": Decimal("10"),
-        "critical_percent": Decimal("5"),
-        "liquidation_near_percent": Decimal("1"),
+        "warning_percent": Decimal(10),
+        "critical_percent": Decimal(5),
+        "liquidation_near_percent": Decimal(1),
     }
     if distance <= thresholds["liquidation_near_percent"]:
         level = "liquidation_near"
