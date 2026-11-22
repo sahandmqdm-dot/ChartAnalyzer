@@ -141,3 +141,14 @@ def test_short_position_is_liquidated_on_mark_price_high():
     assert result.trades[0].side == "short"
     assert result.trades[0].exit_reason == "liquidation"
     assert result.final_equity < result.initial_equity
+
+def test_rejects_mixed_naive_and_aware_funding_timestamps():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    with pytest.raises(ValueError, match="timezone-aware"):
+        run_futures_sma_crossover(
+            candles, marks, fast_period=2, slow_period=3,
+            funding_payments=[
+                FundingPayment(START + timedelta(hours=4), D("0.001")),
+                FundingPayment(datetime(2026, 1, 1, 5), D("0.001")),
+            ],
+        )
