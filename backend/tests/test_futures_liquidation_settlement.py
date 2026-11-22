@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -111,3 +112,12 @@ def test_funding_received_is_credited_to_isolated_margin_during_gap_liquidation(
     realized = account.settle_liquidation(event)
     assert realized == D("-501")
     assert account.wallet_balance == D("9499")
+
+
+
+def test_liquidation_event_pnl_must_match_current_position():
+    account, event = liquidation_event()
+    forged = replace(event, gross_pnl=event.gross_pnl + D("1"))
+    with pytest.raises(ValueError, match="PnL does not match"):
+        account.settle_liquidation(forged)
+    assert account.position is not None
