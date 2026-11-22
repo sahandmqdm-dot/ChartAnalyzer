@@ -37,7 +37,7 @@ def calculate_metrics(initial_equity: Decimal, final_equity: Decimal, equity_cur
     losses = [pnl for pnl in trade_pnls if pnl < ZERO]
     gross_profit = sum(wins, ZERO)
     gross_loss = abs(sum(losses, ZERO))
-    profit_factor = gross_profit / gross_loss if gross_loss > ZERO else (None if gross_profit == ZERO else None)
+    profit_factor = gross_profit / gross_loss if gross_loss > ZERO else None
     count = len(trade_pnls)
     win_rate = Decimal(len(wins)) / count * HUNDRED if count else ZERO
     expectancy = sum(trade_pnls, ZERO) / count if count else ZERO
