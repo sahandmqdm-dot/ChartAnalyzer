@@ -1,8 +1,8 @@
 from decimal import Decimal
+
 from app.backtest.futures.position import Position
 
-
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 def initial_margin(notional: Decimal, leverage: Decimal) -> Decimal:
@@ -24,13 +24,14 @@ def liquidation_price(position: Position, maintenance_rate: Decimal, fee_rate: D
     if not (ZERO <= maintenance_rate < 1) or not (ZERO <= fee_rate < 1):
         raise ValueError("rates must be in [0, 1)")
     q, entry, margin = position.quantity, position.entry_price, position.isolated_margin
+    one = Decimal(1)
     if position.side == "long":
-        denom = q * (Decimal("1") - maintenance_rate - fee_rate)
+        denom = q * (one - maintenance_rate - fee_rate)
         if denom <= ZERO:
             raise ValueError("invalid liquidation denominator")
         price = (q * entry - margin) / denom
     else:
-        denom = q * (Decimal("1") + maintenance_rate + fee_rate)
+        denom = q * (one + maintenance_rate + fee_rate)
         price = (margin + q * entry) / denom
     if price <= ZERO:
         raise ValueError("calculated liquidation price is non-positive")
