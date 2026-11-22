@@ -19,6 +19,9 @@ A local, read-only quantitative market research MVP. It includes a FastAPI backe
 - React + TypeScript workspace for login, selecting symbol/timeframe, viewing a close-price line chart, and inspecting recent OHLCV rows.
 - Docker Compose with PostgreSQL 16, a persistent named volume, health-gated API startup, and Alembic migrations.
 - Optional PostgreSQL persistence for normalized liquidation events with unique event IDs, duplicate-safe inserts, indexed provider/symbol/time queries, and an explicit retention cleanup command; live streams continue with bounded memory fallback if storage is unavailable.
+- Deterministic Spot and linear-perpetual backtesting with funding cashflows, isolated-margin accounting, Mark Price liquidation checks, liquidation-fee reserve estimates, bankruptcy/fill diagnostics, and explicit OHLC chronology assumptions.
+- Isolated Futures risk estimation with configurable maintenance-margin tiers, initial-margin and close-fee reserves, bankruptcy-price estimate, and signed Mark Price distance to estimated liquidation.
+- Multi-timeframe market-structure and Futures analysis endpoints; research outputs remain diagnostics and do not place orders.
 
 ## Requirements
 
@@ -110,7 +113,9 @@ CI runs backend lint/tests against PostgreSQL 16, applies the real Alembic migra
 - One configured administrator; no user management or role-based access control.
 - Login throttling, session revocation, and caching are in-memory and reset on restart.
 - One worker per API instance; no shared Redis cache or distributed rate limiter.
-- No PostgreSQL history store, WebSocket feed, cross/portfolio margin engine, or order execution. The isolated risk calculator is an estimate and does not model account-level collateral, funding cashflows, open orders, ADL, or exchange-specific liquidation engine details. Order-book depth heatmaps, durable derivatives history, and funding-aware futures backtests remain future work. The observed-event liquidation heatmap is available when PostgreSQL persistence is enabled.
+- No general-purpose PostgreSQL market-history store, shared/distributed WebSocket infrastructure, cross/portfolio margin engine, or order execution. PostgreSQL persistence currently covers observed liquidation events, not all market history. Liquidation streams are process-local and use bounded in-memory fallback when persistence is unavailable.
+- Futures liquidation and risk outputs are estimates, not exchange-guaranteed prices. They do not reproduce each exchange's complete maintenance tiers, account-level collateral, open orders, insurance fund, ADL, or exact liquidation execution. Funding-aware Futures backtesting is implemented with documented OHLC approximations; it is not tick-level replay.
+- No full order-book depth reconstruction/heatmap, production observability stack, backup/restore runbook, or external penetration test. Cross-process coordination and shared rate limiting remain future work.
 - Exchange interval support differs; Bybit Spot does not provide the 3-day or 8-hour intervals; unsupported intervals return a validation error.
 - No production deployment hardening, observability stack, backup/restore, or external penetration test.
 
@@ -121,6 +126,7 @@ CI runs backend lint/tests against PostgreSQL 16, applies the real Alembic migra
 - `backend/tests/`: deterministic backend tests.
 - `frontend/src/`: React research workspace.
 - `docs/ARCHITECTURE.md`: boundaries and technical decisions.
+- `docs/FEATURE_PARITY_AUDIT_FA.md`: feature parity and migration priorities against the legacy `main` branch.
 
 
 ## SMA crossover backtest
