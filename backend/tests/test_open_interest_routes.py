@@ -156,3 +156,12 @@ def test_open_interest_start_requires_csrf():
         "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 403
+
+
+def test_open_interest_stop_requires_csrf():
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.delete(
+        "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 403
