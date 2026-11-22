@@ -29,7 +29,7 @@ class BybitLinearRiskTierAdapter(_HttpFuturesAdapter):
         normalized = str(Symbol(symbol))
         payload = await self._get_json(
             "https://api.bybit.com/v5/market/risk-limit",
-            {"category": "linear", "symbol": normalized},
+            {"category": "linear", "symbol": normalized, "limit": "200"},
         )
         if not isinstance(payload, dict) or payload.get("retCode") != 0:
             raise FuturesMarketDataError("Bybit returned an unsuccessful risk-tier response")
