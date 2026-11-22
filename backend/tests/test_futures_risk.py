@@ -126,3 +126,21 @@ def test_rejects_maintenance_deduction_above_margin_at_tier_floor():
                 maintenance_margin_deduction=Decimal("30"),
             ),
         ])
+
+
+def test_mark_price_distance_reports_amount_and_percent():
+    result = estimate_isolated_liquidation(
+        request(mark_price=Decimal("95"))
+    )
+    assert result.distance_to_liquidation_from_mark is not None
+    assert result.distance_to_liquidation_from_mark > 0
+    assert result.distance_to_liquidation_from_mark_percent == (
+        result.distance_to_liquidation_from_mark / Decimal("95") * Decimal("100")
+    )
+
+
+def test_mark_price_distance_can_be_negative_after_trigger():
+    result = estimate_isolated_liquidation(
+        request(mark_price=Decimal("90"))
+    )
+    assert result.distance_to_liquidation_from_mark < 0
