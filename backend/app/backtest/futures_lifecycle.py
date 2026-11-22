@@ -103,6 +103,9 @@ class FuturesAccount:
             raise ValueError("event does not represent a liquidation")
         price = getattr(event, "price", None)
         fee = getattr(event, "liquidation_fee", None)
+        timestamp = getattr(event, "timestamp", None)
+        reported_gross = getattr(event, "gross_pnl", None)
+        threshold = getattr(event, "liquidation_threshold", None)
         if (
             not isinstance(price, Decimal)
             or not price.is_finite()
@@ -110,12 +113,22 @@ class FuturesAccount:
             or not isinstance(fee, Decimal)
             or not fee.is_finite()
             or fee < ZERO
+            or not isinstance(timestamp, datetime)
+            or timestamp.tzinfo is None
+            or timestamp.utcoffset() is None
+            or not isinstance(reported_gross, Decimal)
+            or not reported_gross.is_finite()
+            or not isinstance(threshold, Decimal)
+            or not threshold.is_finite()
+            or threshold <= ZERO
         ):
-            raise ValueError("liquidation event contains invalid price or fee")
+            raise ValueError("liquidation event contains invalid settlement fields")
 
         gross = linear_position_pnl(
             self.position.side, self.position.quantity, self.position.entry_price, price
         )
+        if reported_gross != gross:
+            raise ValueError("liquidation event PnL does not match the open position")
         # Isolated margin caps trading loss (gross PnL less liquidation fee).
         # Funding has already been posted to wallet_balance and must remain there;
         # include it in reported realized PnL without applying it a second time.
