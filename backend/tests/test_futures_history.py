@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -102,3 +103,84 @@ async def test_bybit_history_adapter_rejects_exchange_error():
             await BybitLinearFuturesHistoryAdapter(client).fetch_history(
                 "BTCUSDT", "1h", 5
             )
+
+
+@pytest.mark.asyncio
+async def test_binance_funding_history_paginates_forward():
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    start_ms = int(start.timestamp() * 1000)
+    end = start + timedelta(seconds=2000)
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        cursor = int(request.url.params["startTime"])
+        if len(calls) == 1:
+            assert cursor == start_ms
+            rows = [
+                {
+                    "fundingTime": start_ms + index * 1000,
+                    "fundingRate": "0.0001",
+                    "markPrice": "100",
+                }
+                for index in range(1000)
+            ]
+        else:
+            assert cursor == start_ms + 999_000 + 1
+            rows = [{
+                "fundingTime": start_ms + 1_000_000,
+                "fundingRate": "-0.0001",
+                "markPrice": "101",
+            }]
+        return httpx.Response(200, json=rows)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        points = await BinanceUsdmFuturesHistoryAdapter(client).fetch_funding_rates(
+            "BTCUSDT", start, end
+        )
+
+    assert len(calls) == 2
+    assert len(points) == 1001
+    assert points[0].timestamp == start
+    assert points[-1].value == Decimal("-0.0001")
+
+
+@pytest.mark.asyncio
+async def test_bybit_funding_history_paginates_backwards_to_start_time():
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    start_ms = int(start.timestamp() * 1000)
+    end = start + timedelta(seconds=1000)
+    end_ms = int(end.timestamp() * 1000)
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        cursor = int(request.url.params["endTime"])
+        assert "startTime" not in request.url.params
+        if len(calls) == 1:
+            assert cursor == end_ms
+            rows = [
+                {
+                    "fundingRateTimestamp": str(end_ms - index * 1000),
+                    "fundingRate": "0.0001",
+                }
+                for index in range(200)
+            ]
+        else:
+            expected_cursor = end_ms - 199_000 - 1
+            assert cursor == expected_cursor
+            rows = [{
+                "fundingRateTimestamp": str(expected_cursor - 1000),
+                "fundingRate": "-0.0001",
+            }]
+        return httpx.Response(200, json={"retCode": 0, "result": {"list": rows}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        points = await BybitLinearFuturesHistoryAdapter(client).fetch_funding_rates(
+            "ETHUSDT", start, end
+        )
+
+    assert len(calls) == 2
+    assert len(points) == 201
+    assert points == sorted(points, key=lambda point: point.timestamp)
+    assert points[-1].timestamp == end
