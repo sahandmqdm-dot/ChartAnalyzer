@@ -80,3 +80,45 @@ def test_open_interest_history_returns_503_without_database(monkeypatch):
         "/api/v1/derivatives/open-interest-history", params={"symbol": "BTCUSDT"}
     )
     assert response.status_code == 503
+
+
+def test_open_interest_history_uses_configured_bybit_provider(monkeypatch):
+    monkeypatch.setattr(settings, "futures_market_data_provider", "bybit_linear_futures")
+
+    async def fake_list(symbol, start_time, limit, provider):
+        assert provider == "bybit_linear_futures"
+        return []
+
+    monkeypatch.setattr(
+        "app.market_data.open_interest_repository.list_open_interest", fake_list
+    )
+    response = client_with_auth(monkeypatch).get(
+        "/api/v1/derivatives/open-interest-history", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["provider"] == "bybit_linear_futures"
+    assert body["history_source"] == "locally_observed_polling"
+
+
+def test_open_interest_live_stop_endpoint_stops_collector(monkeypatch):
+    class FakeCollector:
+        stopped = False
+
+        async def stop(self):
+            self.stopped = True
+
+        def snapshot(self):
+            return {"symbol": "BTCUSDT", "state": "stopped"}
+
+    collector = FakeCollector()
+    monkeypatch.setattr(
+        "app.market_data.open_interest.get_open_interest_collector",
+        lambda _symbol: collector,
+    )
+    response = client_with_auth(monkeypatch).delete(
+        "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200
+    assert collector.stopped
+    assert response.json()["state"] == "stopped"
