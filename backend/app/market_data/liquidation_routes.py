@@ -11,7 +11,8 @@ from app.market_data.liquidation_repository import (
     aggregate_liquidation_price_bands,
     list_recent_liquidation_events,
 )
-from app.market_data.liquidation_stream import get_collector
+from app.market_data.liquidation_stream import _collectors, get_collector
+from app.settings import settings
 from app.market_data.symbol import Symbol
 
 router = APIRouter(prefix="/api/v1/derivatives", tags=["derivatives"])
@@ -36,6 +37,15 @@ async def start_liquidation_stream(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     collector = _collector_for(normalized)
+    active_count = sum(
+        item.provider == collector.provider and item.state != "stopped"
+        for item in _collectors.values()
+    )
+    if collector.state == "stopped" and active_count >= settings.max_active_liquidation_streams:
+        raise HTTPException(
+            status_code=429,
+            detail="Maximum active liquidation streams reached for this provider",
+        )
     collector.start()
     return collector.snapshot()
 
