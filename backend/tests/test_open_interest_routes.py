@@ -11,6 +11,8 @@ def client_with_auth(monkeypatch):
     monkeypatch.setattr(settings, "admin_username", "admin")
     client = TestClient(app)
     client.cookies.set("ca_session", _session_token("admin"))
+    client.cookies.set("ca_csrf", "test-csrf-token")
+    client.headers.update({"X-CSRF-Token": "test-csrf-token"})
     return client
 
 
@@ -36,7 +38,7 @@ def test_live_open_interest_starts_collector(monkeypatch):
         "app.market_data.open_interest.get_open_interest_collector",
         lambda _symbol: collector,
     )
-    response = client_with_auth(monkeypatch).get(
+    response = client_with_auth(monkeypatch).post(
         "/api/v1/derivatives/open-interest-live", params={"symbol": "btcusdt"}
     )
     assert response.status_code == 200
@@ -122,3 +124,35 @@ def test_open_interest_live_stop_endpoint_stops_collector(monkeypatch):
     assert response.status_code == 200
     assert collector.stopped
     assert response.json()["state"] == "stopped"
+
+
+def test_open_interest_get_does_not_start_collector(monkeypatch):
+    class FakeCollector:
+        started = False
+
+        def start(self):
+            self.started = True
+
+        def snapshot(self):
+            return {"symbol": "BTCUSDT", "state": "stopped"}
+
+    collector = FakeCollector()
+    monkeypatch.setattr(
+        "app.market_data.open_interest.get_open_interest_collector",
+        lambda _symbol: collector,
+    )
+    response = client_with_auth(monkeypatch).get(
+        "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200
+    assert not collector.started
+    assert response.json()["state"] == "stopped"
+
+
+def test_open_interest_start_requires_csrf():
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.post(
+        "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 403
