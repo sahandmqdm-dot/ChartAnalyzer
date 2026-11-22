@@ -84,3 +84,33 @@ def test_rejects_naive_funding_timestamp():
             candles, marks, fast_period=2, slow_period=3,
             funding_payments=[FundingPayment(datetime(2026, 1, 1), D("0.001"))],
         )
+
+
+
+def test_futures_sma_enters_short_and_closes_at_end_of_data():
+    candles, marks = series(["5", "6", "7", "4", "3", "2"])
+    result = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+    )
+    assert result.trade_count == 1
+    assert result.trades[0].side == "short"
+    assert result.trades[0].exit_reason == "end_of_data"
+    assert result.trades[0].net_pnl > D("0")
+    assert result.final_equity > result.initial_equity
+
+
+def test_negative_funding_rate_is_received_by_long_position():
+    candles, marks = series(["5", "4", "3", "6", "7"])
+    payment = FundingPayment(START + timedelta(hours=4, minutes=30), D("-0.001"))
+    baseline = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+    )
+    result = run_futures_sma_crossover(
+        candles, marks, fast_period=2, slow_period=3,
+        fee_rate=D("0"), slippage_rate=D("0"),
+        funding_payments=[payment],
+    )
+    assert result.total_funding > D("0")
+    assert result.final_equity > baseline.final_equity
