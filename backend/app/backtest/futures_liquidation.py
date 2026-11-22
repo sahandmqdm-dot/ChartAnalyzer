@@ -12,14 +12,17 @@ ZERO = Decimal("0")
 ONE = Decimal("1")
 
 
-def estimate_liquidation_price(position: IsolatedPosition, maintenance_margin_rate: Decimal) -> Decimal:
+def estimate_liquidation_price(\n    position: IsolatedPosition,\n    maintenance_margin_rate: Decimal,\n    margin_adjustment: Decimal = ZERO,\n) -> Decimal:
     if not isinstance(maintenance_margin_rate, Decimal) or not maintenance_margin_rate.is_finite():
         raise ValueError("maintenance_margin_rate must be a finite Decimal")
     if not ZERO <= maintenance_margin_rate < ONE:
         raise ValueError("maintenance_margin_rate must be in [0, 1)")
+    if not isinstance(margin_adjustment, Decimal) or not margin_adjustment.is_finite():
+        raise ValueError("margin_adjustment must be a finite Decimal")
     q = position.quantity
     entry = position.entry_price
-    margin = position.isolated_margin
+    # In this model cumulative funding is credited/debited to isolated position equity.
+    margin = max(ZERO, position.isolated_margin + margin_adjustment)
     if position.side == "long":
         denominator = q * (ONE - maintenance_margin_rate)
         price = (q * entry - margin) / denominator
