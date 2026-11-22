@@ -37,8 +37,8 @@ def test_combined_book_ticker_and_trade_events_are_supported():
         "e": "aggTrade", "E": 1_800_000_001_000, "T": 1_800_000_000_900,
         "s": "BTCUSDT", "p": "100.5", "q": "0.25", "m": False,
     }, "BTCUSDT")
-    assert book is not None and book["best_bid"] == Decimal("100")
-    assert book["best_ask_quantity"] == Decimal("3")
+    assert book is not None and book["best_bid"] == Decimal(100)
+    assert book["best_ask_quantity"] == Decimal(3)
     assert trade is not None and trade["last_trade_price"] == Decimal("100.5")
     assert trade["last_trade_quantity"] == Decimal("0.25")
 
@@ -115,7 +115,7 @@ def test_bybit_public_trade_uses_latest_trade_in_batch():
         "BTCUSDT",
     )
     assert event is not None
-    assert event["last_trade_price"] == Decimal("101")
+    assert event["last_trade_price"] == Decimal(101)
     assert event["last_trade_quantity"] == Decimal("0.2")
     assert event["last_trade_time"].microsecond == 90_000
 
