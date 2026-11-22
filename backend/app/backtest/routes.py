@@ -213,7 +213,7 @@ async def futures_sma_crossover(
             "Funding history is limited by the selected provider's returned history window; event cashflows use the event candle's Mark Price close as an approximation.",
             "Cumulative funding is modeled as an adjustment to isolated position margin and dynamically changes the simplified liquidation threshold; exchanges may allocate funding differently, so this is an explicit simulation assumption.",
             "Funding timestamps inside a candle cannot be ordered precisely against intrabar liquidation from OHLC data; the engine conservatively checks liquidation first, then applies in-candle funding only if the position survives. Funding cashflows use the candle Mark Price close as an approximation.",
-            "Liquidation uses a simplified isolated-margin estimate and candle OHLC approximation; exchange margin tiers, insurance funds, and auto-deleveraging are not modeled.",
+            "Liquidation threshold includes a configurable liquidation-fee reserve in a simplified isolated-margin formula; it is not an exchange-specific bankruptcy or liquidation-price calculation. Maintenance tiers, insurance funds, and auto-deleveraging are not modeled.",
             "Execution is modeled at next-candle open with fixed slippage; exchange order-book fills are not modeled.",
             "Maximum drawdown includes adverse Mark Price OHLC excursions against the prior close-based equity peak, but cannot reconstruct intrabar high/low ordering or a true tick-level equity path.",
         ],
