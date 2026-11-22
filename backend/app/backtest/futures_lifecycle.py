@@ -10,7 +10,8 @@ ZERO = Decimal("0")
 class FuturesAccount:
     """Wallet balance and one isolated position; all amounts are quote currency.
 
-    This intentionally excludes exchange-specific maintenance-margin tiers and liquidation.
+    Liquidation settlement accepts the simulator event; exchange-specific margin tiers,
+    insurance funds, and auto-deleveraging remain outside this model.
     """
 
     def __init__(self, initial_balance: Decimal):
