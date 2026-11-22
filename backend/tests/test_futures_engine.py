@@ -127,6 +127,15 @@ def test_long_position_is_liquidated_on_mark_price_low():
     assert result.trades[0].side == "long"
     assert result.trades[0].exit_reason == "liquidation"
     assert result.final_equity < result.initial_equity
+    trade = result.trades[0]
+    assert trade.liquidation_trigger_price is not None
+    assert trade.bankruptcy_price is not None
+    assert trade.liquidation_fill_price == trade.exit_price
+    assert trade.uncovered_gap_loss is not None
+    serialized = result.to_dict()["trades"][0]
+    assert serialized["liquidation_trigger_price"] == str(trade.liquidation_trigger_price)
+    assert serialized["bankruptcy_price"] == str(trade.bankruptcy_price)
+    assert serialized["liquidation_fill_price"] == str(trade.exit_price)
 
 
 def test_short_position_is_liquidated_on_mark_price_high():
