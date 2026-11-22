@@ -72,7 +72,7 @@ def test_risk_alert_rejects_naive_timestamps():
         assess_futures_risk(
             provider="bybit_linear_futures",
             mark_price=Decimal(95),
-            mark_price_observed_at=datetime(2026, 11, 22, 12, 0),
+            mark_price_observed_at=datetime(2026, 11, 22, 12, 0),  # noqa: DTZ001
             risk_tiers_observed_at=datetime(2026, 11, 22, 12, 0, tzinfo=UTC),
             estimate=estimate_at_distance("5"),
         )
