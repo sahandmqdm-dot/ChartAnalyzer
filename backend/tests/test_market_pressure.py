@@ -1,7 +1,7 @@
 from decimal import Decimal
 from types import SimpleNamespace
 
-from app.market_data.futures_analysis import DerivativesSignal, FuturesAnalysis
+from app.market_data.futures_analysis import FuturesAnalysis
 from app.market_data.market_pressure import assess_market_pressure
 
 
@@ -46,8 +46,8 @@ def test_market_pressure_combines_price_oi_funding_and_liquidations():
     )
     assert result.bias == "mild_bearish_pressure"
     assert result.pressure_score == -1
-    assert result.long_liquidation_notional == Decimal("170")
-    assert result.short_liquidation_notional == Decimal("10")
+    assert result.long_liquidation_notional == Decimal(170)
+    assert result.short_liquidation_notional == Decimal(10)
     assert result.liquidation_imbalance_pct == Decimal(160) / Decimal(180) * 100
     assert "long_liquidations_dominate_observed_flow" in result.signals
 
