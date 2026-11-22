@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 Side = Literal["long", "short"]
+OrderSide = Literal["buy", "sell"]
 ZERO = Decimal(0)
 
 
@@ -56,7 +57,7 @@ class FundingEvent:
 @dataclass(frozen=True)
 class FuturesExecution:
     timestamp: datetime
-    side: Side
+    side: OrderSide
     quantity: Decimal
     price: Decimal
     fee: Decimal
