@@ -383,6 +383,13 @@ def get_futures_market_stream(symbol: str) -> BinanceFuturesMarketStream:
     return stream
 
 
+def active_futures_market_stream_count(provider: str) -> int:
+    return sum(
+        stream.provider == provider and stream.state != "stopped"
+        for stream in _streams.values()
+    )
+
+
 async def stop_all_futures_market_streams() -> None:
     streams = list(_streams.values())
     await asyncio.gather(*(stream.stop() for stream in streams))
@@ -417,6 +424,15 @@ async def start_live_futures_market(
         stream = get_futures_market_stream(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if (
+        stream.state == "stopped"
+        and active_futures_market_stream_count(stream.provider)
+        >= settings.max_active_futures_market_streams
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Maximum active Futures market streams reached for this provider",
+        )
     stream.start()
     return stream.snapshot()
 
