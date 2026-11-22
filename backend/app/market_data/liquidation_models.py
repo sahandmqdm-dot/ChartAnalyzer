@@ -44,3 +44,17 @@ class FuturesMarkSnapshotRecord(Base):
     index_price: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
     funding_rate: Mapped[Decimal] = mapped_column(Numeric(30, 18), nullable=False)
     next_funding_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FuturesOpenInterestRecord(Base):
+    __tablename__ = "futures_open_interest"
+    __table_args__ = (
+        Index("ix_futures_open_interest_symbol_observed", "symbol", "observed_at"),
+        Index("ix_futures_open_interest_provider_symbol_time", "provider", "symbol", "observed_at"),
+    )
+
+    observation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    open_interest: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
