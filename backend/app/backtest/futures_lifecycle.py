@@ -82,7 +82,7 @@ class FuturesAccount:
             raise ValueError("exit_price must be a finite Decimal greater than zero")
         gross = linear_position_pnl(self.position.side, self.position.quantity, self.position.entry_price, exit_price)
         exit_fee = trading_fee(self.position.quantity * exit_price, fee_rate)
-        realized = gross - exit_fee + self.funding_total
+        realized = gross - self.entry_fee_paid - exit_fee + self.funding_total
         self.wallet_balance += gross - exit_fee
         self.position = None
         self.entry_fee_paid = ZERO
