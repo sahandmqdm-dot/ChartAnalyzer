@@ -15,9 +15,9 @@ from app.backtest.futures_mark_price import simulate_mark_price_liquidation
 from app.market_data.candle import Candle
 from app.market_data.mark_price import MarkPriceCandle
 
-ZERO = Decimal("0")
-ONE = Decimal("1")
-HUNDRED = Decimal("100")
+ZERO = Decimal(0)
+ONE = Decimal(1)
+HUNDRED = Decimal(100)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +100,8 @@ def run_futures_sma_crossover(
     *,
     fast_period: int = 10,
     slow_period: int = 30,
-    initial_equity: Decimal = Decimal("10000"),
-    leverage: Decimal = Decimal("3"),
+    initial_equity: Decimal = Decimal(10000),
+    leverage: Decimal = Decimal(3),
     margin_fraction: Decimal = Decimal("0.25"),
     fee_rate: Decimal = Decimal("0.0004"),
     slippage_rate: Decimal = Decimal("0.0002"),
