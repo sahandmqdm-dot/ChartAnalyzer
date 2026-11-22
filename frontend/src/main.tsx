@@ -41,6 +41,16 @@ type LiveOpenInterest = {
   provider: string; symbol: string; state: string; open_interest: string | null;
   observed_at: string | null; last_error: string | null; persistence_state: string;
 };
+type MarketDataHealthFeed = {
+  kind: string; provider: string; symbol: string; state: string; status: string;
+  observed_at: string | null; age_seconds: number | null; stale_after_seconds: number;
+  is_stale: boolean; last_error: string | null; persistence_state: string;
+  persistence_error: string | null;
+};
+type MarketDataHealth = {
+  provider: string; status: string; checked_at: string; active_feeds: number;
+  feeds: MarketDataHealthFeed[]; degraded_reasons: string[];
+};
 type FuturesSeriesPoint = { timestamp: string; value: string; secondary_value: string | null };
 type FuturesHistory = {
   provider: string; market_type: string; symbol: string; period: string; observed_at: string;
@@ -262,6 +272,7 @@ function App() {
   const [liveFeedError, setLiveFeedError] = useState('');
   const [liveMarket, setLiveMarket] = useState<FuturesLiveMarket | null>(null);
   const [liveOpenInterest, setLiveOpenInterest] = useState<LiveOpenInterest | null>(null);
+  const [liveMarketHealth, setLiveMarketHealth] = useState<MarketDataHealth | null>(null);
   const [futuresHistory, setFuturesHistory] = useState<FuturesHistory | null>(null);
   const [historyPeriod, setHistoryPeriod] = useState('1h');
   const [historyLimit, setHistoryLimit] = useState('100');
@@ -341,19 +352,23 @@ function App() {
       if (refreshing) return;
       refreshing = true;
       try {
-        const [marketResponse, interestResponse] = await Promise.all([
+        const [marketResponse, interestResponse, healthResponse] = await Promise.all([
           fetch(API_BASE + '/api/v1/derivatives/live-market?' + query, { credentials: 'include' }),
           fetch(API_BASE + '/api/v1/derivatives/open-interest-live?' + query, { credentials: 'include' }),
+          fetch(API_BASE + '/api/v1/health/market-data', { credentials: 'include' }),
         ]);
-        const [marketBody, interestBody] = await Promise.all([
+        const [marketBody, interestBody, healthBody] = await Promise.all([
           marketResponse.json().catch(() => ({})) as Promise<FuturesLiveMarket & { detail?: string }>,
           interestResponse.json().catch(() => ({})) as Promise<LiveOpenInterest & { detail?: string }>,
+          healthResponse.json().catch(() => ({})) as Promise<MarketDataHealth & { detail?: string }>,
         ]);
         if (!marketResponse.ok) throw new Error(marketBody.detail || 'Live futures stream request failed');
         if (!interestResponse.ok) throw new Error(interestBody.detail || 'Open Interest polling request failed');
+        if (!healthResponse.ok) throw new Error(healthBody.detail || 'Market data health request failed');
         if (active) {
           setLiveMarket(marketBody);
           setLiveOpenInterest(interestBody);
+          setLiveMarketHealth(healthBody);
           setLiveFeedError('');
         }
       } catch (cause) {
@@ -1055,8 +1070,14 @@ function App() {
             <div><small>Best ask</small><strong>{liveMarket?.best_ask ? Number(liveMarket.best_ask).toLocaleString() : '—'}</strong></div>
             <div><small>Last trade</small><strong>{liveMarket?.last_trade_price ? Number(liveMarket.last_trade_price).toLocaleString() : '—'}</strong></div>
             <div><small>Last trade size</small><strong>{liveMarket?.last_trade_quantity ?? '—'}</strong></div>
+            <div><small>Market data health</small><strong>{liveMarketHealth?.status ?? 'checking'}</strong></div>
+            <div><small>Active feeds</small><strong>{liveMarketHealth?.active_feeds ?? 0}</strong></div>
           </div>
-          <p className="footnote">Provider: {liveMarket?.provider ?? liveOpenInterest?.provider ?? '—'} · Stream updated: {liveMarket?.observed_at ? new Date(liveMarket.observed_at).toLocaleString() : 'waiting for first update'} · OI observed: {liveOpenInterest?.observed_at ? new Date(liveOpenInterest.observed_at).toLocaleString() : 'waiting for first poll'} · Persistence: {liveMarket?.persistence_state ?? '—'} / {liveOpenInterest?.persistence_state ?? '—'}</p>
+          {liveMarketHealth?.feeds.length ? <div className="signal-list">{liveMarketHealth.feeds.map((feed) => <article className="signal-item" key={feed.kind + '-' + feed.symbol}>
+            <div><strong>{feed.kind.replace(/_/g, ' ')} · {feed.symbol}</strong><span>{feed.status} · {feed.age_seconds === null ? 'no observations yet' : feed.age_seconds.toFixed(1) + 's old'}</span></div>
+            <p>State: {feed.state} · Persistence: {feed.persistence_state} · Stale after: {feed.stale_after_seconds}s{feed.last_error ? ' · Error: ' + feed.last_error : ''}</p>
+          </article>)}</div> : <p className="footnote">Waiting for the first market-data health report.</p>}
+          <p className="footnote">Provider: {liveMarket?.provider ?? liveOpenInterest?.provider ?? '—'} · Stream updated: {liveMarket?.observed_at ? new Date(liveMarket.observed_at).toLocaleString() : 'waiting for first update'} · OI observed: {liveOpenInterest?.observed_at ? new Date(liveOpenInterest.observed_at).toLocaleString() : 'waiting for first poll'} · Health checked: {liveMarketHealth?.checked_at ? new Date(liveMarketHealth.checked_at).toLocaleString() : '—'} · Persistence: {liveMarket?.persistence_state ?? '—'} / {liveOpenInterest?.persistence_state ?? '—'}</p>
           {(liveMarket?.last_error || liveOpenInterest?.last_error) && <p className="footnote">Feed warnings: {liveMarket?.last_error ?? 'none'} · OI: {liveOpenInterest?.last_error ?? 'none'}</p>}
         </>}
       </section>

@@ -137,3 +137,12 @@ The process-local market-data cache coalesces concurrent misses for the same key
 - Current Open Interest is polled every 60 seconds from Binance USDⓈ-M `/fapi/v1/openInterest` or Bybit V5 `/v5/market/tickers?category=linear`. Both are public read-only endpoints and need no exchange credentials.
 - `open-interest-history` is a provider-filtered local observation history. It begins only after the selected collector runs; it is not exchange historical OI backfill. Binance and Bybit records are never mixed.
 - Both live stream and Open Interest polling have explicit authenticated stop endpoints and are also stopped during API shutdown.
+
+
+## Market-data health and staleness
+- Authenticated `GET /api/v1/health/market-data` is observational only; it never starts or restarts collectors.
+- The report is scoped to the selected `FUTURES_MARKET_DATA_PROVIDER` and lists each registered live stream and Open Interest poller with state, last observation, age, stale threshold, last error, and persistence state.
+- Live streams are marked stale after 15 seconds without an observation. Open Interest uses the greater of 180 seconds or three configured polling intervals.
+- Missing first observations are reported as `waiting_for_data`, not stale. Stopped feeds are reported as stopped and do not degrade an otherwise idle service.
+- Overall status is `idle`, `starting`, `healthy`, or `degraded`; reconnecting, stale, future-clock-skewed, or persistence-unavailable feeds degrade the report.
+- The UI refreshes this report while live feeds are enabled and shows per-feed age and persistence status.
