@@ -220,3 +220,13 @@ def test_live_market_start_enforces_per_provider_capacity(monkeypatch):
 
     assert response.status_code == 429
     assert candidate.started is False
+
+
+def test_live_market_get_missing_symbol_does_not_register_stream(monkeypatch):
+    monkeypatch.setattr(futures_stream, "_streams", {})
+    response = authenticated_client(monkeypatch).get(
+        "/api/v1/derivatives/live-market", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200
+    assert response.json()["state"] == "stopped"
+    assert futures_stream._streams == {}
