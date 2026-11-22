@@ -200,3 +200,13 @@ def test_open_interest_start_enforces_per_provider_capacity(monkeypatch):
 
     assert response.status_code == 429
     assert candidate.started is False
+
+
+def test_open_interest_get_missing_symbol_does_not_register_collector(monkeypatch):
+    monkeypatch.setattr(open_interest, "_collectors", {})
+    response = client_with_auth(monkeypatch).get(
+        "/api/v1/derivatives/open-interest-live", params={"symbol": "BTCUSDT"}
+    )
+    assert response.status_code == 200
+    assert response.json()["state"] == "stopped"
+    assert open_interest._collectors == {}
