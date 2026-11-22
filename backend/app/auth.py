@@ -1,10 +1,11 @@
 import base64
 import hashlib
+import heapq
 import hmac
 import json
 import secrets
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 
 from fastapi import HTTPException, Request
 
@@ -14,8 +15,17 @@ SESSION_COOKIE = "ca_session"
 CSRF_COOKIE = "ca_csrf"
 _LOGIN_LIMIT = 5
 _LOGIN_WINDOW_SECONDS = 60
-_attempts: dict[str, deque[float]] = defaultdict(deque)
-_revoked_sessions: set[str] = set()
+_MAX_LOGIN_IPS = 10_000
+_attempts: OrderedDict[str, deque[float]] = OrderedDict()
+_revoked_sessions: dict[str, int] = {}
+_revoked_expirations: list[tuple[int, str]] = []
+
+
+def _purge_revoked_sessions(now: int) -> None:
+    while _revoked_expirations and _revoked_expirations[0][0] <= now:
+        expires_at, session_id = heapq.heappop(_revoked_expirations)
+        if _revoked_sessions.get(session_id) == expires_at:
+            del _revoked_sessions[session_id]
 
 
 def _b64(data: bytes) -> str:
@@ -47,6 +57,7 @@ def _verify(token: str) -> dict | None:
         if isinstance(issued_at, bool) or not isinstance(issued_at, int):
             return None
         now = int(time.time())
+        _purge_revoked_sessions(now)
         if issued_at > now + 30 or now - issued_at > settings.session_ttl_seconds:
             return None
         if data.get("sub") != settings.admin_username or not isinstance(session_id, str) or not session_id:
@@ -72,7 +83,14 @@ def _password_matches(password: str) -> bool:
 
 def _allow_login(ip: str) -> bool:
     now = time.time()
-    history = _attempts[ip]
+    history = _attempts.get(ip)
+    if history is None:
+        if len(_attempts) >= _MAX_LOGIN_IPS:
+            _attempts.popitem(last=False)
+        history = deque()
+        _attempts[ip] = history
+    else:
+        _attempts.move_to_end(ip)
     while history and now - history[0] > _LOGIN_WINDOW_SECONDS:
         history.popleft()
     if len(history) >= _LOGIN_LIMIT:
@@ -99,4 +117,7 @@ def csrf_check(request: Request) -> None:
 def revoke_session(token: str) -> None:
     session = _verify(token)
     if session and session.get("sid"):
-        _revoked_sessions.add(session["sid"])
+        session_id = session["sid"]
+        expires_at = int(session["iat"]) + settings.session_ttl_seconds
+        _revoked_sessions[session_id] = expires_at
+        heapq.heappush(_revoked_expirations, (expires_at, session_id))
