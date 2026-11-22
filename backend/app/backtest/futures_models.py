@@ -2,7 +2,14 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from app.backtest.futures_accounting import ONE, ZERO, Side, _finite, _positive, _rate, trading_fee
+from app.backtest.futures_accounting import (
+    ZERO,
+    Side,
+    _finite,
+    _positive,
+    _rate,
+    trading_fee,
+)
 
 
 @dataclass(frozen=True)
@@ -23,7 +30,11 @@ class IsolatedPosition:
         _finite(self.entry_fee, "entry_fee")
         if self.entry_fee < ZERO:
             raise ValueError("entry_fee must be non-negative")
-        if not isinstance(self.leverage, int) or isinstance(self.leverage, bool) or not 1 <= self.leverage <= 125:
+        if (
+            not isinstance(self.leverage, int)
+            or isinstance(self.leverage, bool)
+            or not 1 <= self.leverage <= 125
+        ):
             raise ValueError("leverage must be an integer between 1 and 125")
 
 
@@ -40,7 +51,11 @@ def open_isolated_position(
         raise ValueError("side must be 'long' or 'short'")
     margin = _positive(margin, "margin")
     entry_price = _positive(entry_price, "entry_price")
-    if not isinstance(leverage, int) or isinstance(leverage, bool) or not 1 <= leverage <= 125:
+    if (
+        not isinstance(leverage, int)
+        or isinstance(leverage, bool)
+        or not 1 <= leverage <= 125
+    ):
         raise ValueError("leverage must be an integer between 1 and 125")
     fee_rate = _rate(fee_rate, "fee_rate")
     notional = margin * Decimal(leverage)
