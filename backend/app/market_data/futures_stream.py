@@ -325,6 +325,8 @@ class BybitLinearFuturesMarketStream(BinanceFuturesMarketStream):
                         async for raw in socket:
                             payload = json.loads(raw)
                             if isinstance(payload, dict):
+                                if payload.get("op") == "subscribe" and payload.get("success") is False:
+                                    raise RuntimeError("Bybit public market stream subscription rejected")
                                 accepted = self.ingest(payload)
                                 if (
                                     accepted
