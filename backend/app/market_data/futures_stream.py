@@ -33,6 +33,8 @@ class FuturesStreamSnapshot(BaseModel):
     last_trade_time: datetime | None = None
     observed_at: datetime | None = None
     last_error: str | None = None
+    persistence_state: str = "disabled"
+    persistence_error: str | None = None
 
 
 def _positive_decimal(value: object) -> Decimal:
@@ -98,6 +100,8 @@ class BinanceFuturesMarketStream:
         self.max_reconnect_delay = max_reconnect_delay
         self.state: Literal["connecting", "connected", "reconnecting", "stopped"] = "stopped"
         self.last_error: str | None = None
+        self.persistence_state = "disabled"
+        self.persistence_error: str | None = None
         self._values: dict = {}
         self._task: asyncio.Task | None = None
 
@@ -130,8 +134,32 @@ class BinanceFuturesMarketStream:
             symbol=self.symbol,
             state=self.state,
             last_error=self.last_error,
+            persistence_state=self.persistence_state,
+            persistence_error=self.persistence_error,
             **self._values,
         ).model_dump(mode="json")
+
+
+    async def _persist_mark_snapshot(self) -> None:
+        try:
+            from app.market_data.futures_snapshot_repository import save_futures_mark_snapshot
+
+            await save_futures_mark_snapshot(
+                provider="binance_usdm_futures",
+                symbol=self.symbol,
+                observed_at=self._values["observed_at"],
+                mark_price=self._values["mark_price"],
+                index_price=self._values["index_price"],
+                funding_rate=self._values["funding_rate"],
+                next_funding_time=self._values["next_funding_time"],
+            )
+            from app.database import database_enabled
+
+            self.persistence_state = "available" if database_enabled() else "disabled"
+            self.persistence_error = None
+        except Exception as exc:  # noqa: BLE001 - database failures must not stop market feed
+            self.persistence_state = "unavailable"
+            self.persistence_error = type(exc).__name__
 
     async def _run(self) -> None:
         streams = "/".join((
@@ -150,7 +178,10 @@ class BinanceFuturesMarketStream:
                     async for raw in socket:
                         payload = json.loads(raw)
                         if isinstance(payload, dict):
-                            self.ingest(payload)
+                            accepted = self.ingest(payload)
+                            event = payload.get("data", payload)
+                            if accepted and isinstance(event, dict) and event.get("e") == "markPriceUpdate":
+                                await self._persist_mark_snapshot()
                     self.last_error = "Connection closed by exchange"
             except asyncio.CancelledError:
                 raise
