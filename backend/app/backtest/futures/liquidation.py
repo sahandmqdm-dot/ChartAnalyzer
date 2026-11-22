@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-
 from app.backtest.futures.margin import liquidation_price
 from app.backtest.futures.position import Position
 
