@@ -160,6 +160,6 @@ def test_bankruptcy_price_moves_with_funding_but_not_liquidation_fee_reserve():
         position(), [], D("0.005"), liquidation_fee_rate=D("0.02")
     )
     assert baseline.bankruptcy_price == D("500")
-    assert funded.bankruptcy_price == D("510")
+    assert funded.bankruptcy_price == D("490")
     assert fee_reserved.bankruptcy_price == baseline.bankruptcy_price
     assert fee_reserved.liquidation_threshold > baseline.liquidation_threshold
