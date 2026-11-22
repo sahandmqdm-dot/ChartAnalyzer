@@ -54,6 +54,7 @@ app = FastAPI(
 )
 
 app.include_router(market_data_router)
+app.include_router(market_data_health_router)
 app.include_router(derivatives_router)
 app.include_router(futures_stream_router)
 app.include_router(open_interest_router)
