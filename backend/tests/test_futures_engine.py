@@ -52,6 +52,9 @@ def test_futures_sma_enters_long_and_closes_at_end_of_data():
     assert metrics["average_win"] == str(result.average_win)
     assert metrics["average_loss"] == str(result.average_loss)
     assert result.to_dict()["trades"][0]["net_pnl"] == str(result.trades[0].net_pnl)
+    assert len(result.equity_curve) == len(candles)
+    assert result.equity_curve[-1].equity == result.final_equity
+    assert result.to_dict()["equity_curve"][-1]["equity"] == str(result.final_equity)
     assert result.trades[0].liquidation_trigger_price is None
     assert result.to_dict()["trades"][0]["bankruptcy_price"] is None
 
