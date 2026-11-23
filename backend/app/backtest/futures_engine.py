@@ -43,6 +43,13 @@ class FuturesTrade:
 
 
 @dataclass(frozen=True, slots=True)
+class FuturesEquityPoint:
+    timestamp: str
+    equity: Decimal
+    drawdown_pct: Decimal
+
+
+@dataclass(frozen=True, slots=True)
 class FuturesBacktestResult:
     initial_equity: Decimal
     final_equity: Decimal
@@ -76,6 +83,10 @@ class FuturesBacktestResult:
             "average_loss": str(self.average_loss),
             "total_funding": str(self.total_funding),
             "liquidation_count": self.liquidation_count,
+            "equity_curve": [
+                {"timestamp": point.timestamp, "equity": str(point.equity), "drawdown_pct": str(point.drawdown_pct)}
+                for point in self.equity_curve
+            ],
             "trades": [
                 {
                     "side": trade.side,
@@ -156,6 +167,7 @@ def run_futures_sma_crossover(
 
     account = FuturesAccount(initial_equity)
     trades: list[FuturesTrade] = []
+    equity_curve: list[FuturesEquityPoint] = []
     equity_peak = initial_equity
     max_drawdown = ZERO
     liquidation_count = 0
@@ -314,6 +326,11 @@ def run_futures_sma_crossover(
         equity_peak = max(equity_peak, equity)
         drawdown = (equity_peak - equity) / equity_peak * HUNDRED if equity_peak > ZERO else ZERO
         max_drawdown = max(max_drawdown, drawdown)
+        equity_curve.append(FuturesEquityPoint(
+            timestamp=(candle.close_time or candle.timestamp).isoformat(),
+            equity=equity,
+            drawdown_pct=drawdown,
+        ))
 
     wins = [t.net_pnl for t in trades if t.net_pnl > ZERO]
     losses = [t.net_pnl for t in trades if t.net_pnl < ZERO]
@@ -338,4 +355,5 @@ def run_futures_sma_crossover(
         total_funding=funding_total,
         liquidation_count=liquidation_count,
         trades=tuple(trades),
+        equity_curve=tuple(equity_curve),
     )
