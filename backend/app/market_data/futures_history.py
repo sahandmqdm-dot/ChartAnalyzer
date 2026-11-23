@@ -51,6 +51,18 @@ def _timestamp(value: Any) -> datetime:
     return datetime.fromtimestamp(int(value) / 1000, tz=UTC)
 
 
+def _range_milliseconds(start_time: datetime, end_time: datetime) -> tuple[int, int]:
+    if (
+        start_time.tzinfo is None
+        or start_time.utcoffset() is None
+        or end_time.tzinfo is None
+        or end_time.utcoffset() is None
+        or start_time > end_time
+    ):
+        raise ValueError("funding history range must use ordered timezone-aware timestamps")
+    return int(start_time.timestamp() * 1000), int(end_time.timestamp() * 1000)
+
+
 class _HistoryAdapter(_HttpFuturesAdapter):
     name = "futures_history"
 
@@ -72,6 +84,47 @@ class _HistoryAdapter(_HttpFuturesAdapter):
 
 class BinanceUsdmFuturesHistoryAdapter(_HistoryAdapter):
     name = "binance_usdm_futures"
+
+    async def fetch_funding_rates(
+        self, symbol: str, start_time: datetime, end_time: datetime
+    ) -> list[FuturesSeriesPoint]:
+        normalized = str(Symbol(symbol))
+        start_ms, end_ms = _range_milliseconds(start_time, end_time)
+        cursor_start = start_ms
+        points: dict[datetime, FuturesSeriesPoint] = {}
+        for _ in range(10):
+            rows = await self._rows(
+                "https://fapi.binance.com/fapi/v1/fundingRate",
+                {
+                    "symbol": normalized,
+                    "startTime": str(cursor_start),
+                    "endTime": str(end_ms),
+                    "limit": "1000",
+                },
+            )
+            if not rows:
+                break
+            try:
+                for row in rows:
+                    point = FuturesSeriesPoint(
+                        timestamp=_timestamp(row["fundingTime"]),
+                        value=_decimal(row["fundingRate"]),
+                        secondary_value=_decimal(row["markPrice"]) if row.get("markPrice") else None,
+                    )
+                    if start_time <= point.timestamp <= end_time:
+                        points[point.timestamp] = point
+                last_ms = max(int(row["fundingTime"]) for row in rows)
+            except (KeyError, ValueError, TypeError, ArithmeticError, OverflowError) as exc:
+                raise FuturesMarketDataError("Binance returned invalid funding history") from exc
+            if len(rows) < 1000 or last_ms >= end_ms:
+                break
+            next_start = last_ms + 1
+            if next_start <= cursor_start:
+                raise FuturesMarketDataError("Binance funding history pagination did not advance")
+            cursor_start = next_start
+        else:
+            raise FuturesMarketDataError("Binance funding history exceeded the pagination safety limit")
+        return sorted(points.values(), key=lambda point: point.timestamp)
 
     async def fetch_history(self, symbol: str, period: str, limit: int) -> FuturesHistory:
         normalized = str(Symbol(symbol))
@@ -122,6 +175,47 @@ class BinanceUsdmFuturesHistoryAdapter(_HistoryAdapter):
 
 class BybitLinearFuturesHistoryAdapter(_HistoryAdapter):
     name = "bybit_linear_futures"
+
+    async def fetch_funding_rates(
+        self, symbol: str, start_time: datetime, end_time: datetime
+    ) -> list[FuturesSeriesPoint]:
+        normalized = str(Symbol(symbol))
+        start_ms, end_ms = _range_milliseconds(start_time, end_time)
+        cursor_end = end_ms
+        points: dict[datetime, FuturesSeriesPoint] = {}
+        for _ in range(25):
+            rows = await self._rows(
+                "https://api.bybit.com/v5/market/funding/history",
+                {
+                    "category": "linear",
+                    "symbol": normalized,
+                    "endTime": str(cursor_end),
+                    "limit": "200",
+                },
+            )
+            if not rows:
+                break
+            try:
+                timestamps = [int(row["fundingRateTimestamp"]) for row in rows]
+                for row in rows:
+                    point = FuturesSeriesPoint(
+                        timestamp=_timestamp(row["fundingRateTimestamp"]),
+                        value=_decimal(row["fundingRate"]),
+                    )
+                    if start_time <= point.timestamp <= end_time:
+                        points[point.timestamp] = point
+            except (KeyError, ValueError, TypeError, ArithmeticError, OverflowError) as exc:
+                raise FuturesMarketDataError("Bybit returned invalid funding history") from exc
+            earliest_ms = min(timestamps)
+            if earliest_ms <= start_ms or len(rows) < 200:
+                break
+            next_end = earliest_ms - 1
+            if next_end >= cursor_end:
+                raise FuturesMarketDataError("Bybit funding history pagination did not advance")
+            cursor_end = next_end
+        else:
+            raise FuturesMarketDataError("Bybit funding history exceeded the pagination safety limit")
+        return sorted(points.values(), key=lambda point: point.timestamp)
 
     _period_map: ClassVar[dict[str, str]] = {
         "5m": "5min",

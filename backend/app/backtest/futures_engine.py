@@ -5,19 +5,19 @@ aligned OHLCV and Mark Price candles, applies funding events at supplied timesta
 executes signal changes at the next candle open, and uses closed Mark Price OHLC for
 liquidation detection. It is not a substitute for exchange-specific simulation.
 """
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from collections.abc import Sequence
 
 from app.backtest.futures_lifecycle import FuturesAccount
 from app.backtest.futures_mark_price import simulate_mark_price_liquidation
 from app.market_data.candle import Candle
 from app.market_data.mark_price import MarkPriceCandle
 
-ZERO = Decimal("0")
-ONE = Decimal("1")
-HUNDRED = Decimal("100")
+ZERO = Decimal(0)
+ONE = Decimal(1)
+HUNDRED = Decimal(100)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +100,8 @@ def run_futures_sma_crossover(
     *,
     fast_period: int = 10,
     slow_period: int = 30,
-    initial_equity: Decimal = Decimal("10000"),
-    leverage: Decimal = Decimal("3"),
+    initial_equity: Decimal = Decimal(10000),
+    leverage: Decimal = Decimal(3),
     margin_fraction: Decimal = Decimal("0.25"),
     fee_rate: Decimal = Decimal("0.0004"),
     slippage_rate: Decimal = Decimal("0.0002"),
@@ -163,6 +163,7 @@ def run_futures_sma_crossover(
     closes = [c.close for c in candles]
 
     for index, candle in enumerate(candles):
+        mark_candle = mark_candles[index]
         desired_side: str | None = None
         if index >= slow_period + 1:
             signal_index = index - 1
@@ -175,7 +176,58 @@ def run_futures_sma_crossover(
             elif fast_before >= slow_before and fast_now < slow_now:
                 desired_side = "short"
 
-        # Signal transitions execute at this candle's open, never at the signal close.
+        # Funding at or before this candle's open belongs to a position carried
+        # into the candle, so settle it before any signal-driven exit at the open.
+        while funding_index < len(ordered_funding) and ordered_funding[funding_index].timestamp <= candle.timestamp:
+            payment = ordered_funding[funding_index]
+            if account.position is not None and entry_datetime is not None and entry_datetime < payment.timestamp:
+                cashflow = account.apply_funding(mark_candle.open, payment.rate)
+                funding_total += cashflow
+            funding_index += 1
+
+        # A Mark Price gap through the liquidation threshold takes precedence
+        # over a strategy order submitted at the same candle open.
+        blocked_entry = False
+        if account.position is not None:
+            opening_mark_candle = mark_candle.model_copy(
+                update={
+                    "high": mark_candle.open,
+                    "low": mark_candle.open,
+                    "close": mark_candle.open,
+                }
+            )
+            opening_event = simulate_mark_price_liquidation(
+                account.position,
+                [opening_mark_candle],
+                maintenance_margin_rate,
+                liquidation_fee_rate,
+                margin_adjustment=account.funding_total,
+            )
+            if opening_event.liquidated:
+                net_pnl = account.settle_liquidation(opening_event)
+                trades.append(
+                    FuturesTrade(
+                        entry_side,
+                        entry_time,
+                        opening_event.timestamp.isoformat(),
+                        entry_price,
+                        opening_event.price,
+                        entry_quantity,
+                        net_pnl,
+                        "liquidation",
+                        liquidation_trigger_price=opening_event.liquidation_threshold,
+                        bankruptcy_price=opening_event.bankruptcy_price,
+                        liquidation_fill_price=opening_event.price,
+                        uncovered_gap_loss=opening_event.uncovered_gap_loss,
+                    )
+                )
+                liquidation_count += 1
+                entry_side = ""
+                entry_datetime = None
+                blocked_entry = True
+
+        # Signal transitions execute at this candle's contract open, after the
+        # carried position survives any opening Mark Price liquidation check.
         if account.position is not None and desired_side is not None and desired_side != account.position.side:
             exit_price = candle.open * (ONE - slippage_rate if account.position.side == "long" else ONE + slippage_rate)
             net_pnl = account.close_position(exit_price, fee_rate)
@@ -184,7 +236,7 @@ def run_futures_sma_crossover(
             entry_side = ""
             entry_datetime = None
 
-        if account.position is None and desired_side is not None:
+        if account.position is None and desired_side is not None and not blocked_entry:
             execution = candle.open * (ONE + slippage_rate if desired_side == "long" else ONE - slippage_rate)
             budget = account.wallet_balance * margin_fraction
             quantity = budget / (execution / leverage + execution * fee_rate)
@@ -200,21 +252,8 @@ def run_futures_sma_crossover(
                 )
                 entry_datetime = candle.timestamp
 
-        mark_candle = mark_candles[index]
-        # Payments timestamped at/before candle open are known to precede its
-        # intrabar price path. Use the opening Mark Price as the best available
-        # OHLC proxy for the funding notional.
-        while funding_index < len(ordered_funding) and ordered_funding[funding_index].timestamp <= candle.timestamp:
-            payment = ordered_funding[funding_index]
-            if account.position is not None and entry_datetime is not None and entry_datetime < payment.timestamp:
-                cashflow = account.apply_funding(mark_candle.open, payment.rate)
-                funding_total += cashflow
-            funding_index += 1
-
-        # Liquidation is evaluated before funding events timestamped inside this
-        # candle. OHLC cannot reveal which occurred first; this conservative
-        # policy prevents a later funding credit from rescuing an earlier
-        # intrabar liquidation.
+        # OHLC cannot reveal whether an intrabar funding event preceded the
+        # adverse Mark Price extreme. Liquidation is checked first, then funding.
         if account.position is not None:
             event = simulate_mark_price_liquidation(
                 account.position, [mark_candle], maintenance_margin_rate,
