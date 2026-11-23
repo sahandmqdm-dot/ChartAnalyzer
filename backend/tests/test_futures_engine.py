@@ -55,6 +55,8 @@ def test_futures_sma_enters_long_and_closes_at_end_of_data():
     assert len(result.equity_curve) == len(candles)
     assert result.equity_curve[-1].equity == result.final_equity
     assert result.to_dict()["equity_curve"][-1]["equity"] == str(result.final_equity)
+    assert D("0") < result.exposure_pct <= D("100")
+    assert metrics["exposure_pct"] == str(result.exposure_pct)
     assert result.trades[0].liquidation_trigger_price is None
     assert result.to_dict()["trades"][0]["bankruptcy_price"] is None
 
