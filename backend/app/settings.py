@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     ] = Field(
         default="binance_usdm_futures",
         validation_alias="FUTURES_MARKET_DATA_PROVIDER",
+    )
+    coinalyze_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="COINALYZE_API_KEY",
+        repr=False,
     )
     database_url: str | None = Field(default=None, validation_alias="DATABASE_URL")
     max_active_futures_market_streams: int = Field(
