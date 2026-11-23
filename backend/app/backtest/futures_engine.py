@@ -63,6 +63,7 @@ class FuturesBacktestResult:
     expectancy: Decimal
     average_win: Decimal
     average_loss: Decimal
+    exposure_pct: Decimal
     total_funding: Decimal
     liquidation_count: int
     trades: tuple[FuturesTrade, ...]
@@ -82,7 +83,8 @@ class FuturesBacktestResult:
             "expectancy": str(self.expectancy),
             "average_win": str(self.average_win),
             "average_loss": str(self.average_loss),
-            "total_funding": str(self.total_funding),
+            "exposure_pct": str(self.exposure_pct),
+            "total_funding: str(self.total_funding),
             "liquidation_count": self.liquidation_count,
             "equity_curve": [
                 {"timestamp": point.timestamp, "equity": str(point.equity), "drawdown_pct": str(point.drawdown_pct)}
@@ -174,6 +176,7 @@ def run_futures_sma_crossover(
     liquidation_count = 0
     funding_total = ZERO
     funding_index = 0
+    exposed_candles = 0
     entry_time = ""
     entry_price = ZERO
     entry_side = ""
@@ -353,6 +356,7 @@ def run_futures_sma_crossover(
         expectancy=expectancy,
         average_win=average_win,
         average_loss=average_loss,
+        exposure_pct=Decimal(exposed_candles) / Decimal(len(candles)) * HUNDRED,
         total_funding=funding_total,
         liquidation_count=liquidation_count,
         trades=tuple(trades),
