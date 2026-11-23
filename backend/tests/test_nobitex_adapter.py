@@ -29,8 +29,6 @@ async def test_nobitex_adapter_parses_udf_candles_and_query():
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await NobitexSpotAdapter(
             client, clock=lambda: datetime.fromtimestamp(120, tz=UTC)
-        ).fetch_ohlcv("bt c", "1m") if False else await NobitexSpotAdapter(
-            client, clock=lambda: datetime.fromtimestamp(120, tz=UTC)
         ).fetch_ohlcv("BTCIRT", "1m", limit=1)
     assert len(result) == 1
     assert result[0].open == Decimal("10")
