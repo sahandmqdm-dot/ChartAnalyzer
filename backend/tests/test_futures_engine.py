@@ -141,6 +141,8 @@ def test_long_position_is_liquidated_on_mark_price_low():
     assert result.trades[0].side == "long"
     assert result.trades[0].exit_reason == "liquidation"
     assert result.final_equity < result.initial_equity
+    # The position was open during candle 5 even though it was liquidated intrabar.
+    assert result.exposure_pct == D("20")
     trade = result.trades[0]
     assert trade.liquidation_trigger_price is not None
     assert trade.bankruptcy_price is not None
