@@ -9,8 +9,8 @@ A local, read-only quantitative market research MVP. It includes a FastAPI backe
 - FastAPI API with health and authentication endpoints.
 - HMAC-signed session cookies, CSRF-protected logout, and basic login throttling.
 - Validated OHLCV candle domain model with UTC timestamps, Decimal values, OHLC invariants, and closed/open state.
-- Binance Spot and Bybit Spot public market-data adapters behind one provider protocol.
-- Spot provider selection uses `MARKET_DATA_PROVIDER` (`binance_spot` or `bybit_spot`); linear-perpetual provider selection is independent via `FUTURES_MARKET_DATA_PROVIDER` (`binance_usdm_futures` or `bybit_linear_futures`).
+- Binance Spot, Bybit Spot, and Nobitex Spot public market-data adapters behind one provider protocol.
+- Spot provider selection uses `MARKET_DATA_PROVIDER` (`binance_spot`, `bybit_spot`, or `nobitex_spot`); linear-perpetual provider selection is independent via `FUTURES_MARKET_DATA_PROVIDER` (`binance_usdm_futures` or `bybit_linear_futures`).
 - Read-only Binance USDⓈ-M and Bybit linear-perpetual overview: mark/index price, current funding rate, open interest, notional open interest, and next funding time.
 - Historical derivatives series for funding rate, open interest, and global long/short account ratio on Binance USDⓈ-M and Bybit Linear.
 - Historical linear-perpetual Mark Price OHLC candles from Binance USDⓈ-M and Bybit V5, normalized to UTC and Decimal values.
@@ -35,7 +35,7 @@ A local, read-only quantitative market research MVP. It includes a FastAPI backe
 1. Copy `.env.example` to `.env`.
 2. Replace `APP_SECRET` with a cryptographically random value of at least 32 characters.
 3. Replace `ADMIN_PASSWORD` with a strong unique password.
-4. Choose the Spot source with `MARKET_DATA_PROVIDER=binance_spot` or `MARKET_DATA_PROVIDER=bybit_spot`.
+4. Choose the Spot source with `MARKET_DATA_PROVIDER=binance_spot`, `MARKET_DATA_PROVIDER=bybit_spot`, or `MARKET_DATA_PROVIDER=nobitex_spot`. Nobitex uses its public UDF OHLC endpoint at `https://apiv2.nobitex.ir/market/udf/history` and supports the documented intervals implemented by the adapter. It is a Spot source, independent from the Futures provider.
 5. Choose the Futures source independently with `FUTURES_MARKET_DATA_PROVIDER=binance_usdm_futures` or `FUTURES_MARKET_DATA_PROVIDER=bybit_linear_futures`.
 6. Active collector limits default to 10 per provider and collector type; adjust `MAX_ACTIVE_FUTURES_MARKET_STREAMS`, `MAX_ACTIVE_OPEN_INTEREST_COLLECTORS`, and `MAX_ACTIVE_LIQUIDATION_STREAMS` only when the host has sufficient resources.
 
