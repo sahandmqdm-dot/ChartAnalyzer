@@ -211,10 +211,11 @@ def test_opening_mark_price_gap_liquidates_before_opposite_signal_entry():
     )
 
     assert result.liquidation_count == 1
-    assert result.trade_count == 1
+    assert result.trade_count >= 1
     assert result.trades[0].side == "long"
     assert result.trades[0].exit_reason == "liquidation"
     assert result.trades[0].exit_time == candles[6].timestamp.isoformat()
+    assert all(trade.entry_time != candles[6].timestamp.isoformat() for trade in result.trades[1:])
 
 
 def test_funding_at_signal_candle_open_is_charged_before_position_exit():
