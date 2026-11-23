@@ -62,6 +62,10 @@ jobs:
           backend/tests/test_auth.py
           backend/app/settings.py
           backend/app/market_data/futures_routes.py
+          backend/app/market_data/coinalyze.py
+          backend/app/market_data/coinalyze_routes.py
+          backend/tests/test_coinalyze.py
+          backend/tests/test_coinalyze_routes.py
           backend/tests/test_settings.py
           backend/tests/test_futures_routes.py
           backend/app/main.py
