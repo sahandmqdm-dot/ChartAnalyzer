@@ -53,6 +53,9 @@ class FuturesBacktestResult:
     losing_trades: int
     win_rate_pct: Decimal
     profit_factor: Decimal | None
+    expectancy: Decimal
+    average_win: Decimal
+    average_loss: Decimal
     total_funding: Decimal
     liquidation_count: int
     trades: tuple[FuturesTrade, ...]
@@ -68,6 +71,9 @@ class FuturesBacktestResult:
             "losing_trades": self.losing_trades,
             "win_rate_pct": str(self.win_rate_pct),
             "profit_factor": str(self.profit_factor) if self.profit_factor is not None else None,
+            "expectancy": str(self.expectancy),
+            "average_win": str(self.average_win),
+            "average_loss": str(self.average_loss),
             "total_funding": str(self.total_funding),
             "liquidation_count": self.liquidation_count,
             "trades": [
@@ -313,6 +319,9 @@ def run_futures_sma_crossover(
     losses = [t.net_pnl for t in trades if t.net_pnl < ZERO]
     gross_profit, gross_loss = sum(wins, ZERO), abs(sum(losses, ZERO))
     count = len(trades)
+    expectancy = sum((trade.net_pnl for trade in trades), ZERO) / Decimal(count) if count else ZERO
+    average_win = gross_profit / Decimal(len(wins)) if wins else ZERO
+    average_loss = gross_loss / Decimal(len(losses)) if losses else ZERO
     return FuturesBacktestResult(
         initial_equity=initial_equity,
         final_equity=account.wallet_balance,
@@ -323,6 +332,9 @@ def run_futures_sma_crossover(
         losing_trades=len(losses),
         win_rate_pct=Decimal(len(wins)) / Decimal(count) * HUNDRED if count else ZERO,
         profit_factor=gross_profit / gross_loss if gross_loss else None,
+        expectancy=expectancy,
+        average_win=average_win,
+        average_loss=average_loss,
         total_funding=funding_total,
         liquidation_count=liquidation_count,
         trades=tuple(trades),
