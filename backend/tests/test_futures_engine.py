@@ -44,6 +44,13 @@ def test_futures_sma_enters_long_and_closes_at_end_of_data():
     assert result.trades[0].side == "long"
     assert result.trades[0].exit_reason == "end_of_data"
     assert result.final_equity > result.initial_equity
+    assert result.expectancy == result.trades[0].net_pnl
+    assert result.average_win == result.trades[0].net_pnl
+    assert result.average_loss == D("0")
+    metrics = result.to_dict()
+    assert metrics["expectancy"] == str(result.expectancy)
+    assert metrics["average_win"] == str(result.average_win)
+    assert metrics["average_loss"] == str(result.average_loss)
     assert result.to_dict()["trades"][0]["net_pnl"] == str(result.trades[0].net_pnl)
     assert result.trades[0].liquidation_trigger_price is None
     assert result.to_dict()["trades"][0]["bankruptcy_price"] is None
