@@ -133,10 +133,16 @@ class CoinalyzeClient:
             follow_redirects=False,
         )
         try:
-            open_interest, funding_rate = await asyncio.gather(
+            results = await asyncio.gather(
                 self._get_rows(client, "open-interest", normalized),
                 self._get_rows(client, "funding-rate", normalized),
+                return_exceptions=True,
             )
+            if isinstance(results[0], BaseException):
+                raise results[0]
+            if isinstance(results[1], BaseException):
+                raise results[1]
+            open_interest, funding_rate = results
         finally:
             if own_client:
                 await client.aclose()
