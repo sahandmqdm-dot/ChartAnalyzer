@@ -197,7 +197,7 @@ def test_intrabar_funding_credit_cannot_rescue_prior_liquidation():
 
 def test_opening_mark_price_gap_liquidates_before_opposite_signal_entry():
     candles, marks = series(["5", "4", "3", "6", "7", "4", "3", "2", "1"])
-    marks[6] = marks[6].model_copy(
+    marks[5] = marks[5].model_copy(
         update={"open": D("1"), "high": D("2.2"), "low": D("0.8"), "close": D("1")}
     )
 
@@ -214,8 +214,8 @@ def test_opening_mark_price_gap_liquidates_before_opposite_signal_entry():
     assert result.trade_count >= 1
     assert result.trades[0].side == "long"
     assert result.trades[0].exit_reason == "liquidation"
-    assert result.trades[0].exit_time == candles[6].timestamp.isoformat()
-    assert all(trade.entry_time != candles[6].timestamp.isoformat() for trade in result.trades[1:])
+    assert result.trades[0].exit_time == candles[5].timestamp.isoformat()
+    assert all(trade.entry_time != candles[5].timestamp.isoformat() for trade in result.trades[1:])
 
 
 def test_funding_at_signal_candle_open_is_charged_before_position_exit():
