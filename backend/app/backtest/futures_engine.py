@@ -304,6 +304,9 @@ def run_futures_sma_crossover(
                 funding_total += cashflow
             funding_index += 1
 
+        if account.position is not None:
+            exposed_candles += 1
+
         if account.position is not None and index == len(candles) - 1:
             final_price = candle.close * (ONE - slippage_rate if account.position.side == "long" else ONE + slippage_rate)
             net_pnl = account.close_position(final_price, fee_rate)
