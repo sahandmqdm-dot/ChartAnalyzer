@@ -4,7 +4,7 @@ ChartAnalyzer can read current futures Open Interest and Funding Rate snapshots 
 
 ## Configuration
 
-Set the key only in the local runtime environment or an untracked `.env` file:
+Set `COINALYZE_API_KEY` in the API process environment. Docker Compose reads the root `.env` through its existing `env_file` configuration; for a local non-Docker run, export the variable in the shell before starting Uvicorn:
 
 ```dotenv
 COINALYZE_API_KEY=your-key
