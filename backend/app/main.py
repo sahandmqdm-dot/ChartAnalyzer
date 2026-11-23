@@ -17,6 +17,7 @@ from app.auth import (
 )
 from app.backtest.routes import router as backtest_router
 from app.database import close_database
+from app.market_data.coinalyze_routes import router as coinalyze_router
 from app.market_data.confluence_routes import router as confluence_router
 from app.market_data.futures_analysis_routes import router as derivatives_analysis_router
 from app.market_data.futures_history_routes import router as derivatives_history_router
@@ -64,6 +65,7 @@ app.include_router(liquidation_router)
 app.include_router(derivatives_history_router)
 app.include_router(mark_price_router)
 app.include_router(market_structure_router)
+app.include_router(coinalyze_router)
 app.include_router(confluence_router)
 app.include_router(derivatives_analysis_router)
 app.include_router(backtest_router)
