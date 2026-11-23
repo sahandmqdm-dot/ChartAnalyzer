@@ -84,7 +84,7 @@ class FuturesBacktestResult:
             "average_win": str(self.average_win),
             "average_loss": str(self.average_loss),
             "exposure_pct": str(self.exposure_pct),
-            "total_funding: str(self.total_funding),
+            "total_funding": str(self.total_funding),
             "liquidation_count": self.liquidation_count,
             "equity_curve": [
                 {"timestamp": point.timestamp, "equity": str(point.equity), "drawdown_pct": str(point.drawdown_pct)}
@@ -187,6 +187,7 @@ def run_futures_sma_crossover(
     for index, candle in enumerate(candles):
         mark_candle = mark_candles[index]
         desired_side: str | None = None
+        exposed_this_candle = account.position is not None
         if index >= slow_period + 1:
             signal_index = index - 1
             fast_now = _sma(closes, signal_index, fast_period)
@@ -273,6 +274,7 @@ def run_futures_sma_crossover(
                     desired_side, candle.timestamp.isoformat(), execution, quantity
                 )
                 entry_datetime = candle.timestamp
+                exposed_this_candle = True
 
         # OHLC cannot reveal whether an intrabar funding event preceded the
         # adverse Mark Price extreme. Liquidation is checked first, then funding.
@@ -304,7 +306,7 @@ def run_futures_sma_crossover(
                 funding_total += cashflow
             funding_index += 1
 
-        if account.position is not None:
+        if exposed_this_candle:
             exposed_candles += 1
 
         if account.position is not None and index == len(candles) - 1:
