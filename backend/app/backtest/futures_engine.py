@@ -66,6 +66,7 @@ class FuturesBacktestResult:
     total_funding: Decimal
     liquidation_count: int
     trades: tuple[FuturesTrade, ...]
+    equity_curve: tuple[FuturesEquityPoint, ...] = ()
 
     def to_dict(self) -> dict:
         return {
