@@ -1,5 +1,6 @@
 from app.market_data.binance import BinanceSpotAdapter
 from app.market_data.bybit import BybitSpotAdapter
+from app.market_data.nobitex import NobitexSpotAdapter
 from app.market_data.provider import MarketDataProvider
 from app.settings import settings
 
@@ -9,6 +10,7 @@ def get_market_data_provider() -> MarketDataProvider:
     providers: dict[str, type[MarketDataProvider]] = {
         "binance_spot": BinanceSpotAdapter,
         "bybit_spot": BybitSpotAdapter,
+        "nobitex_spot": NobitexSpotAdapter,
     }
     provider_type = providers.get(settings.market_data_provider.strip().lower())
     if provider_type is None:
