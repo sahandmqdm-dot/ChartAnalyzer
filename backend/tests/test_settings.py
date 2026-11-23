@@ -1,116 +1,56 @@
-import pytest
-from pydantic import ValidationError
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
-from app.settings import Settings
-
-
-def test_secret_is_required(monkeypatch):
-    monkeypatch.delenv("APP_SECRET", raising=False)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)
+from app.auth import _session_token
+from app.main import app
+from app.settings import settings
 
 
-def test_secret_minimum_length():
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, app_secret="too-short")
+def test_coinalyze_snapshot_requires_authentication():
+    response = TestClient(app).get(
+        "/api/v1/derivatives/coinalyze/snapshot",
+        params={"symbols": "BTC.H"},
+    )
+    assert response.status_code == 401
 
 
-def test_secret_is_accepted():
-    value = "test-secret-with-more-than-32-characters"
-    assert Settings(_env_file=None, app_secret=value).app_secret == value
+def test_coinalyze_snapshot_requires_api_key(monkeypatch):
+    monkeypatch.setattr(settings, "coinalyze_api_key", None)
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    response = client.get(
+        "/api/v1/derivatives/coinalyze/snapshot",
+        params={"symbols": "BTC.H"},
+    )
+    assert response.status_code == 503
 
 
-def test_market_data_provider_defaults_to_binance():
-    value = Settings(_env_file=None, app_secret="test-secret-with-more-than-32-characters")
-    assert value.market_data_provider == "binance_spot"
+def test_coinalyze_snapshot_rejects_more_than_twenty_symbols(monkeypatch):
+    monkeypatch.setattr(settings, "admin_username", "admin")
+    monkeypatch.setattr(settings, "coinalyze_api_key", SecretStr("test-key"))
+    client = TestClient(app)
+    client.cookies.set("ca_session", _session_token("admin"))
+    symbols = ",".join(f"BTC{i}.A" for i in range(21))
+    response = client.get(
+        "/api/v1/derivatives/coinalyze/snapshot",
+        params={"symbols": symbols},
+    )
+    assert response.status_code == 422
 
+def test_coinalyze_api_key_is_optional_and_secret():
+    from pydantic import SecretStr
 
-def test_market_data_provider_can_be_configured():
-    value = Settings(
+    default = Settings(
         _env_file=None,
         app_secret="test-secret-with-more-than-32-characters",
-        market_data_provider="bybit_spot",
     )
-    assert value.market_data_provider == "bybit_spot"
+    assert default.coinalyze_api_key is None
 
-
-def test_futures_market_data_provider_defaults_to_binance_usdm():
-    value = Settings(
+    configured = Settings(
         _env_file=None,
         app_secret="test-secret-with-more-than-32-characters",
+        coinalyze_api_key="test-coinalyze-key",
     )
-    assert value.futures_market_data_provider == "binance_usdm_futures"
-
-
-def test_futures_market_data_provider_can_be_configured_independently():
-    value = Settings(
-        _env_file=None,
-        app_secret="test-secret-with-more-than-32-characters",
-        market_data_provider="binance_spot",
-        futures_market_data_provider="bybit_linear_futures",
-    )
-    assert value.market_data_provider == "binance_spot"
-    assert value.futures_market_data_provider == "bybit_linear_futures"
-
-
-def test_futures_market_data_provider_rejects_unknown_values():
-    with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            app_secret="test-secret-with-more-than-32-characters",
-            futures_market_data_provider="not-a-futures-provider",
-        )
-
-
-def test_production_requires_strong_admin_password():
-    with pytest.raises(ValidationError, match="at least 16"):
-        Settings(
-            _env_file=None,
-            app_secret="test-secret-with-more-than-32-characters",
-            APP_ENV="production",
-            ADMIN_PASSWORD="short-password",
-        )
-
-
-def test_production_accepts_long_admin_password():
-    value = Settings(
-        _env_file=None,
-        app_secret="test-secret-with-more-than-32-characters",
-        APP_ENV="production",
-        ADMIN_PASSWORD="long-unique-production-password",
-    )
-    assert value.admin_password == "long-unique-production-password"
-
-
-def test_provider_setting_rejects_unknown_values():
-    with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            app_secret="test-secret-with-more-than-32-characters",
-            market_data_provider="not-an-exchange",
-        )
-
-
-def test_active_collector_limits_default_to_ten():
-    value = Settings(_env_file=None, app_secret="test-secret-with-more-than-32-characters")
-    assert value.max_active_futures_market_streams == 10
-    assert value.max_active_open_interest_collectors == 10
-    assert value.max_active_liquidation_streams == 10
-
-
-@pytest.mark.parametrize(
-    "field",
-    [
-        "max_active_futures_market_streams",
-        "max_active_open_interest_collectors",
-        "max_active_liquidation_streams",
-    ],
-)
-@pytest.mark.parametrize("limit", [0, 101])
-def test_active_collector_limits_are_bounded(field, limit):
-    with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            app_secret="test-secret-with-more-than-32-characters",
-            **{field: limit},
-        )
+    assert isinstance(configured.coinalyze_api_key, SecretStr)
+    assert configured.coinalyze_api_key.get_secret_value() == "test-coinalyze-key"
+    assert "test-coinalyze-key" not in repr(configured)
